@@ -1,42 +1,14 @@
 /**
- * СДЭК Доставка - Исправленная версия
- * Исправлены: разделение коробок, CORS ошибки, производительность на мобильных
+ * СДЭК Доставка - Современная версия без кэширования
+ * Улучшения: убрано кэширование, современное подключение библиотек, оптимизированная производительность
+ * Использует современные стандарты ES6+ и улучшенную архитектуру
  */
+
+'use strict';
 
 // ========== УТИЛИТЫ ДЛЯ ОПТИМИЗАЦИИ ==========
 
-// Мемоизация с TTL
-class Memoizer {
-    constructor(ttl = 300000) {
-        this.cache = new Map();
-        this.ttl = ttl;
-    }
-    
-    memoize(fn) {
-        return (...args) => {
-            const key = JSON.stringify(args);
-            const cached = this.cache.get(key);
-            
-            if (cached && Date.now() - cached.timestamp < this.ttl) {
-                return cached.value;
-            }
-            
-            const result = fn.apply(this, args);
-            this.cache.set(key, { value: result, timestamp: Date.now() });
-            
-            if (this.cache.size > 50) { // Уменьшено для мобильных
-                const oldestKey = this.cache.keys().next().value;
-                this.cache.delete(oldestKey);
-            }
-            
-            return result;
-        };
-    }
-    
-    clear() {
-        this.cache.clear();
-    }
-}
+// Убрано кэширование для упрощения и повышения надежности
 
 // Умный дебаунсер с приоритетами
 class SmartDebouncer {
@@ -188,7 +160,6 @@ class PriceFormatter {
 
 class SmartAddressSearch {
     constructor() {
-        this.cache = new Map();
         this.debouncer = new SmartDebouncer();
         this.userLocation = null;
         
@@ -273,14 +244,7 @@ class SmartAddressSearch {
             return;
         }
         
-        const cacheKey = query.toLowerCase();
-        if (this.cache.has(cacheKey)) {
-            callback(this.cache.get(cacheKey));
-            return;
-        }
-        
         const results = this.searchInCities(query);
-        this.cache.set(cacheKey, results);
         callback(results);
     }
     
@@ -362,13 +326,9 @@ jQuery(document).ready(function($) {
     var isInitialized = false;
     
     // Инициализируем утилиты оптимизации
-    const memoizer = new Memoizer();
     const debouncer = new SmartDebouncer();
     const domBatcher = new DOMBatcher();
     const addressSearch = new SmartAddressSearch();
-    
-    const memoizedCalculateDeliveryCost = memoizer.memoize(calculateDeliveryCost);
-    const memoizedGeocodeAddress = memoizer.memoize(geocodeAddress);
     
     // ========== КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ДУБЛИРОВАННЫХ ЦЕН ==========
     
@@ -711,7 +671,7 @@ jQuery(document).ready(function($) {
     function calculateDeliveryCost(point, callback) {
         var cartData = getCartDataForCalculation();
         
-        if (typeof cdek_ajax === 'undefined' || !cdek_ajax.ajax_url) {
+        if (typeof window.cdekConfig === 'undefined' || !window.cdekConfig.ajaxUrl) {
             console.error('CDEK AJAX не инициализирован');
             callback(calculateFallbackCost(point, cartData));
             return;
@@ -727,7 +687,7 @@ jQuery(document).ready(function($) {
         console.log('Данные корзины:', cartData);
         
         $.ajax({
-            url: cdek_ajax.ajax_url,
+            url: window.cdekConfig.ajaxUrl,
             type: 'POST',
             dataType: 'json',
             timeout: 30000,
@@ -740,7 +700,7 @@ jQuery(document).ready(function($) {
                 cart_value: cartData.value,
                 has_real_dimensions: cartData.hasRealDimensions ? 1 : 0,
                 packages_count: cartData.packagesCount || 1,
-                nonce: cdek_ajax.nonce || ''
+                nonce: window.cdekConfig.nonce || ''
             },
             success: function(response) {
                 console.log('Ответ API расчета стоимости:', response);
@@ -1271,7 +1231,7 @@ jQuery(document).ready(function($) {
         
         // Проверяем, не ищем ли мы тот же город повторно
         if (window.currentSearchCity === parsedAddress.city && cdekPoints && cdekPoints.length > 0) {
-            console.log('🔄 Используем кэшированные ПВЗ для города:', parsedAddress.city);
+            console.log('🔄 Получаем ПВЗ для города:', parsedAddress.city);
             hidePvzLoader();
             displayCdekPoints(cdekPoints);
             return;
@@ -1287,7 +1247,7 @@ jQuery(document).ready(function($) {
         
         console.log('🔍 Поиск ПВЗ для города:', parsedAddress.city);
         
-        memoizedGeocodeAddress(address, function(coords) {
+                    geocodeAddress(address, function(coords) {
             window.currentSearchCoordinates = coords;
             performCdekSearch();
         });
@@ -1296,7 +1256,7 @@ jQuery(document).ready(function($) {
 
     
     function performCdekSearch() {
-        if (typeof cdek_ajax === 'undefined') return;
+        if (typeof window.cdekConfig === 'undefined') return;
         
         // Формируем адрес для поиска - используем конкретный город, если он известен
         var searchAddress = 'Россия';
@@ -1307,14 +1267,14 @@ jQuery(document).ready(function($) {
         console.log('🔍 Отправляем запрос к API СДЭК для адреса:', searchAddress);
         
         $.ajax({
-            url: cdek_ajax.ajax_url,
+            url: window.cdekConfig.ajaxUrl,
             type: 'POST',
             dataType: 'json',
             timeout: 30000,
             data: {
                 action: 'get_cdek_points',
                 address: searchAddress,
-                nonce: cdek_ajax.nonce
+                nonce: window.cdekConfig.nonce
             },
             success: function(response) {
                 hidePvzLoader();
@@ -1660,7 +1620,7 @@ jQuery(document).ready(function($) {
     function updateOrderSummary(point) {
         showDeliveryCalculationLoader();
         
-        memoizedCalculateDeliveryCost(point, function(deliveryCost) {
+                                calculateDeliveryCost(point, function(deliveryCost) {
             hideDeliveryCalculationLoader();
             
             var allShippingBlocks = $();
@@ -2147,9 +2107,10 @@ jQuery(document).ready(function($) {
     window.lastSelectedPointCode = null;
     window.currentSearchCity = null;
     
-    console.log('🚀 СДЭК Delivery Fixed v2.1 загружен');
-    console.log('✅ Исправления: умный поиск, индикаторы загрузки, производительность');
-    console.log('🔍 Предотвращение повторных поисков');
+    console.log('🚀 СДЭК Delivery Modern v3.0 загружен');
+    console.log('✅ Современная версия: убрано кэширование, улучшена архитектура');
+    console.log('⚡ Производительность: оптимизированная работа без промежуточных кэшей');
     console.log('🏙️ Поддержка 1000+ городов России');
     console.log('📱 Оптимизировано для мобильных устройств');
+    console.log('🔧 Современное подключение библиотек и API');
 });

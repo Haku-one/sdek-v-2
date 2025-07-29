@@ -83,15 +83,48 @@ class CdekDeliveryPlugin {
     
     public function enqueue_scripts() {
         if (is_checkout()) {
-            wp_enqueue_script('yandex-maps', 'https://api-maps.yandex.ru/2.1/?apikey=4020b4d5-1d96-476c-a10e-8ab18f0f3702&lang=ru_RU', array(), null, true);
+            // Современное подключение Яндекс.Карт с модулем ES6
+            wp_enqueue_script(
+                'yandex-maps-api', 
+                'https://api-maps.yandex.ru/v3/?apikey=4020b4d5-1d96-476c-a10e-8ab18f0f3702&lang=ru_RU', 
+                array(), 
+                null, 
+                array(
+                    'strategy' => 'defer',
+                    'in_footer' => true
+                )
+            );
             
-            wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery.js', array('jquery', 'yandex-maps'), CDEK_DELIVERY_VERSION, true);
-            wp_enqueue_style('cdek-delivery-css', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css', array(), CDEK_DELIVERY_VERSION);
+            // Основной скрипт с современными параметрами загрузки
+            wp_enqueue_script(
+                'cdek-delivery-modern', 
+                CDEK_DELIVERY_PLUGIN_URL . 'cdek-delivery.js', 
+                array('jquery'), 
+                CDEK_DELIVERY_VERSION . '-' . time(), // Отключаем браузерное кэширование
+                array(
+                    'strategy' => 'defer',
+                    'in_footer' => true
+                )
+            );
             
-            wp_localize_script('cdek-delivery-js', 'cdek_ajax', array(
-                'ajax_url' => admin_url('admin-ajax.php'),
-                'nonce' => wp_create_nonce('cdek_nonce')
-            ));
+            // Стили с отключенным кэшированием
+            wp_enqueue_style(
+                'cdek-delivery-modern-css', 
+                CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css', 
+                array(), 
+                CDEK_DELIVERY_VERSION . '-' . time()
+            );
+            
+            // Современная передача данных в скрипт
+            wp_add_inline_script('cdek-delivery-modern', 
+                'window.cdekConfig = ' . wp_json_encode(array(
+                    'ajaxUrl' => admin_url('admin-ajax.php'),
+                    'nonce' => wp_create_nonce('cdek_nonce'),
+                    'pluginUrl' => CDEK_DELIVERY_PLUGIN_URL,
+                    'version' => CDEK_DELIVERY_VERSION
+                )), 
+                'before'
+            );
         }
     }
     
@@ -502,53 +535,46 @@ class CdekAPI {
     }
     
     public function get_auth_token() {
-        $cache_key = 'cdek_auth_token';
-        $token = get_transient($cache_key);
+        error_log('🔑 СДЭК AUTH: Получаем новый токен авторизации');
+        error_log('🔑 СДЭК AUTH: URL: ' . $this->base_url . '/oauth/token');
+        error_log('🔑 СДЭК AUTH: Client ID: ' . $this->account);
+        error_log('🔑 СДЭК AUTH: Client Secret: ' . substr($this->password, 0, 8) . '...');
         
-        if (!$token) {
-            error_log('🔑 СДЭК AUTH: Получаем новый токен авторизации');
-            error_log('🔑 СДЭК AUTH: URL: ' . $this->base_url . '/oauth/token');
-            error_log('🔑 СДЭК AUTH: Client ID: ' . $this->account);
-            error_log('🔑 СДЭК AUTH: Client Secret: ' . substr($this->password, 0, 8) . '...');
+        $auth_data = array(
+            'grant_type' => 'client_credentials',
+            'client_id' => $this->account,
+            'client_secret' => $this->password
+        );
+        
+        error_log('🔑 СДЭК AUTH: Данные авторизации: ' . print_r($auth_data, true));
+        
+        $response = wp_remote_post($this->base_url . '/oauth/token', array(
+            'headers' => array(
+                'Content-Type' => 'application/x-www-form-urlencoded',
+                'User-Agent' => 'WordPress/CDEK-Plugin'
+            ),
+            'body' => $auth_data,
+            'timeout' => 30,
+            'sslverify' => true
+        ));
+        
+        $token = null;
+        if (!is_wp_error($response)) {
+            $response_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            error_log('🔑 СДЭК AUTH: HTTP код: ' . $response_code);
+            error_log('🔑 СДЭК AUTH: Ответ: ' . $body);
             
-            $auth_data = array(
-                'grant_type' => 'client_credentials',
-                'client_id' => $this->account,
-                'client_secret' => $this->password
-            );
-            
-            error_log('🔑 СДЭК AUTH: Данные авторизации: ' . print_r($auth_data, true));
-            
-            $response = wp_remote_post($this->base_url . '/oauth/token', array(
-                'headers' => array(
-                    'Content-Type' => 'application/x-www-form-urlencoded',
-                    'User-Agent' => 'WordPress/CDEK-Plugin'
-                ),
-                'body' => $auth_data,
-                'timeout' => 30,
-                'sslverify' => true
-            ));
-            
-            if (!is_wp_error($response)) {
-                $response_code = wp_remote_retrieve_response_code($response);
-                $body = wp_remote_retrieve_body($response);
-                error_log('🔑 СДЭК AUTH: HTTP код: ' . $response_code);
-                error_log('🔑 СДЭК AUTH: Ответ: ' . $body);
-                
-                $parsed_body = json_decode($body, true);
-                if (isset($parsed_body['access_token'])) {
-                    $token = $parsed_body['access_token'];
-                    $expires_in = isset($parsed_body['expires_in']) ? intval($parsed_body['expires_in']) : 3600;
-                    set_transient($cache_key, $token, $expires_in - 60);
-                    error_log('🔑 СДЭК AUTH: ✅ Токен получен успешно, действует ' . $expires_in . ' сек');
-                } else {
-                    error_log('🔑 СДЭК AUTH: ❌ Не удалось получить токен. Ответ: ' . print_r($parsed_body, true));
-                }
+            $parsed_body = json_decode($body, true);
+            if (isset($parsed_body['access_token'])) {
+                $token = $parsed_body['access_token'];
+                $expires_in = isset($parsed_body['expires_in']) ? intval($parsed_body['expires_in']) : 3600;
+                error_log('🔑 СДЭК AUTH: ✅ Токен получен успешно, действует ' . $expires_in . ' сек');
             } else {
-                error_log('🔑 СДЭК AUTH: ❌ Ошибка HTTP запроса: ' . $response->get_error_message());
+                error_log('🔑 СДЭК AUTH: ❌ Не удалось получить токен. Ответ: ' . print_r($parsed_body, true));
             }
         } else {
-            error_log('🔑 СДЭК AUTH: ✅ Используем кэшированный токен');
+            error_log('🔑 СДЭК AUTH: ❌ Ошибка HTTP запроса: ' . $response->get_error_message());
         }
         
         return $token;

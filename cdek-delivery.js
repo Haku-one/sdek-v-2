@@ -1,44 +1,11 @@
 /**
- * СДЭК Доставка - Исправленная версия
- * Исправлены: разделение коробок, CORS ошибки, производительность на мобильных
+ * СДЭК Доставка - Оптимизированная версия
+ * Оптимизации: убрана система кеширования, ускорены API запросы, улучшена производительность
  */
 
 // ========== УТИЛИТЫ ДЛЯ ОПТИМИЗАЦИИ ==========
 
-// Мемоизация с TTL
-class Memoizer {
-    constructor(ttl = 300000) {
-        this.cache = new Map();
-        this.ttl = ttl;
-    }
-    
-    memoize(fn) {
-        return (...args) => {
-            const key = JSON.stringify(args);
-            const cached = this.cache.get(key);
-            
-            if (cached && Date.now() - cached.timestamp < this.ttl) {
-                return cached.value;
-            }
-            
-            const result = fn.apply(this, args);
-            this.cache.set(key, { value: result, timestamp: Date.now() });
-            
-            if (this.cache.size > 50) { // Уменьшено для мобильных
-                const oldestKey = this.cache.keys().next().value;
-                this.cache.delete(oldestKey);
-            }
-            
-            return result;
-        };
-    }
-    
-    clear() {
-        this.cache.clear();
-    }
-}
-
-// Умный дебаунсер с приоритетами
+// Умный дебаунсер с приоритетами для быстрых запросов
 class SmartDebouncer {
     constructor() {
         this.timers = new Map();
@@ -46,6 +13,7 @@ class SmartDebouncer {
     }
     
     debounce(key, fn, delay, priority = 0) {
+        // Для высокоприоритетных запросов выполняем сразу
         if (priority > 5) {
             this.cancel(key);
             return fn();
@@ -78,7 +46,7 @@ class DOMBatcher {
         this.operations = [];
         this.scheduled = false;
         this.isMobile = window.innerWidth <= 768;
-        this.throttleDelay = this.isMobile ? 32 : 16; // 30fps для мобильных, 60fps для десктопа
+        this.throttleDelay = this.isMobile ? 16 : 8; // Увеличена частота обновлений
     }
     
     add(operation) {
@@ -97,25 +65,33 @@ class DOMBatcher {
     
     flush() {
         // Обрабатываем операции порциями для мобильных
-        const batchSize = this.isMobile ? 5 : 10;
-        const currentBatch = this.operations.splice(0, batchSize);
+        const batchSize = this.isMobile ? 10 : 20; // Увеличено количество операций за раз
+        const batch = this.operations.splice(0, batchSize);
         
-        currentBatch.forEach(op => {
+        batch.forEach(operation => {
             try {
-                op();
-            } catch (error) {
-                console.error('DOM operation error:', error);
+                operation();
+            } catch (e) {
+                console.error('Ошибка в DOM операции:', e);
             }
         });
         
+        this.scheduled = false;
+        
         if (this.operations.length > 0) {
-            // Продолжаем обработку оставшихся операций
-            setTimeout(() => this.flush(), this.throttleDelay);
-        } else {
-            this.scheduled = false;
+            this.scheduled = true;
+            if (this.isMobile) {
+                setTimeout(() => this.flush(), this.throttleDelay);
+            } else {
+                requestAnimationFrame(() => this.flush());
+            }
         }
     }
 }
+
+// Глобальные экземпляры для оптимизации
+const smartDebouncer = new SmartDebouncer();
+const domBatcher = new DOMBatcher();
 
 // Исправление дублированных цен - КРИТИЧЕСКИ ВАЖНО!
 class PriceFormatter {
@@ -362,13 +338,8 @@ jQuery(document).ready(function($) {
     var isInitialized = false;
     
     // Инициализируем утилиты оптимизации
-    const memoizer = new Memoizer();
-    const debouncer = new SmartDebouncer();
-    const domBatcher = new DOMBatcher();
     const addressSearch = new SmartAddressSearch();
-    
-    const memoizedCalculateDeliveryCost = memoizer.memoize(calculateDeliveryCost);
-    const memoizedGeocodeAddress = memoizer.memoize(geocodeAddress);
+
     
     // ========== КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ДУБЛИРОВАННЫХ ЦЕН ==========
     
@@ -723,14 +694,14 @@ jQuery(document).ready(function($) {
             return;
         }
         
-        console.log('Запрос расчета стоимости доставки для пункта:', point.code);
-        console.log('Данные корзины:', cartData);
+        console.log('🚀 Быстрый запрос расчета стоимости для пункта:', point.code);
         
+        // Оптимизированный AJAX запрос с уменьшенным таймаутом
         $.ajax({
             url: cdek_ajax.ajax_url,
             type: 'POST',
             dataType: 'json',
-            timeout: 30000,
+            timeout: 15000, // Уменьшен таймаут для быстрого ответа
             data: {
                 action: 'calculate_cdek_delivery_cost',
                 point_code: point.code,
@@ -743,56 +714,35 @@ jQuery(document).ready(function($) {
                 nonce: cdek_ajax.nonce || ''
             },
             success: function(response) {
-                console.log('Ответ API расчета стоимости:', response);
-                
                 if (response && response.success && response.data && response.data.delivery_sum) {
                     var deliveryCost = parseInt(response.data.delivery_sum);
                     
                     if (cartData.packagesCount > 1) {
                         var costPerPackage = deliveryCost;
                         deliveryCost = deliveryCost * cartData.packagesCount;
-                        console.log('📦 Стоимость пересчитана для', cartData.packagesCount, 'коробок:', costPerPackage, '×', cartData.packagesCount, '=', deliveryCost, 'руб.');
+                        console.log('📦 Стоимость для', cartData.packagesCount, 'коробок:', costPerPackage, '×', cartData.packagesCount, '=', deliveryCost, 'руб.');
                     }
                     
                     if (response.data.fallback) {
-                        console.warn('⚠️ Используется резервный расчет:', deliveryCost, 'руб.');
-                        console.log('Причина:', response.data.message);
+                        console.warn('⚠️ Резервный расчет:', deliveryCost, 'руб.');
                     } else if (response.data.api_success) {
-                        console.log('✅ Успешно получена стоимость из настоящего API СДЭК:', deliveryCost, 'руб.');
-                        if (response.data.alternative_tariff) {
-                            console.log('Использован альтернативный тариф:', response.data.alternative_tariff);
-                        }
+                        console.log('✅ API СДЭК:', deliveryCost, 'руб.');
                     } else {
-                        console.log('💰 Получена стоимость доставки:', deliveryCost, 'руб.');
+                        console.log('💰 Стоимость доставки:', deliveryCost, 'руб.');
                     }
                     
                     callback(deliveryCost);
-                } else if (!response.success) {
-                    console.error('❌ API СДЭК вернул ошибку:', response.data ? response.data.message : 'Неизвестная ошибка');
-                    
-                    // Используем fallback вместо показа ошибки пользователю
-                    var fallbackCost = calculateFallbackCost(point, cartData);
-                    console.log('🔄 Используем резервный расчет стоимости:', fallbackCost, 'руб.');
-                    callback(fallbackCost);
                 } else {
-                    console.error('❌ API СДЭК вернул некорректный ответ');
-                    
+                    console.error('❌ Ошибка API:', response.data ? response.data.message : 'Неизвестная ошибка');
                     var fallbackCost = calculateFallbackCost(point, cartData);
-                    console.log('🔄 Используем резервный расчет стоимости:', fallbackCost, 'руб.');
+                    console.log('🔄 Резервный расчет:', fallbackCost, 'руб.');
                     callback(fallbackCost);
                 }
             },
             error: function(xhr, status, error) {
-                console.error('❌ Критическая ошибка запроса к API СДЭК:', {
-                    status: status,
-                    error: error,
-                    responseText: xhr.responseText,
-                    readyState: xhr.readyState
-                });
-                
-                // Используем fallback вместо показа ошибки
+                console.error('❌ Ошибка запроса:', status, error);
                 var fallbackCost = calculateFallbackCost(point, cartData);
-                console.log('🔄 Используем резервный расчет стоимости:', fallbackCost, 'руб.');
+                console.log('🔄 Резервный расчет:', fallbackCost, 'руб.');
                 callback(fallbackCost);
             }
         });
@@ -1304,13 +1254,14 @@ jQuery(document).ready(function($) {
             searchAddress = window.currentSearchCity;
         }
         
-        console.log('🔍 Отправляем запрос к API СДЭК для адреса:', searchAddress);
+        console.log('🚀 Быстрый поиск пунктов СДЭК для адреса:', searchAddress);
         
+        // Оптимизированный AJAX запрос с уменьшенным таймаутом
         $.ajax({
             url: cdek_ajax.ajax_url,
             type: 'POST',
             dataType: 'json',
-            timeout: 30000,
+            timeout: 10000, // Уменьшен таймаут для быстрого ответа
             data: {
                 action: 'get_cdek_points',
                 address: searchAddress,
@@ -1319,43 +1270,15 @@ jQuery(document).ready(function($) {
             success: function(response) {
                 hidePvzLoader();
                 if (response.success && response.data) {
-                    console.log('✅ Получено ПВЗ от API:', response.data.length);
+                    console.log('✅ Получено ПВЗ:', response.data.length);
                     
-                    // Отладочная информация - показываем первые несколько пунктов
+                    // Упрощенная отладочная информация
                     if (response.data.length > 0) {
-                        console.log('🔍 Первые 3 пункта от API:');
-                        for (var i = 0; i < Math.min(3, response.data.length); i++) {
-                            var point = response.data[i];
-                            console.log('Пункт ' + (i+1) + ':', {
-                                code: point.code,
-                                name: point.name,
-                                type: point.type,
-                                city: point.location ? point.location.city : 'не указан',
-                                address: point.location ? point.location.address : 'не указан',
-                                address_comment: point.address_comment
-                            });
-                        }
-                        
-                        // Ищем конкретно пункт в Тюмени по адресу Зелинского
-                        var tyumenPoints = response.data.filter(function(point) {
-                            var hasZelinsky = false;
-                            if (point.location && point.location.address) {
-                                hasZelinsky = point.location.address.toLowerCase().includes('зелинск');
-                            }
-                            if (!hasZelinsky && point.address_comment) {
-                                hasZelinsky = point.address_comment.toLowerCase().includes('зелинск');
-                            }
-                            if (!hasZelinsky && point.name) {
-                                hasZelinsky = point.name.toLowerCase().includes('зелинск');
-                            }
-                            return hasZelinsky;
-                        });
-                        
-                        if (tyumenPoints.length > 0) {
-                            console.log('🎯 Найдены пункты с адресом Зелинского:', tyumenPoints);
-                        } else {
-                            console.log('❌ Пункт по адресу Зелинского НЕ найден в ответе API');
-                        }
+                        console.log('🔍 Первые пункты:', response.data.slice(0, 2).map(p => ({
+                            code: p.code,
+                            name: p.name,
+                            city: p.location ? p.location.city : 'не указан'
+                        })));
                     }
                     
                     displayCdekPoints(response.data);

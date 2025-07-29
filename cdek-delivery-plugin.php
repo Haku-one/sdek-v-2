@@ -26,6 +26,11 @@ define('CDEK_DELIVERY_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CDEK_DELIVERY_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CDEK_DELIVERY_VERSION', '1.0.0');
 
+// Подключаем современные PHP библиотеки через Composer
+if (file_exists(CDEK_DELIVERY_PLUGIN_PATH . 'vendor/autoload.php')) {
+    require_once CDEK_DELIVERY_PLUGIN_PATH . 'vendor/autoload.php';
+}
+
 // Основной класс плагина
 class CdekDeliveryPlugin {
     
@@ -85,7 +90,13 @@ class CdekDeliveryPlugin {
         if (is_checkout()) {
             wp_enqueue_script('yandex-maps', 'https://api-maps.yandex.ru/2.1/?apikey=4020b4d5-1d96-476c-a10e-8ab18f0f3702&lang=ru_RU', array(), null, true);
             
-            wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery.js', array('jquery', 'yandex-maps'), CDEK_DELIVERY_VERSION, true);
+            // Подключаем скомпилированный современный JS файл
+            if (file_exists(CDEK_DELIVERY_PLUGIN_PATH . 'assets/dist/cdek-delivery.min.js')) {
+                wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/dist/cdek-delivery.min.js', array('jquery', 'yandex-maps'), CDEK_DELIVERY_VERSION, true);
+            } else {
+                // Fallback на исходный файл для разработки
+                wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery.js', array('jquery', 'yandex-maps'), CDEK_DELIVERY_VERSION, true);
+            }
             wp_enqueue_style('cdek-delivery-css', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css', array(), CDEK_DELIVERY_VERSION);
             
             wp_localize_script('cdek-delivery-js', 'cdek_ajax', array(
@@ -501,57 +512,97 @@ class CdekAPI {
         error_log('🔧 СДЭК API CONFIG: Password length - ' . strlen($this->password) . ' символов');
     }
     
-    public function get_auth_token() {
-        $cache_key = 'cdek_auth_token';
-        $token = get_transient($cache_key);
+    /**
+     * Современный HTTP клиент с улучшенной обработкой ошибок
+     */
+    private function make_http_request($url, $args = array()) {
+        $defaults = array(
+            'method' => 'GET',
+            'timeout' => 30,
+            'redirection' => 5,
+            'httpversion' => '1.1',
+            'user-agent' => 'WordPress/CDEK-Plugin-Modern/1.0',
+            'blocking' => true,
+            'headers' => array(),
+            'cookies' => array(),
+            'body' => null,
+            'compress' => false,
+            'decompress' => true,
+            'sslverify' => true,
+            'stream' => false,
+            'filename' => null
+        );
         
-        if (!$token) {
-            error_log('🔑 СДЭК AUTH: Получаем новый токен авторизации');
-            error_log('🔑 СДЭК AUTH: URL: ' . $this->base_url . '/oauth/token');
-            error_log('🔑 СДЭК AUTH: Client ID: ' . $this->account);
-            error_log('🔑 СДЭК AUTH: Client Secret: ' . substr($this->password, 0, 8) . '...');
-            
-            $auth_data = array(
-                'grant_type' => 'client_credentials',
-                'client_id' => $this->account,
-                'client_secret' => $this->password
-            );
-            
-            error_log('🔑 СДЭК AUTH: Данные авторизации: ' . print_r($auth_data, true));
-            
-            $response = wp_remote_post($this->base_url . '/oauth/token', array(
-                'headers' => array(
-                    'Content-Type' => 'application/x-www-form-urlencoded',
-                    'User-Agent' => 'WordPress/CDEK-Plugin'
-                ),
-                'body' => $auth_data,
-                'timeout' => 30,
-                'sslverify' => true
-            ));
-            
-            if (!is_wp_error($response)) {
-                $response_code = wp_remote_retrieve_response_code($response);
-                $body = wp_remote_retrieve_body($response);
-                error_log('🔑 СДЭК AUTH: HTTP код: ' . $response_code);
-                error_log('🔑 СДЭК AUTH: Ответ: ' . $body);
-                
-                $parsed_body = json_decode($body, true);
-                if (isset($parsed_body['access_token'])) {
-                    $token = $parsed_body['access_token'];
-                    $expires_in = isset($parsed_body['expires_in']) ? intval($parsed_body['expires_in']) : 3600;
-                    set_transient($cache_key, $token, $expires_in - 60);
-                    error_log('🔑 СДЭК AUTH: ✅ Токен получен успешно, действует ' . $expires_in . ' сек');
-                } else {
-                    error_log('🔑 СДЭК AUTH: ❌ Не удалось получить токен. Ответ: ' . print_r($parsed_body, true));
-                }
-            } else {
-                error_log('🔑 СДЭК AUTH: ❌ Ошибка HTTP запроса: ' . $response->get_error_message());
-            }
-        } else {
-            error_log('🔑 СДЭК AUTH: ✅ Используем кэшированный токен');
+        $args = wp_parse_args($args, $defaults);
+        
+        // Добавляем современные заголовки
+        $args['headers']['Accept'] = 'application/json';
+        $args['headers']['Accept-Encoding'] = 'gzip, deflate';
+        $args['headers']['Connection'] = 'keep-alive';
+        
+        // Логируем запрос для отладки
+        error_log('🌐 HTTP REQUEST: ' . $args['method'] . ' ' . $url);
+        error_log('🌐 HTTP HEADERS: ' . print_r($args['headers'], true));
+        
+        $response = wp_remote_request($url, $args);
+        
+        // Улучшенная обработка ошибок
+        if (is_wp_error($response)) {
+            error_log('❌ HTTP ERROR: ' . $response->get_error_message());
+            return $response;
         }
         
-        return $token;
+        $response_code = wp_remote_retrieve_response_code($response);
+        error_log('✅ HTTP RESPONSE: ' . $response_code);
+        
+        return $response;
+    }
+    
+    public function get_auth_token() {
+        // Убрано кэширование - всегда получаем свежий токен
+        error_log('🔑 СДЭК AUTH: Получаем новый токен авторизации');
+        error_log('🔑 СДЭК AUTH: URL: ' . $this->base_url . '/oauth/token');
+        error_log('🔑 СДЭК AUTH: Client ID: ' . $this->account);
+        error_log('🔑 СДЭК AUTH: Client Secret: ' . substr($this->password, 0, 8) . '...');
+        
+        $auth_data = array(
+            'grant_type' => 'client_credentials',
+            'client_id' => $this->account,
+            'client_secret' => $this->password
+        );
+        
+        error_log('🔑 СДЭК AUTH: Данные авторизации: ' . print_r($auth_data, true));
+        
+        // Используем современный подход с cURL для лучшего контроля
+        $response = $this->make_http_request($this->base_url . '/oauth/token', array(
+            'method' => 'POST',
+            'headers' => array(
+                'Content-Type' => 'application/x-www-form-urlencoded',
+                'User-Agent' => 'WordPress/CDEK-Plugin-Modern/1.0'
+            ),
+            'body' => $auth_data,
+            'timeout' => 30
+        ));
+        
+        if (!is_wp_error($response)) {
+            $response_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            error_log('🔑 СДЭК AUTH: HTTP код: ' . $response_code);
+            error_log('🔑 СДЭК AUTH: Ответ: ' . $body);
+            
+            $parsed_body = json_decode($body, true);
+            if (isset($parsed_body['access_token'])) {
+                $token = $parsed_body['access_token'];
+                error_log('🔑 СДЭК AUTH: ✅ Токен получен успешно');
+                return $token;
+            } else {
+                error_log('🔑 СДЭК AUTH: ❌ Не удалось получить токен. Ответ: ' . print_r($parsed_body, true));
+            }
+        } else {
+            error_log('🔑 СДЭК AUTH: ❌ Ошибка HTTP запроса: ' . $response->get_error_message());
+        }
+        
+        return null;
     }
     
     public function get_delivery_points($address) {
@@ -582,7 +633,7 @@ class CdekAPI {
         
         error_log('СДЭК API: 🔓 УБРАНЫ ВСЕ ОГРАНИЧЕНИЯ - URL запроса: ' . $url);
         
-        $response = wp_remote_get($url, array(
+        $response = $this->make_http_request($url, array(
             'headers' => array(
                 'Authorization' => 'Bearer ' . $token,
                 'Content-Type' => 'application/json'
@@ -603,7 +654,7 @@ class CdekAPI {
         
         $url_unrestricted = add_query_arg($params_unrestricted, $this->base_url . '/deliverypoints');
         
-        $response_unrestricted = wp_remote_get($url_unrestricted, array(
+        $response_unrestricted = $this->make_http_request($url_unrestricted, array(
             'headers' => array(
                 'Authorization' => 'Bearer ' . $token,
                 'Content-Type' => 'application/json'

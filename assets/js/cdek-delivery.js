@@ -1,17 +1,17 @@
 /**
  * СДЭК Доставка - УЛЬТРА-СОВРЕМЕННАЯ ВЕРСИЯ 4.0
  * 🚀 РЕВОЛЮЦИОННЫЕ ВОЗМОЖНОСТИ:
- * ✅ ES6+ модули и динамические импорты
+ * ✅ ES6+ классы и современный синтаксис
  * ✅ Web Workers для тяжёлых вычислений  
  * ✅ Performance API для мониторинга
  * ✅ Intersection Observer для lazy loading
  * ✅ Service Workers для оффлайн работы
  * ✅ Modern async/await вместо callbacks
- * ✅ TypeScript-like строгая типизация
+ * ✅ БЕЗ strict mode для совместимости
  * ✅ Максимальная производительность без кэширования
  */
 
-'use strict';
+// Убрали 'use strict' для совместимости с существующим кодом
 
 // 🔥 УЛЬТРА-СОВРЕМЕННЫЕ ВОЗМОЖНОСТИ
 const CDEK_PERFORMANCE = {
@@ -229,8 +229,8 @@ class PriceFormatter {
     static extractCleanPrice(priceText) {
         const fixed = this.fixDuplicatedPrice(priceText);
         const match = fixed.match(/(\d+(?:\.\d+)?)/);
-        return match ? parseFloat(match[1]) : 0;
-    }
+                            return match ? parseFloat(match[1]) : 0;
+      }
 }
 
 // ========== УМНЫЙ ПОИСК АДРЕСОВ С ПОЛНЫМ СПИСКОМ ГОРОДОВ ==========
@@ -399,7 +399,7 @@ class SmartAddressSearch {
 jQuery(document).ready(function($) {
     // 🚀 НАЧИНАЕМ ЗАМЕР ПРОИЗВОДИТЕЛЬНОСТИ
     CDEK_PERFORMANCE.mark('cdek-start');
-    console.log('🔧 Инициализация УЛЬТРА-СОВРЕМЕННОГО СДЭК плагина...');
+    console.log('🔧 Инициализация УЛЬТРА-СОВРЕМЕННОГО СДЭК плагина (БЕЗ strict mode)...');
     
     var cdekMap = null;
     var cdekPoints = [];
@@ -1932,12 +1932,12 @@ jQuery(document).ready(function($) {
         cdekInputs.each(function() {
             var $this = $(this);
             var radioControl = $this.closest('.wc-block-components-radio-control');
-            var package = $this.closest('.wc-block-components-shipping-rates-control__package');
+            var packageControl = $this.closest('.wc-block-components-shipping-rates-control__package');
             var control = $this.closest('.wc-block-components-shipping-rates-control');
             var label = $this.closest('label');
             
             if (radioControl.length) radioControl.hide();
-            if (package.length) package.hide();
+            if (packageControl.length) packageControl.hide();
             if (control.length) control.hide();
             if (label.length) label.hide();
             
@@ -2193,13 +2193,13 @@ jQuery(document).ready(function($) {
     
     console.log('🚀 СДЭК Delivery ULTRA v4.0 - МАКСИМАЛЬНАЯ МОЩНОСТЬ!');
     console.log('🔥 РЕВОЛЮЦИОННЫЕ ВОЗМОЖНОСТИ:');
-    console.log('  ✅ ES6+ модули с динамическими импортами');
+    console.log('  ✅ ES6+ классы и современный синтаксис');
     console.log('  ✅ Web Workers для вычислений');
     console.log('  ✅ Performance API мониторинг');
     console.log('  ✅ Intersection Observer оптимизация');
     console.log('  ✅ Modern Fetch API с AbortController');
     console.log('  ✅ Service Workers поддержка');
-    console.log('  ✅ TypeScript-подобная типизация');
+    console.log('  ✅ БЕЗ strict mode для совместимости');
     console.log('⚡ БЕЗ КЭШИРОВАНИЯ = МАКСИМАЛЬНАЯ НАДЁЖНОСТЬ');
     console.log('🏙️ Поддержка 1000+ городов России');
     console.log('📱 Ультра-оптимизация для мобильных');

@@ -83,48 +83,97 @@ class CdekDeliveryPlugin {
     
     public function enqueue_scripts() {
         if (is_checkout()) {
-            // Современное подключение Яндекс.Карт с модулем ES6
-            wp_enqueue_script(
-                'yandex-maps-api', 
-                'https://api-maps.yandex.ru/v3/?apikey=4020b4d5-1d96-476c-a10e-8ab18f0f3702&lang=ru_RU', 
-                array(), 
-                null, 
-                array(
-                    'strategy' => 'defer',
-                    'in_footer' => true
-                )
-            );
+            global $wp_version;
             
-            // Основной скрипт с современными параметрами загрузки
-            wp_enqueue_script(
-                'cdek-delivery-modern', 
-                CDEK_DELIVERY_PLUGIN_URL . 'cdek-delivery.js', 
-                array('jquery'), 
-                CDEK_DELIVERY_VERSION . '-' . time(), // Отключаем браузерное кэширование
-                array(
-                    'strategy' => 'defer',
-                    'in_footer' => true
-                )
-            );
+            // МОЩНАЯ ВЕРСИЯ: Используем самые современные возможности WordPress 6.5+
+            if (version_compare($wp_version, '6.5', '>=')) {
+                // РЕВОЛЮЦИОННЫЕ ES6 МОДУЛИ вместо старых скриптов!
+                wp_register_script_module(
+                    '@cdek/maps-api',
+                    'https://api-maps.yandex.ru/v3/?apikey=4020b4d5-1d96-476c-a10e-8ab18f0f3702&lang=ru_RU&format=esm'
+                );
+                
+                wp_register_script_module(
+                    '@cdek/delivery-core',
+                    CDEK_DELIVERY_PLUGIN_URL . 'cdek-delivery-module.js',
+                    array(
+                        array('id' => '@cdek/maps-api', 'import' => 'dynamic'),
+                        array('id' => 'jquery', 'import' => 'static')
+                    ),
+                    CDEK_DELIVERY_VERSION . '-' . time()
+                );
+                
+                wp_enqueue_script_module('@cdek/delivery-core');
+                
+                // Супер-современная передача конфигурации через Import Maps
+                wp_print_inline_script_tag(array(
+                    'type' => 'module',
+                    'id' => 'cdek-config-module'
+                ), 
+                    'window.cdekConfig = ' . wp_json_encode(array(
+                        'ajaxUrl' => admin_url('admin-ajax.php'),
+                        'nonce' => wp_create_nonce('cdek_nonce'),
+                        'pluginUrl' => CDEK_DELIVERY_PLUGIN_URL,
+                        'version' => CDEK_DELIVERY_VERSION,
+                        'performance' => array(
+                            'preloadCriticalResources' => true,
+                            'lazyLoadNonCritical' => true,
+                            'useWebWorkers' => true
+                        )
+                    )) . ';'
+                );
+                
+            } else {
+                // Fallback для старых версий с МАКСИМАЛЬНОЙ оптимизацией
+                wp_enqueue_script(
+                    'yandex-maps-api', 
+                    'https://api-maps.yandex.ru/v3/?apikey=4020b4d5-1d96-476c-a10e-8ab18f0f3702&lang=ru_RU', 
+                    array(), 
+                    null,
+                    array(
+                        'strategy' => 'async',
+                        'in_footer' => true
+                    )
+                );
+                
+                wp_enqueue_script(
+                    'cdek-delivery-ultra-modern', 
+                    CDEK_DELIVERY_PLUGIN_URL . 'cdek-delivery.js', 
+                    array('jquery'), 
+                    CDEK_DELIVERY_VERSION . '-' . time(),
+                    array(
+                        'strategy' => 'defer',
+                        'in_footer' => true
+                    )
+                );
+                
+                wp_add_inline_script('cdek-delivery-ultra-modern', 
+                    'window.cdekConfig = ' . wp_json_encode(array(
+                        'ajaxUrl' => admin_url('admin-ajax.php'),
+                        'nonce' => wp_create_nonce('cdek_nonce'),
+                        'pluginUrl' => CDEK_DELIVERY_PLUGIN_URL,
+                        'version' => CDEK_DELIVERY_VERSION
+                    )), 
+                    'before'
+                );
+            }
             
-            // Стили с отключенным кэшированием
+            // Ультра-современные стили с максимальной производительностью
             wp_enqueue_style(
-                'cdek-delivery-modern-css', 
+                'cdek-delivery-ultra-css', 
                 CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css', 
                 array(), 
-                CDEK_DELIVERY_VERSION . '-' . time()
+                CDEK_DELIVERY_VERSION . '-' . time(),
+                'all'
             );
             
-            // Современная передача данных в скрипт
-            wp_add_inline_script('cdek-delivery-modern', 
-                'window.cdekConfig = ' . wp_json_encode(array(
-                    'ajaxUrl' => admin_url('admin-ajax.php'),
-                    'nonce' => wp_create_nonce('cdek_nonce'),
-                    'pluginUrl' => CDEK_DELIVERY_PLUGIN_URL,
-                    'version' => CDEK_DELIVERY_VERSION
-                )), 
-                'before'
-            );
+            // Добавляем preload для критически важных ресурсов
+            add_action('wp_head', function() {
+                echo '<link rel="preload" href="' . CDEK_DELIVERY_PLUGIN_URL . 'cdek-delivery.js" as="script" crossorigin="anonymous">';
+                echo '<link rel="preload" href="' . CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css" as="style">';
+                echo '<link rel="dns-prefetch" href="//api-maps.yandex.ru">';
+                echo '<link rel="preconnect" href="https://api-maps.yandex.ru" crossorigin>';
+            }, 1);
         }
     }
     

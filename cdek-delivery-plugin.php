@@ -76,10 +76,8 @@ class CdekDeliveryPlugin {
         // Добавляем габариты в описание товара в корзине
         add_filter('woocommerce_get_item_data', array($this, 'add_dimensions_to_cart_item'), 10, 2);
         
-        // Хуки для отправки данных доставки
-        add_action('woocommerce_email_order_details', array($this, 'add_delivery_info_to_email'), 20, 4);
-        add_action('woocommerce_checkout_order_processed', array($this, 'save_delivery_cost_meta'), 10, 3);
-        add_action('woocommerce_admin_order_data_after_shipping_address', array($this, 'display_delivery_info_in_admin'), 15);
+        // Подключаем обработчик данных доставки
+        add_action('plugins_loaded', array($this, 'load_delivery_data_handler'));
     }
     
     public function init() {
@@ -426,27 +424,7 @@ class CdekDeliveryPlugin {
         }
     }
     
-    public function save_delivery_cost_meta($order_id, $posted_data, $order) {
-        // Сохраняем стоимость доставки СДЭК
-        if (isset($_POST['cdek_delivery_cost']) && !empty($_POST['cdek_delivery_cost'])) {
-            $delivery_cost = sanitize_text_field($_POST['cdek_delivery_cost']);
-            update_post_meta($order_id, '_cdek_delivery_cost', $delivery_cost);
-            error_log('СДЭК: Сохранена стоимость доставки для заказа ' . $order_id . ': ' . $delivery_cost . ' руб.');
-        }
-        
-        // Также сохраняем данные из POST если они есть
-        if (isset($_POST['cdek_selected_point_code']) && !empty($_POST['cdek_selected_point_code'])) {
-            update_post_meta($order_id, '_cdek_point_code', sanitize_text_field($_POST['cdek_selected_point_code']));
-        }
-        
-        if (isset($_POST['cdek_selected_point_data']) && !empty($_POST['cdek_selected_point_data'])) {
-            $point_data = json_decode(stripslashes($_POST['cdek_selected_point_data']), true);
-            if ($point_data) {
-                update_post_meta($order_id, '_cdek_point_data', $point_data);
-                error_log('СДЭК: Сохранены данные пункта выдачи для заказа ' . $order_id . ': ' . $point_data['name']);
-            }
-        }
-    }
+
     
     public function display_cdek_point_in_admin($order) {
         $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
@@ -465,173 +443,7 @@ class CdekDeliveryPlugin {
         }
     }
     
-    public function display_delivery_info_in_admin($order) {
-        $order_id = $order->get_id();
-        $point_code = get_post_meta($order_id, '_cdek_point_code', true);
-        $point_data = get_post_meta($order_id, '_cdek_point_data', true);
-        $delivery_cost = get_post_meta($order_id, '_cdek_delivery_cost', true);
-        
-        // Получаем данные о доставке из заказа
-        $shipping_methods = $order->get_shipping_methods();
-        $cdek_shipping = null;
-        
-        foreach ($shipping_methods as $shipping_method) {
-            if (strpos($shipping_method->get_method_id(), 'cdek') !== false) {
-                $cdek_shipping = $shipping_method;
-                break;
-            }
-        }
-        
-        if ($point_code && $point_data) {
-            echo '<div class="cdek-delivery-info" style="margin-top: 20px; padding: 15px; background: #e8f5e8; border: 1px solid #4caf50; border-radius: 4px;">';
-            echo '<h4 style="color: #2e7d32; margin-top: 0;">📦 Информация о доставке СДЭК:</h4>';
-            
-            // Название пункта выдачи
-            $point_name = $point_data['name'];
-            if (isset($point_data['location']['city'])) {
-                $point_name = $point_data['location']['city'] . ', ' . str_replace($point_data['location']['city'], '', $point_name);
-                $point_name = trim($point_name, ', ');
-            }
-            echo '<div style="margin-bottom: 10px;"><strong>Пункт выдачи:</strong> ' . esc_html($point_name) . '</div>';
-            
-            // Стоимость доставки
-            if ($delivery_cost) {
-                echo '<div style="margin-bottom: 10px;"><strong>Стоимость доставки:</strong> ' . esc_html($delivery_cost) . ' руб.</div>';
-            } elseif ($cdek_shipping) {
-                echo '<div style="margin-bottom: 10px;"><strong>Стоимость доставки:</strong> ' . wc_price($cdek_shipping->get_total()) . '</div>';
-            }
-            
-            // Полный адрес
-            if (isset($point_data['location']['address_full'])) {
-                echo '<div style="margin-bottom: 10px;"><strong>Адрес:</strong> ' . esc_html($point_data['location']['address_full']) . '</div>';
-            }
-            
-            // Код пункта
-            echo '<div style="margin-bottom: 10px;"><strong>Код пункта:</strong> ' . esc_html($point_code) . '</div>';
-            
-            // Телефон если есть
-            if (isset($point_data['phones']) && is_array($point_data['phones']) && !empty($point_data['phones'])) {
-                $phone = $point_data['phones'][0]['number'] ?? $point_data['phones'][0];
-                echo '<div style="margin-bottom: 10px;"><strong>Телефон пункта:</strong> ' . esc_html($phone) . '</div>';
-            }
-            
-            // Режим работы
-            if (isset($point_data['work_time'])) {
-                echo '<div style="margin-bottom: 10px;"><strong>Режим работы:</strong> ' . esc_html($point_data['work_time']) . '</div>';
-            }
-            
-            echo '</div>';
-        }
-    }
-    
-    public function add_delivery_info_to_email($order, $sent_to_admin, $plain_text, $email) {
-        $order_id = $order->get_id();
-        $point_code = get_post_meta($order_id, '_cdek_point_code', true);
-        $point_data = get_post_meta($order_id, '_cdek_point_data', true);
-        $delivery_cost = get_post_meta($order_id, '_cdek_delivery_cost', true);
-        
-        if (!$point_code || !$point_data) {
-            return;
-        }
-        
-        // Получаем данные о доставке из заказа
-        $shipping_methods = $order->get_shipping_methods();
-        $cdek_shipping = null;
-        
-        foreach ($shipping_methods as $shipping_method) {
-            if (strpos($shipping_method->get_method_id(), 'cdek') !== false) {
-                $cdek_shipping = $shipping_method;
-                break;
-            }
-        }
-        
-        if ($plain_text) {
-            // Текстовый формат email
-            echo "\n" . str_repeat('=', 50) . "\n";
-            echo "ИНФОРМАЦИЯ О ДОСТАВКЕ СДЭК\n";
-            echo str_repeat('=', 50) . "\n";
-            
-            // Название пункта выдачи
-            $point_name = $point_data['name'];
-            if (isset($point_data['location']['city'])) {
-                $point_name = $point_data['location']['city'] . ', ' . str_replace($point_data['location']['city'], '', $point_name);
-                $point_name = trim($point_name, ', ');
-            }
-            echo "Пункт выдачи: " . $point_name . "\n";
-            
-            // Стоимость доставки
-            if ($delivery_cost) {
-                echo "Стоимость доставки: " . $delivery_cost . " руб.\n";
-            } elseif ($cdek_shipping) {
-                echo "Стоимость доставки: " . $cdek_shipping->get_total() . " руб.\n";
-            }
-            
-            // Полный адрес
-            if (isset($point_data['location']['address_full'])) {
-                echo "Адрес: " . $point_data['location']['address_full'] . "\n";
-            }
-            
-            // Код пункта
-            echo "Код пункта: " . $point_code . "\n";
-            
-            // Телефон если есть
-            if (isset($point_data['phones']) && is_array($point_data['phones']) && !empty($point_data['phones'])) {
-                $phone = $point_data['phones'][0]['number'] ?? $point_data['phones'][0];
-                echo "Телефон пункта: " . $phone . "\n";
-            }
-            
-            // Режим работы
-            if (isset($point_data['work_time'])) {
-                echo "Режим работы: " . $point_data['work_time'] . "\n";
-            }
-            
-            echo str_repeat('=', 50) . "\n\n";
-        } else {
-            // HTML формат email
-            echo '<div style="background: #f8f9fa; border: 1px solid #28a745; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">';
-            echo '<h3 style="color: #28a745; margin-top: 0; border-bottom: 2px solid #28a745; padding-bottom: 10px;">📦 Информация о доставке СДЭК</h3>';
-            
-            // Название пункта выдачи
-            $point_name = $point_data['name'];
-            if (isset($point_data['location']['city'])) {
-                $point_name = $point_data['location']['city'] . ', ' . str_replace($point_data['location']['city'], '', $point_name);
-                $point_name = trim($point_name, ', ');
-            }
-            echo '<p style="margin: 10px 0;"><strong>Пункт выдачи:</strong> ' . esc_html($point_name) . '</p>';
-            
-            // Стоимость доставки
-            if ($delivery_cost) {
-                echo '<p style="margin: 10px 0;"><strong>Стоимость доставки:</strong> <span style="color: #28a745; font-weight: bold;">' . esc_html($delivery_cost) . ' руб.</span></p>';
-            } elseif ($cdek_shipping) {
-                echo '<p style="margin: 10px 0;"><strong>Стоимость доставки:</strong> <span style="color: #28a745; font-weight: bold;">' . wc_price($cdek_shipping->get_total()) . '</span></p>';
-            }
-            
-            // Полный адрес
-            if (isset($point_data['location']['address_full'])) {
-                echo '<p style="margin: 10px 0;"><strong>Адрес:</strong> ' . esc_html($point_data['location']['address_full']) . '</p>';
-            }
-            
-            // Код пункта
-            echo '<p style="margin: 10px 0;"><strong>Код пункта:</strong> <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px;">' . esc_html($point_code) . '</code></p>';
-            
-            // Телефон если есть
-            if (isset($point_data['phones']) && is_array($point_data['phones']) && !empty($point_data['phones'])) {
-                $phone = $point_data['phones'][0]['number'] ?? $point_data['phones'][0];
-                echo '<p style="margin: 10px 0;"><strong>Телефон пункта:</strong> <a href="tel:' . esc_attr($phone) . '" style="color: #007cba; text-decoration: none;">' . esc_html($phone) . '</a></p>';
-            }
-            
-            // Режим работы
-            if (isset($point_data['work_time'])) {
-                echo '<p style="margin: 10px 0;"><strong>Режим работы:</strong> ' . esc_html($point_data['work_time']) . '</p>';
-            }
-            
-            echo '<div style="margin-top: 15px; padding: 10px; background: #e8f5e8; border-radius: 4px; font-size: 14px;">';
-            echo '<strong>💡 Важно:</strong> Сохраните эту информацию для получения заказа в пункте выдачи СДЭК.';
-            echo '</div>';
-            
-            echo '</div>';
-        }
-    }
+
     
     public function ajax_test_cdek_connection() {
         if (!wp_verify_nonce($_POST['nonce'], 'test_cdek_connection')) {
@@ -662,6 +474,16 @@ class CdekDeliveryPlugin {
     public function load_blocks_integration() {
         if (class_exists('Automattic\WooCommerce\Blocks\Integrations\IntegrationInterface')) {
             include_once plugin_dir_path(__FILE__) . 'includes/class-wc-blocks-integration.php';
+        }
+    }
+    
+    public function load_delivery_data_handler() {
+        // Подключаем обработчик данных доставки
+        if (file_exists(plugin_dir_path(__FILE__) . 'cdek-delivery-data-handler.php')) {
+            include_once plugin_dir_path(__FILE__) . 'cdek-delivery-data-handler.php';
+            error_log('СДЭК: Подключен обработчик данных доставки');
+        } else {
+            error_log('СДЭК: Файл обработчика данных доставки не найден');
         }
     }
 }

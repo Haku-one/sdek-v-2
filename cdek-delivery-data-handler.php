@@ -31,9 +31,8 @@ class CDEK_Delivery_Data_Handler {
         add_action('woocommerce_checkout_order_processed', array($this, 'save_delivery_data_to_order'), 10, 3);
         add_action('woocommerce_checkout_update_order_meta', array($this, 'save_delivery_meta_data'), 10, 1);
         
-        // Дополнительные хуки для WooCommerce Blocks (отключены - используется отдельный класс)
-        // add_action('woocommerce_store_api_checkout_update_order_meta', array($this, 'save_delivery_meta_data'), 10, 1);
-        // add_action('woocommerce_blocks_checkout_order_processed', array($this, 'save_delivery_data_to_order'), 10, 3);
+        // Упрощенная обработка для WooCommerce Blocks
+        add_action('woocommerce_checkout_order_processed', array($this, 'save_blocks_data'), 20, 1);
         
         // Дополнительные хуки для совместимости
         add_action('woocommerce_order_status_changed', array($this, 'log_delivery_data_change'), 10, 3);
@@ -496,6 +495,151 @@ class CDEK_Delivery_Data_Handler {
             printWindow.print();
         }
         </script>';
+    }
+    
+    /**
+     * Упрощенное сохранение данных для WooCommerce Blocks
+     *
+     * @param int $order_id ID заказа
+     */
+    public function save_blocks_data($order_id) {
+        $order = wc_get_order($order_id);
+        if (!$order) {
+            return;
+        }
+        
+        error_log('СДЭК Data Handler: Упрощенная обработка Blocks для заказа #' . $order_id);
+        
+        // Получаем данные из разных источников
+        $input_data = $this->get_input_data();
+        
+        if (!empty($input_data)) {
+            $this->process_input_data($order, $input_data);
+        }
+    }
+    
+    /**
+     * Получение данных из различных источников
+     */
+    private function get_input_data() {
+        $data = array();
+        
+        // 1. Проверяем JSON input для WooCommerce Blocks
+        $json_input = file_get_contents('php://input');
+        if ($json_input) {
+            $json_data = json_decode($json_input, true);
+            if (is_array($json_data)) {
+                $data = array_merge($data, $this->extract_fields($json_data));
+            }
+        }
+        
+        // 2. Проверяем $_POST для классического checkout
+        if (!empty($_POST)) {
+            $data = array_merge($data, $this->extract_fields($_POST));
+        }
+        
+        // 3. Проверяем $_REQUEST как fallback
+        if (!empty($_REQUEST)) {
+            $data = array_merge($data, $this->extract_fields($_REQUEST));
+        }
+        
+        error_log('СДЭК Data Handler: Извлеченные данные: ' . print_r($data, true));
+        return $data;
+    }
+    
+    /**
+     * Извлечение нужных полей из массива данных
+     */
+    private function extract_fields($source) {
+        $fields = array();
+        $search_fields = array(
+            'discuss_delivery_selected',
+            'cdek_delivery_cost',
+            'cdek_selected_point_code',
+            'cdek_selected_point_data'
+        );
+        
+        foreach ($search_fields as $field) {
+            if (isset($source[$field])) {
+                $fields[$field] = $source[$field];
+            }
+        }
+        
+        // Поиск в вложенных структурах (для Blocks API)
+        if (isset($source['extensions'])) {
+            foreach ($search_fields as $field) {
+                if (isset($source['extensions'][$field])) {
+                    $fields[$field] = $source['extensions'][$field];
+                }
+            }
+        }
+        
+        return $fields;
+    }
+    
+    /**
+     * Обработка извлеченных данных
+     */
+    private function process_input_data($order, $data) {
+        $order_id = $order->get_id();
+        
+        // Обработка "Обсудить доставку с менеджером"
+        if (isset($data['discuss_delivery_selected']) && $data['discuss_delivery_selected'] == '1') {
+            error_log('СДЭК Data Handler: Сохраняем обсуждение доставки для заказа #' . $order_id);
+            
+            update_post_meta($order_id, '_discuss_delivery_selected', 'Да');
+            
+            $order->update_meta_data('Тип доставки', 'Обсудить с менеджером');
+            $order->update_meta_data('Статус доставки', 'Требуется обсуждение');
+            $order->update_meta_data('Действие менеджера', 'Связаться с клиентом для обсуждения доставки');
+            $order->add_order_note('Клиент выбрал "Обсудить доставку с менеджером"');
+            $order->save();
+        }
+        
+        // Обработка данных СДЭК
+        if (isset($data['cdek_selected_point_code']) && !empty($data['cdek_selected_point_code'])) {
+            $point_code = sanitize_text_field($data['cdek_selected_point_code']);
+            error_log('СДЭК Data Handler: Сохраняем СДЭК для заказа #' . $order_id . ', код: ' . $point_code);
+            
+            update_post_meta($order_id, '_cdek_point_code', $point_code);
+            
+            if (isset($data['cdek_selected_point_data'])) {
+                $point_data = json_decode(stripslashes($data['cdek_selected_point_data']), true);
+                if ($point_data && is_array($point_data)) {
+                    update_post_meta($order_id, '_cdek_point_data', $point_data);
+                    
+                    $point_name = isset($point_data['name']) ? $point_data['name'] : 'Пункт выдачи';
+                    
+                    $order->update_meta_data('Тип доставки', 'СДЭК');
+                    $order->update_meta_data('Пункт выдачи СДЭК', $point_name);
+                    $order->update_meta_data('Код пункта СДЭК', $point_code);
+                    
+                    if (isset($point_data['location']['address_full'])) {
+                        $order->update_meta_data('Адрес пункта выдачи', $point_data['location']['address_full']);
+                    }
+                    
+                    if (isset($point_data['work_time'])) {
+                        $order->update_meta_data('Время работы ПВЗ', $point_data['work_time']);
+                    }
+                    
+                    if (isset($point_data['phone'])) {
+                        $order->update_meta_data('Телефон ПВЗ', $point_data['phone']);
+                    }
+                    
+                    $order->save();
+                }
+            }
+        }
+        
+        // Обработка стоимости доставки
+        if (isset($data['cdek_delivery_cost']) && !empty($data['cdek_delivery_cost'])) {
+            $delivery_cost = sanitize_text_field($data['cdek_delivery_cost']);
+            error_log('СДЭК Data Handler: Сохраняем стоимость для заказа #' . $order_id . ': ' . $delivery_cost);
+            
+            update_post_meta($order_id, '_cdek_delivery_cost', $delivery_cost);
+            $order->update_meta_data('Стоимость доставки СДЭК', $delivery_cost . ' руб.');
+            $order->save();
+        }
     }
     
     /**

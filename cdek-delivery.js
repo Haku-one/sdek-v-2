@@ -5,38 +5,7 @@
 
 // ========== УТИЛИТЫ ДЛЯ ОПТИМИЗАЦИИ ==========
 
-// Мемоизация с TTL
-class Memoizer {
-    constructor(ttl = 300000) {
-        this.cache = new Map();
-        this.ttl = ttl;
-    }
-    
-    memoize(fn) {
-        return (...args) => {
-            const key = JSON.stringify(args);
-            const cached = this.cache.get(key);
-            
-            if (cached && Date.now() - cached.timestamp < this.ttl) {
-                return cached.value;
-            }
-            
-            const result = fn.apply(this, args);
-            this.cache.set(key, { value: result, timestamp: Date.now() });
-            
-            if (this.cache.size > 50) { // Уменьшено для мобильных
-                const oldestKey = this.cache.keys().next().value;
-                this.cache.delete(oldestKey);
-            }
-            
-            return result;
-        };
-    }
-    
-    clear() {
-        this.cache.clear();
-    }
-}
+// Убрано кеширование для ускорения работы
 
 // Умный дебаунсер с приоритетами
 class SmartDebouncer {
@@ -188,7 +157,6 @@ class PriceFormatter {
 
 class SmartAddressSearch {
     constructor() {
-        this.cache = new Map();
         this.debouncer = new SmartDebouncer();
         this.userLocation = null;
         
@@ -264,7 +232,7 @@ class SmartAddressSearch {
     search(query, callback) {
         this.debouncer.debounce('address-search', () => {
             this.performSearch(query, callback);
-        }, 200); // Уменьшено для более быстрого отклика
+        }, 100); // Ускорено для быстрого отклика
     }
     
     performSearch(query, callback) {
@@ -273,14 +241,7 @@ class SmartAddressSearch {
             return;
         }
         
-        const cacheKey = query.toLowerCase();
-        if (this.cache.has(cacheKey)) {
-            callback(this.cache.get(cacheKey));
-            return;
-        }
-        
         const results = this.searchInCities(query);
-        this.cache.set(cacheKey, results);
         callback(results);
     }
     
@@ -362,13 +323,9 @@ jQuery(document).ready(function($) {
     var isInitialized = false;
     
     // Инициализируем утилиты оптимизации
-    const memoizer = new Memoizer();
     const debouncer = new SmartDebouncer();
     const domBatcher = new DOMBatcher();
     const addressSearch = new SmartAddressSearch();
-    
-    const memoizedCalculateDeliveryCost = memoizer.memoize(calculateDeliveryCost);
-    const memoizedGeocodeAddress = memoizer.memoize(geocodeAddress);
     
     // ========== КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ ДУБЛИРОВАННЫХ ЦЕН ==========
     
@@ -444,8 +401,8 @@ jQuery(document).ready(function($) {
     }
     
     function startPriceMonitoring() {
-        // Уменьшаем частоту для мобильных
-        const interval = window.innerWidth <= 768 ? 2000 : 1000;
+        // Ускоряем проверку цен
+        const interval = window.innerWidth <= 768 ? 1000 : 500;
         
         setInterval(() => {
             fixExistingDuplicatedPrices();
@@ -469,7 +426,7 @@ jQuery(document).ready(function($) {
                 if (shouldCheck) {
                     debouncer.debounce('price-fix', () => {
                         fixExistingDuplicatedPrices();
-                    }, 100, 7);
+                    }, 50, 7);
                 }
             });
             
@@ -1159,7 +1116,7 @@ jQuery(document).ready(function($) {
             
             debouncer.debounce('cdek-search', () => {
                 searchCdekPoints(suggestion.city);
-            }, 100, 6);
+            }, 50, 6);
         }
         
         function saveRecentSearch(suggestion) {
@@ -1199,7 +1156,7 @@ jQuery(document).ready(function($) {
         if (cdekMap) return;
         
         if (typeof ymaps === 'undefined') {
-            setTimeout(initYandexMap, 1000);
+            setTimeout(initYandexMap, 200);
             return;
         }
         
@@ -1287,7 +1244,7 @@ jQuery(document).ready(function($) {
         
         console.log('🔍 Поиск ПВЗ для города:', parsedAddress.city);
         
-        memoizedGeocodeAddress(address, function(coords) {
+        geocodeAddress(address, function(coords) {
             window.currentSearchCoordinates = coords;
             performCdekSearch();
         });
@@ -1376,7 +1333,7 @@ jQuery(document).ready(function($) {
         cdekPoints = points;
         
         if (!cdekMap || typeof ymaps === 'undefined') {
-            setTimeout(function() { displayCdekPoints(points); }, 1000);
+            setTimeout(function() { displayCdekPoints(points); }, 200);
             return;
         }
         
@@ -1660,7 +1617,7 @@ jQuery(document).ready(function($) {
     function updateOrderSummary(point) {
         showDeliveryCalculationLoader();
         
-        memoizedCalculateDeliveryCost(point, function(deliveryCost) {
+        calculateDeliveryCost(point, function(deliveryCost) {
             hideDeliveryCalculationLoader();
             
             var allShippingBlocks = $();
@@ -1981,14 +1938,14 @@ jQuery(document).ready(function($) {
         
         $('#cdek-map-container').show();
         
-        setTimeout(() => initYandexMap(), 500);
-        setTimeout(() => initAddressAutocomplete(), 1000);
+        setTimeout(() => initYandexMap(), 100);
+        setTimeout(() => initAddressAutocomplete(), 200);
         
         var currentAddress = $('#shipping-address_1').val();
         if (currentAddress) {
             var city = currentAddress.split(',')[0].trim();
             if (city.length > 2) {
-                setTimeout(() => searchCdekPoints(city), 1000);
+                setTimeout(() => searchCdekPoints(city), 200);
             }
         }
         
@@ -1997,7 +1954,7 @@ jQuery(document).ready(function($) {
         setTimeout(() => {
             removeDuplicateTotalElements();
             fixExistingDuplicatedPrices();
-        }, 2000);
+        }, 500);
         
         console.log('✅ СДЭК доставка инициализирована');
     }
@@ -2034,7 +1991,7 @@ jQuery(document).ready(function($) {
     
     $(document).on('change', 'input[name="shipping_method[0]"], input[name*="radio-control"], input[value*="cdek_delivery"]', function() {
         if ($(this).val().indexOf('cdek_delivery') !== -1) {
-            debouncer.debounce('init-cdek', () => initCdekDelivery(), 100, 8);
+            debouncer.debounce('init-cdek', () => initCdekDelivery(), 50, 8);
         } else if ($(this).attr('name') && $(this).attr('name').indexOf('shipping_method') !== -1) {
             $('#cdek-map-container').hide();
             resetCdekShippingToDefault();
@@ -2042,7 +1999,7 @@ jQuery(document).ready(function($) {
     });
     
     $(document).on('click', 'input[value*="cdek_delivery"]', function() {
-        debouncer.debounce('init-cdek-click', () => initCdekDelivery(), 200, 7);
+        debouncer.debounce('init-cdek-click', () => initCdekDelivery(), 50, 7);
     });
     
     $(document).on('input', '#shipping-address_1', function() {
@@ -2050,7 +2007,7 @@ jQuery(document).ready(function($) {
         var city = address.split(',')[0].trim();
         
         if (city.length > 2) {
-            debouncer.debounce('address-change', () => searchCdekPoints(city), 500, 4);
+            debouncer.debounce('address-change', () => searchCdekPoints(city), 200, 4);
         }
     });
     
@@ -2087,7 +2044,7 @@ jQuery(document).ready(function($) {
                 } else if ($('#cdek-map-container').length === 0) {
                     initCdekDelivery();
                 }
-            }, 500, 5);
+            }, 100, 5);
         }
     });
     
@@ -2117,7 +2074,7 @@ jQuery(document).ready(function($) {
             hideCdekShippingBlock();
             initCdekDelivery();
         }
-    }, 2000);
+    }, 500);
     
     setTimeout(() => {
         hideUnnecessaryFields();
@@ -2125,7 +2082,7 @@ jQuery(document).ready(function($) {
         if ($('#address-select').length === 0 && $('#address-suggestions').length === 0) {
             initAddressAutocomplete();
         }
-    }, 5000);
+    }, 1000);
     
     setTimeout(() => {
         hideUnnecessaryFields();
@@ -2136,10 +2093,10 @@ jQuery(document).ready(function($) {
         
         removeDuplicateTotalElements();
         fixExistingDuplicatedPrices();
-    }, 4000);
+    }, 1000);
     
-    // Оптимизированная проверка цен для мобильных
-    const priceCheckInterval = window.innerWidth <= 768 ? 3000 : 2000;
+    // Ускоренная проверка цен
+    const priceCheckInterval = window.innerWidth <= 768 ? 1500 : 1000;
     setInterval(() => fixExistingDuplicatedPrices(), priceCheckInterval);
     
     // Сбрасываем предыдущие состояния поиска

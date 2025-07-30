@@ -28,57 +28,7 @@ do_action( 'woocommerce_email_header', $email_heading, $email ); ?>
 <p><?php printf( esc_html__( 'You have received the following order from %s:', 'woocommerce' ), $order->get_formatted_billing_full_name() ); ?></p>
 
 <?php
-// СДЭК: Проверяем выбор "Обсудить доставку с менеджером"
-$discuss_delivery = get_post_meta($order->get_id(), '_discuss_delivery_selected', true);
-
-if ($discuss_delivery == 'Да') {
-    ?>
-    <!-- СДЭК: Блок информации об обсуждении доставки -->
-    <div style="background: #ffeb3b; border: 2px solid #ff9800; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">
-        <h2 style="color: #e65100; margin-top: 0; border-bottom: 2px solid #ff9800; padding-bottom: 10px; text-align: center;">
-            🗣️ ТРЕБУЕТСЯ ОБСУЖДЕНИЕ ДОСТАВКИ
-        </h2>
-        <div style="background: #fff3e0; padding: 15px; border-radius: 6px; margin-bottom: 15px; text-align: center;">
-            <p style="margin: 0; color: #e65100; font-size: 16px; font-weight: bold;">
-                ⚠️ ПРИОРИТЕТ: Связаться с клиентом в течение рабочего дня
-            </p>
-        </div>
-        <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-                <td style="padding: 10px; border: 1px solid #ffcc02; background: #fffde7; color: #e65100; font-weight: bold; width: 35%;">
-                    📞 Действие:
-                </td>
-                <td style="padding: 10px; border: 1px solid #ffcc02; background: #ffffff; color: #e65100;">
-                    Связаться с клиентом для обсуждения доставки
-                </td>
-            </tr>
-            <tr>
-                <td style="padding: 10px; border: 1px solid #ffcc02; background: #fffde7; color: #e65100; font-weight: bold;">
-                    📋 Обсудить:
-                </td>
-                <td style="padding: 10px; border: 1px solid #ffcc02; background: #ffffff; color: #e65100;">
-                    Адрес, время, стоимость и способ доставки
-                </td>
-            </tr>
-            <tr>
-                <td style="padding: 10px; border: 1px solid #ffcc02; background: #fffde7; color: #e65100; font-weight: bold;">
-                    📞 Телефон клиента:
-                </td>
-                <td style="padding: 10px; border: 1px solid #ffcc02; background: #ffffff; color: #e65100; font-weight: bold;">
-                    <?php echo esc_html($order->get_billing_phone()); ?>
-                </td>
-            </tr>
-        </table>
-        <div style="margin-top: 15px; padding: 15px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 6px; text-align: center;">
-            <strong style="color: #155724;">💡 После обсуждения:</strong><br>
-            <span style="color: #155724; font-size: 14px;">
-                Обновите информацию о доставке в заказе и добавьте примечание с деталями
-            </span>
-        </div>
-    </div>
-    <!-- Конец блока обсуждения доставки -->
-    <?php
-}
+// Убираем отдельный блок - теперь информация будет в таблице заказа через кастомные поля
 
 // СДЭК: Добавляем информацию о доставке в начале письма
 $cdek_point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);

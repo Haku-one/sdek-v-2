@@ -393,6 +393,11 @@ function cdek_save_discuss_delivery_choice($order_id) {
             
             $order = wc_get_order($order_id);
             if ($order) {
+                // Добавляем как кастомное поле заказа для отображения в email и админке
+                $order->update_meta_data('Тип доставки', 'Обсудить с менеджером');
+                $order->update_meta_data('Статус доставки', 'Требуется обсуждение');
+                $order->save();
+                
                 $order->add_order_note('Клиент выбрал "Обсудить доставку с менеджером"');
                 error_log('СДЭК: Сохранен выбор "Обсудить доставку с менеджером" для заказа #' . $order_id);
             }

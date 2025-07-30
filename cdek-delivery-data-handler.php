@@ -156,6 +156,12 @@ class CDEK_Delivery_Data_Handler {
                 
                 $order = wc_get_order($order_id);
                 if ($order) {
+                    // Добавляем как кастомные поля заказа для отображения в email и админке
+                    $order->update_meta_data('Тип доставки', 'Обсудить с менеджером');
+                    $order->update_meta_data('Статус доставки', 'Требуется обсуждение');
+                    $order->update_meta_data('Действие менеджера', 'Связаться с клиентом для обсуждения доставки');
+                    $order->save();
+                    
                     $order->add_order_note('Клиент выбрал "Обсудить доставку с менеджером"');
                 }
             } else {
@@ -172,6 +178,13 @@ class CDEK_Delivery_Data_Handler {
             $delivery_cost = sanitize_text_field($_POST['cdek_delivery_cost']);
             update_post_meta($order_id, '_cdek_delivery_cost', $delivery_cost);
             error_log('СДЭК Data Handler: Сохранена стоимость доставки для заказа ' . $order_id . ': ' . $delivery_cost . ' руб.');
+            
+            // Добавляем как кастомное поле для отображения в email и админке
+            $order = wc_get_order($order_id);
+            if ($order) {
+                $order->update_meta_data('Стоимость доставки СДЭК', $delivery_cost . ' руб.');
+                $order->save();
+            }
         }
         
         // Сохраняем код пункта выдачи
@@ -188,6 +201,28 @@ class CDEK_Delivery_Data_Handler {
                 update_post_meta($order_id, '_cdek_point_data', $point_data);
                 $point_name = isset($point_data['name']) ? $point_data['name'] : 'Пункт выдачи';
                 error_log('СДЭК Data Handler: Сохранены данные пункта выдачи для заказа ' . $order_id . ': ' . $point_name);
+                
+                // Добавляем информацию о доставке СДЭК как кастомные поля
+                $order = wc_get_order($order_id);
+                if ($order) {
+                    $order->update_meta_data('Тип доставки', 'СДЭК');
+                    $order->update_meta_data('Пункт выдачи СДЭК', $point_name);
+                    
+                    if (isset($point_data['location']['address_full'])) {
+                        $order->update_meta_data('Адрес пункта выдачи', $point_data['location']['address_full']);
+                    }
+                    
+                    if (isset($point_data['work_time'])) {
+                        $order->update_meta_data('Время работы ПВЗ', $point_data['work_time']);
+                    }
+                    
+                    if (isset($point_data['phone'])) {
+                        $order->update_meta_data('Телефон ПВЗ', $point_data['phone']);
+                    }
+                    
+                    $order->update_meta_data('Код пункта СДЭК', $point_code);
+                    $order->save();
+                }
                 
                 // Дополнительно сохраняем структурированные данные
                 $this->save_structured_delivery_data($order_id, $point_data);

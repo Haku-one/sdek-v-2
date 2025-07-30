@@ -1153,12 +1153,16 @@ jQuery(document).ready(function($) {
     // ========== ОСТАЛЬНЫЕ ФУНКЦИИ (СОКРАЩЕННЫЕ) ==========
     
     function initYandexMap() {
-        if (cdekMap && window.isInitialized !== false) {
-            console.log('🗺️ Карта уже инициализирована');
+        // Проверяем, что карта действительно существует И контейнер видимый
+        const mapContainer = document.getElementById('cdek-map');
+        const mapVisible = mapContainer && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0;
+        
+        if (cdekMap && window.isInitialized !== false && mapVisible) {
+            console.log('🗺️ Карта уже инициализирована и видима');
             return;
         }
         
-        console.log('🚀 Начинаем инициализацию Яндекс.Карт');
+        console.log('🚀 Начинаем инициализацию Яндекс.Карт (карта:', !!cdekMap, 'флаг:', window.isInitialized, 'видима:', mapVisible, ')');
         
         // Проверяем, произошла ли ошибка загрузки Яндекс.Карт
         if (window.yandexMapsLoadError) {
@@ -2078,12 +2082,14 @@ jQuery(document).ready(function($) {
     function initCdekDelivery() {
         // Добавляем принудительную переинициализацию при переключении вкладок
         const forceReinit = window.isInitialized === false;
-        if (isInitialized && !forceReinit) {
+        const mapContainerExists = !!document.getElementById('cdek-map-container');
+        
+        if (isInitialized && !forceReinit && mapContainerExists) {
             console.log('⏭️ СДЭК уже инициализирован, пропускаем');
             return;
         }
         
-        console.log('🚀 Инициализация СДЭК доставки' + (forceReinit ? ' (переинициализация)' : ''));
+        console.log('🚀 Инициализация СДЭК доставки (карта:', !!window.cdekMap, 'флаг:', isInitialized, 'форс:', forceReinit, 'контейнер:', mapContainerExists, ')');
         removeDuplicateTotalElements();
         hideCdekShippingBlock();
         
@@ -2511,15 +2517,25 @@ jQuery(document).ready(function($) {
                         });
                         
                         // Очищаем карту при переходе на самовывоз
+                        console.log('🧹 Переход на самовывоз - очищаем карту и сбрасываем флаги');
                         if (window.cdekMap) {
                             try {
                                 window.cdekMap.destroy();
+                                console.log('✅ Карта уничтожена');
                             } catch (e) {
                                 console.log('Ошибка при очистке карты:', e);
                             }
                             window.cdekMap = null;
                         }
                         window.isInitialized = false;
+                        isInitialized = false; // Сбрасываем локальный флаг тоже
+                        
+                        // Очищаем контейнер карты
+                        const mapContainer = document.getElementById('cdek-map');
+                        if (mapContainer) {
+                            mapContainer.innerHTML = '';
+                            console.log('✅ Контейнер карты очищен');
+                        }
                     }
                 }
             };

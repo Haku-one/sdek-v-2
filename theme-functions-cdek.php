@@ -47,79 +47,247 @@ function cdek_setup_email_templates() {
 }
 
 /**
+ * Определение типа доставки на основе всех доступных данных
+ */
+function cdek_determine_delivery_type($order, $discuss_delivery, $pickup_delivery, $shipping_method) {
+    // 1. Проверяем прямые мета-поля
+    if ($discuss_delivery == 'Да') {
+        return 'discuss';
+    }
+    
+    if ($pickup_delivery == 'Да') {
+        return 'pickup';
+    }
+    
+    // 2. Проверяем по способу доставки
+    if ($shipping_method) {
+        $method_title = strtolower($shipping_method->get_method_title());
+        
+        if (strpos($method_title, 'самовывоз') !== false || 
+            strpos($method_title, 'pickup') !== false ||
+            strpos($method_title, 'самовызов') !== false) {
+            return 'pickup';
+        }
+        
+        if (strpos($method_title, 'сдэк') !== false || 
+            strpos($method_title, 'cdek') !== false ||
+            strpos($method_title, 'доставка') !== false) {
+            return 'cdek';
+        }
+    }
+    
+    // 3. Проверяем наличие данных СДЭК
+    $cdek_point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
+    $cdek_point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
+    
+    if ($cdek_point_code && $cdek_point_data) {
+        return 'cdek';
+    }
+    
+    // 4. По умолчанию обычная доставка
+    return 'standard';
+}
+
+/**
  * Добавление информации о доставке во все email уведомления
  * (используется как fallback если кастомные шаблоны не установлены)
  */
 function cdek_add_delivery_info_to_any_email($order, $sent_to_admin, $plain_text, $email) {
-    // Получаем данные о доставке СДЭК
-    $cdek_point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
-    $cdek_point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
+    $order_id = $order->get_id();
     
-    if (!$cdek_point_code || !$cdek_point_data) {
-        return;
-    }
+    // Получаем информацию о выбранном способе доставки
+    $discuss_delivery = get_post_meta($order_id, '_discuss_delivery_selected', true);
+    $pickup_delivery = get_post_meta($order_id, '_pickup_delivery_selected', true);
+    $shipping_methods = $order->get_shipping_methods();
+    $shipping_method = reset($shipping_methods); // Получаем первый метод доставки
     
-    // Получаем стоимость доставки
-    $cdek_delivery_cost = get_post_meta($order->get_id(), '_cdek_delivery_cost', true);
-    if (!$cdek_delivery_cost) {
-        $shipping_methods = $order->get_shipping_methods();
-        foreach ($shipping_methods as $shipping_method) {
-            if (strpos($shipping_method->get_method_id(), 'cdek') !== false) {
-                $cdek_delivery_cost = $shipping_method->get_total();
-                break;
-            }
-        }
-    }
-    
-    // Формируем название пункта выдачи
-    $point_name = $cdek_point_data['name'];
-    if (isset($cdek_point_data['location']['city'])) {
-        $city = $cdek_point_data['location']['city'];
-        $point_name = $city . ', ' . str_replace($city, '', $point_name);
-        $point_name = trim($point_name, ', ');
-    }
-    
-    // Получаем адрес
-    $address = '';
-    if (isset($cdek_point_data['location']['address_full'])) {
-        $address = $cdek_point_data['location']['address_full'];
-    } elseif (isset($cdek_point_data['location']['address'])) {
-        $address = $cdek_point_data['location']['address'];
-    }
+    // Функция для определения типа доставки
+    $delivery_type = cdek_determine_delivery_type($order, $discuss_delivery, $pickup_delivery, $shipping_method);
     
     if ($plain_text) {
         // Текстовый формат email
         echo "\n" . str_repeat('=', 50) . "\n";
-        echo "ИНФОРМАЦИЯ О ДОСТАВКЕ СДЭК\n";
+        echo "ИНФОРМАЦИЯ О ДОСТАВКЕ\n";
         echo str_repeat('=', 50) . "\n";
-        echo "Пункт выдачи: " . $point_name . "\n";
-        if ($cdek_delivery_cost) {
-            echo "Стоимость доставки: " . $cdek_delivery_cost . " руб.\n";
+        
+        if ($delivery_type === 'discuss') {
+            // Обсуждение доставки с менеджером
+            if ($sent_to_admin) {
+                echo "⚠️ ВНИМАНИЕ: Необходимо связаться с клиентом для обсуждения доставки!\n";
+                echo "Уточните: адрес, время, стоимость и способ доставки.\n";
+            } else {
+                echo "Способ доставки: Обсудить доставку с менеджером\n";
+                echo "Наш менеджер свяжется с вами для обсуждения условий доставки.\n";
+                echo "Ожидайте звонка в рабочее время.\n";
+            }
+        } elseif ($delivery_type === 'pickup') {
+            // Самовывоз
+            echo "Способ доставки: Самовывоз (г.Саратов, ул. Осипова, д. 18а)\n";
+            echo "Адрес пункта выдачи: г.Саратов, ул. Осипова, д. 18а\n";
+            echo "Режим работы: пн-пт 9:00-18:00, сб 10:00-16:00\n";
+        } elseif ($delivery_type === 'cdek') {
+            // СДЭК доставка
+            $cdek_point_code = get_post_meta($order_id, '_cdek_point_code', true);
+            $cdek_point_data = get_post_meta($order_id, '_cdek_point_data', true);
+            
+            // Получаем стоимость доставки
+            $cdek_delivery_cost = get_post_meta($order_id, '_cdek_delivery_cost', true);
+            if (!$cdek_delivery_cost && $shipping_method) {
+                $cdek_delivery_cost = $shipping_method->get_total();
+            }
+            
+            // Формируем название пункта выдачи
+            $point_name = $cdek_point_data['name'];
+            if (isset($cdek_point_data['location']['city'])) {
+                $city = $cdek_point_data['location']['city'];
+                $point_name = $city . ', ' . str_replace($city, '', $point_name);
+                $point_name = trim($point_name, ', ');
+            }
+            
+            // Получаем адрес
+            $address = '';
+            if (isset($cdek_point_data['location']['address_full'])) {
+                $address = $cdek_point_data['location']['address_full'];
+            } elseif (isset($cdek_point_data['location']['address'])) {
+                $address = $cdek_point_data['location']['address'];
+            }
+            
+            echo "Способ доставки: СДЭК\n";
+            echo "Пункт выдачи: " . $point_name . "\n";
+            if ($cdek_delivery_cost) {
+                echo "Стоимость доставки: " . $cdek_delivery_cost . " руб.\n";
+            }
+            if ($address) {
+                echo "Адрес: " . $address . "\n";
+            }
+            echo "Код пункта: " . $cdek_point_code . "\n";
+        } else {
+            // Обычная доставка
+            if ($shipping_method) {
+                echo "Способ доставки: " . $shipping_method->get_method_title() . "\n";
+                if ($shipping_method->get_total()) {
+                    echo "Стоимость доставки: " . $shipping_method->get_total() . " руб.\n";
+                }
+            }
         }
-        if ($address) {
-            echo "Адрес: " . $address . "\n";
-        }
-        echo "Код пункта: " . $cdek_point_code . "\n";
         echo str_repeat('=', 50) . "\n\n";
     } else {
         // HTML формат email
-        echo '<div style="background: #f8f9fa; border: 1px solid #28a745; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">';
-        echo '<h3 style="color: #28a745; margin-top: 0; border-bottom: 2px solid #28a745; padding-bottom: 10px;">📦 Информация о доставке СДЭК</h3>';
-        echo '<p><strong>Пункт выдачи:</strong> ' . esc_html($point_name) . '</p>';
-        
-        if ($cdek_delivery_cost) {
-            echo '<p><strong>Стоимость доставки:</strong> <span style="color: #28a745; font-weight: bold;">' . esc_html($cdek_delivery_cost) . ' руб.</span></p>';
+        if ($delivery_type === 'discuss') {
+            // Обсуждение доставки с менеджером
+            if ($sent_to_admin) {
+                ?>
+                <div style="background: #ffeb3b; border: 2px solid #ff9800; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">
+                    <h3 style="color: #e65100; margin-top: 0; border-bottom: 2px solid #ff9800; padding-bottom: 10px;">
+                        🗣️ ОБСУДИТЬ ДОСТАВКУ С МЕНЕДЖЕРОМ
+                    </h3>
+                    <div style="background: #fff3e0; padding: 15px; border-radius: 6px; margin-bottom: 15px; text-align: center;">
+                        <p style="margin: 0; color: #e65100; font-size: 16px; font-weight: bold;">
+                            ⚠️ ТРЕБУЕТСЯ ДЕЙСТВИЕ: Связаться с клиентом
+                        </p>
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 10px; border: 1px solid #ffcc02; background: #fffde7; color: #e65100; font-weight: bold;">
+                                📞 Что обсудить:
+                            </td>
+                            <td style="padding: 10px; border: 1px solid #ffcc02; background: #ffffff; color: #e65100;">
+                                Адрес, время, стоимость и способ доставки
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                <?php
+            } else {
+                ?>
+                <div style="background: #e3f2fd; border: 2px solid #1976d2; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">
+                    <h3 style="color: #1976d2; margin-top: 0; border-bottom: 2px solid #1976d2; padding-bottom: 10px;">
+                        🗣️ Обсуждение условий доставки
+                    </h3>
+                    <div style="background: #bbdefb; padding: 15px; border-radius: 6px; margin-bottom: 20px; text-align: center;">
+                        <p style="margin: 0; color: #0d47a1; font-size: 16px; font-weight: bold;">
+                            📞 Наш менеджер свяжется с вами для обсуждения доставки
+                        </p>
+                    </div>
+                    <p style="color: #1565c0; text-align: center; margin: 15px 0;">
+                        <strong>Ожидайте звонка в рабочее время (пн-пт: 9:00-18:00)</strong>
+                    </p>
+                </div>
+                                 <?php
+            }
+         } elseif ($delivery_type === 'pickup') {
+            // Самовывоз
+            ?>
+            <div style="background: #f0f8ff; border: 2px solid #4169e1; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">
+                <h3 style="color: #4169e1; margin-top: 0; border-bottom: 2px solid #4169e1; padding-bottom: 10px;">
+                    🏪 Самовывоз
+                </h3>
+                <div style="background: #e6f3ff; padding: 15px; border-radius: 6px;">
+                    <p style="margin: 0; color: #2c5aa0; font-size: 16px; font-weight: bold;">
+                        📍 Адрес: г.Саратов, ул. Осипова, д. 18а
+                    </p>
+                    <p style="margin: 10px 0 0 0; color: #2c5aa0; font-size: 14px;">
+                        🕐 Режим работы: пн-пт 9:00-18:00, сб 10:00-16:00
+                    </p>
+                </div>
+            </div>
+            <?php
+        } elseif ($delivery_type === 'cdek') {
+            // СДЭК доставка
+            $cdek_point_code = get_post_meta($order_id, '_cdek_point_code', true);
+            $cdek_point_data = get_post_meta($order_id, '_cdek_point_data', true);
+            
+            // Получаем стоимость доставки
+            $cdek_delivery_cost = get_post_meta($order_id, '_cdek_delivery_cost', true);
+            if (!$cdek_delivery_cost && $shipping_method) {
+                $cdek_delivery_cost = $shipping_method->get_total();
+            }
+            
+            // Формируем название пункта выдачи
+            $point_name = $cdek_point_data['name'];
+            if (isset($cdek_point_data['location']['city'])) {
+                $city = $cdek_point_data['location']['city'];
+                $point_name = $city . ', ' . str_replace($city, '', $point_name);
+                $point_name = trim($point_name, ', ');
+            }
+            
+            // Получаем адрес
+            $address = '';
+            if (isset($cdek_point_data['location']['address_full'])) {
+                $address = $cdek_point_data['location']['address_full'];
+            } elseif (isset($cdek_point_data['location']['address'])) {
+                $address = $cdek_point_data['location']['address'];
+            }
+            
+            echo '<div style="background: #f8f9fa; border: 1px solid #28a745; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">';
+            echo '<h3 style="color: #28a745; margin-top: 0; border-bottom: 2px solid #28a745; padding-bottom: 10px;">📦 Доставка СДЭК</h3>';
+            echo '<p><strong>Пункт выдачи:</strong> ' . esc_html($point_name) . '</p>';
+            
+            if ($cdek_delivery_cost) {
+                echo '<p><strong>Стоимость доставки:</strong> <span style="color: #28a745; font-weight: bold;">' . esc_html($cdek_delivery_cost) . ' руб.</span></p>';
+            }
+            
+            if ($address) {
+                echo '<p><strong>Адрес:</strong> <small style="color: #666;">' . esc_html($address) . '</small></p>';
+            }
+            
+            echo '<p><strong>Код пункта:</strong> <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px;">' . esc_html($cdek_point_code) . '</code></p>';
+            echo '<div style="margin-top: 15px; padding: 10px; background: #e8f5e8; border-radius: 4px; font-size: 14px;">';
+            echo '<strong>💡 Важно:</strong> Сохраните эту информацию для получения заказа в пункте выдачи СДЭК.';
+            echo '</div>';
+            echo '</div>';
+        } else {
+            // Обычная доставка
+            if ($shipping_method) {
+                echo '<div style="background: #f8f9fa; border: 1px solid #007cba; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">';
+                echo '<h3 style="color: #007cba; margin-top: 0; border-bottom: 2px solid #007cba; padding-bottom: 10px;">🚚 Доставка</h3>';
+                echo '<p><strong>Способ доставки:</strong> ' . esc_html($shipping_method->get_method_title()) . '</p>';
+                if ($shipping_method->get_total()) {
+                    echo '<p><strong>Стоимость:</strong> <span style="color: #007cba; font-weight: bold;">' . esc_html($shipping_method->get_total()) . ' руб.</span></p>';
+                }
+                echo '</div>';
+            }
         }
-        
-        if ($address) {
-            echo '<p><strong>Адрес:</strong> ' . esc_html($address) . '</p>';
-        }
-        
-        echo '<p><strong>Код пункта:</strong> <code style="background: #e9ecef; padding: 2px 6px; border-radius: 3px;">' . esc_html($cdek_point_code) . '</code></p>';
-        echo '<div style="margin-top: 15px; padding: 10px; background: #e8f5e8; border-radius: 4px; font-size: 14px;">';
-        echo '<strong>💡 Важно:</strong> Сохраните эту информацию для получения заказа в пункте выдачи СДЭК.';
-        echo '</div>';
-        echo '</div>';
     }
 }
 
@@ -377,13 +545,19 @@ function get_cdek_delivery_info($order_id) {
 }
 
 /**
- * Сохранение выбора "Обсудить доставку с менеджером"
+ * Сохранение выбора типа доставки
  */
 function cdek_save_discuss_delivery_choice($order_id) {
     // Добавляем подробную отладочную информацию
     error_log('СДЭК DEBUG: Функция cdek_save_discuss_delivery_choice вызвана для заказа #' . $order_id);
     error_log('СДЭК DEBUG: $_POST данные: ' . print_r($_POST, true));
     
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        return;
+    }
+    
+    // Сохраняем выбор "Обсудить доставку с менеджером"
     if (isset($_POST['discuss_delivery_selected'])) {
         error_log('СДЭК DEBUG: Поле discuss_delivery_selected найдено в $_POST со значением: ' . $_POST['discuss_delivery_selected']);
         
@@ -391,25 +565,50 @@ function cdek_save_discuss_delivery_choice($order_id) {
             update_post_meta($order_id, '_discuss_delivery_selected', 'Да');
             error_log('СДЭК DEBUG: Сохранено в мета поле _discuss_delivery_selected значение "Да"');
             
-            $order = wc_get_order($order_id);
-            if ($order) {
-                $order->add_order_note('Клиент выбрал "Обсудить доставку с менеджером"');
-                error_log('СДЭК: Сохранен выбор "Обсудить доставку с менеджером" для заказа #' . $order_id);
-            }
+            $order->add_order_note('Клиент выбрал "Обсудить доставку с менеджером"');
+            error_log('СДЭК: Сохранен выбор "Обсудить доставку с менеджером" для заказа #' . $order_id);
         } else {
             error_log('СДЭК DEBUG: Значение discuss_delivery_selected не равно "1": ' . $_POST['discuss_delivery_selected']);
         }
     } else {
+        // Проверяем тип доставки по способу доставки в заказе
+        $shipping_methods = $order->get_shipping_methods();
+        $shipping_method = reset($shipping_methods);
+        
+        if ($shipping_method) {
+            $method_title = $shipping_method->get_method_title();
+            
+            // Определяем тип доставки по названию метода
+            if (strpos($method_title, 'Самовывоз') !== false || strpos($method_title, 'самовывоз') !== false) {
+                update_post_meta($order_id, '_pickup_delivery_selected', 'Да');
+                $order->add_order_note('Клиент выбрал самовывоз');
+                error_log('СДЭК: Сохранен выбор "Самовывоз" для заказа #' . $order_id);
+            } elseif (strpos($method_title, 'СДЭК') !== false || strpos($method_title, 'сдэк') !== false) {
+                update_post_meta($order_id, '_cdek_delivery_selected', 'Да');
+                $order->add_order_note('Клиент выбрал доставку СДЭК');
+                error_log('СДЭК: Сохранен выбор "Доставка СДЭК" для заказа #' . $order_id);
+            }
+            
+            error_log('СДЭК DEBUG: Тип доставки определен по методу: ' . $method_title);
+        }
+        
         error_log('СДЭК DEBUG: Поле discuss_delivery_selected НЕ найдено в $_POST');
         error_log('СДЭК DEBUG: Доступные POST поля: ' . implode(', ', array_keys($_POST)));
     }
 }
 
 /**
- * Отображение информации об обсуждении доставки в админке заказа
+ * Отображение информации о типе доставки в админке заказа
  */
 function cdek_show_discuss_delivery_admin($order) {
-    if (get_post_meta($order->get_id(), '_discuss_delivery_selected', true) == 'Да') {
+    $order_id = $order->get_id();
+    
+    // Проверяем тип доставки
+    $discuss_delivery = get_post_meta($order_id, '_discuss_delivery_selected', true);
+    $pickup_delivery = get_post_meta($order_id, '_pickup_delivery_selected', true);
+    $cdek_delivery = get_post_meta($order_id, '_cdek_delivery_selected', true);
+    
+    if ($discuss_delivery == 'Да') {
         ?>
         <div style="background: #ffeb3b; border: 2px solid #ff9800; padding: 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
             <h4 style="color: #e65100; margin: 0; font-size: 16px; display: flex; align-items: center;">
@@ -426,114 +625,43 @@ function cdek_show_discuss_delivery_admin($order) {
             </div>
         </div>
         <?php
+    } elseif ($pickup_delivery == 'Да') {
+        ?>
+        <div style="background: #e3f2fd; border: 2px solid #1976d2; padding: 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h4 style="color: #1976d2; margin: 0; font-size: 16px; display: flex; align-items: center;">
+                <span style="font-size: 20px; margin-right: 8px;">🏪</span>
+                САМОВЫВОЗ
+            </h4>
+            <p style="color: #1976d2; font-weight: bold; margin: 8px 0 0 0; font-size: 14px;">
+                📍 Адрес: г.Саратов, ул. Осипова, д. 18а
+            </p>
+            <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 4px;">
+                <small style="color: #0d47a1; font-weight: bold;">
+                    🕐 Режим работы: пн-пт 9:00-18:00, сб 10:00-16:00
+                </small>
+            </div>
+        </div>
+        <?php
+    } elseif ($cdek_delivery == 'Да') {
+        ?>
+        <div style="background: #e8f5e8; border: 2px solid #4caf50; padding: 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h4 style="color: #2e7d32; margin: 0; font-size: 16px; display: flex; align-items: center;">
+                <span style="font-size: 20px; margin-right: 8px;">📦</span>
+                ДОСТАВКА СДЭК
+            </h4>
+            <p style="color: #2e7d32; font-weight: bold; margin: 8px 0 0 0; font-size: 14px;">
+                ✅ Данные доставки сохранены в заказе
+            </p>
+        </div>
+        <?php
     }
 }
 
 /**
  * Добавление информации об обсуждении доставки в email уведомления
+ * (отключено, так как обработка перенесена в cdek_add_delivery_info_to_any_email)
  */
 function cdek_email_discuss_delivery_info($order, $sent_to_admin, $plain_text, $email) {
-    if (get_post_meta($order->get_id(), '_discuss_delivery_selected', true) == 'Да') {
-        if ($plain_text) {
-            echo "\n" . str_repeat('=', 50) . "\n";
-            echo "ДОСТАВКА: Обсуждается с менеджером\n";
-            echo str_repeat('=', 50) . "\n";
-            
-            if ($sent_to_admin) {
-                echo "⚠️ ВНИМАНИЕ: Необходимо связаться с клиентом для обсуждения доставки!\n";
-                echo "Уточните: адрес, время, стоимость и способ доставки.\n";
-            } else {
-                echo "Наш менеджер свяжется с вами для обсуждения условий доставки.\n";
-                echo "Ожидайте звонка в рабочее время.\n";
-            }
-            echo "\n";
-        } else {
-            if ($sent_to_admin) {
-                ?>
-                <!-- Информация об обсуждении доставки для администратора -->
-                <div style="background: #ffeb3b; border: 2px solid #ff9800; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">
-                    <h2 style="color: #e65100; margin-top: 0; border-bottom: 2px solid #ff9800; padding-bottom: 10px; text-align: center;">
-                        🗣️ ОБСУДИТЬ ДОСТАВКУ С МЕНЕДЖЕРОМ
-                    </h2>
-                    <div style="background: #fff3e0; padding: 15px; border-radius: 6px; margin-bottom: 15px; text-align: center;">
-                        <p style="margin: 0; color: #e65100; font-size: 16px; font-weight: bold;">
-                            ⚠️ ТРЕБУЕТСЯ ДЕЙСТВИЕ: Связаться с клиентом
-                        </p>
-                    </div>
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <tr>
-                            <td style="padding: 10px; border: 1px solid #ffcc02; background: #fffde7; color: #e65100; font-weight: bold;">
-                                📞 Что обсудить:
-                            </td>
-                            <td style="padding: 10px; border: 1px solid #ffcc02; background: #ffffff; color: #e65100;">
-                                Адрес, время, стоимость и способ доставки
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 10px; border: 1px solid #ffcc02; background: #fffde7; color: #e65100; font-weight: bold;">
-                                🕐 Приоритет:
-                            </td>
-                            <td style="padding: 10px; border: 1px solid #ffcc02; background: #ffffff; color: #e65100;">
-                                Высокий - связаться в течение рабочего дня
-                            </td>
-                        </tr>
-                    </table>
-                    <div style="margin-top: 15px; padding: 15px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 6px; text-align: center;">
-                        <strong style="color: #155724;">💡 Совет:</strong><br>
-                        <span style="color: #155724; font-size: 14px;">
-                            После обсуждения обновите информацию о доставке в заказе
-                        </span>
-                    </div>
-                </div>
-                <?php
-            } else {
-                ?>
-                <!-- Информация об обсуждении доставки для клиента -->
-                <div style="background: #e3f2fd; border: 2px solid #1976d2; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">
-                    <h2 style="color: #1976d2; margin-top: 0; border-bottom: 2px solid #1976d2; padding-bottom: 10px; text-align: center;">
-                        🗣️ Обсуждение условий доставки
-                    </h2>
-                    <div style="background: #bbdefb; padding: 15px; border-radius: 6px; margin-bottom: 20px; text-align: center;">
-                        <p style="margin: 0; color: #0d47a1; font-size: 16px; font-weight: bold;">
-                            📞 Наш менеджер свяжется с вами для обсуждения доставки
-                        </p>
-                    </div>
-                    <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
-                        <tr>
-                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #e1f5fe; color: #0d47a1; font-weight: bold; width: 40%;">
-                                📋 Что обсудим:
-                            </td>
-                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #ffffff; color: #1565c0;">
-                                Удобный для вас адрес, время и способ доставки
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #e1f5fe; color: #0d47a1; font-weight: bold;">
-                                🕐 Когда ожидать звонка:
-                            </td>
-                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #ffffff; color: #1565c0;">
-                                В рабочее время (пн-пт: 9:00-18:00)
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #e1f5fe; color: #0d47a1; font-weight: bold;">
-                                💰 Стоимость:
-                            </td>
-                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #ffffff; color: #1565c0;">
-                                Будет рассчитана индивидуально
-                            </td>
-                        </tr>
-                    </table>
-                    <div style="margin-top: 20px; padding: 15px; background: #c8e6c9; border: 1px solid #a5d6a7; border-radius: 6px;">
-                        <h3 style="margin: 0 0 10px 0; color: #2e7d32; font-size: 16px;">📱 Убедитесь, что ваш телефон доступен</h3>
-                        <p style="margin: 0; color: #2e7d32; line-height: 1.5;">
-                            Наш менеджер свяжется с вами по указанному в заказе номеру телефона. 
-                            Если номер изменился, пожалуйста, сообщите нам по email или через поддержку на сайте.
-                        </p>
-                    </div>
-                </div>
-                <?php
-            }
-        }
-    }
+    // Функция отключена - обработка всех типов доставки происходит в cdek_add_delivery_info_to_any_email
+    return;
 }

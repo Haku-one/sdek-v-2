@@ -2092,6 +2092,22 @@ jQuery(document).ready(function($) {
         console.log('✅ Данные СДЭК очищены');
     }
     
+    function clearCdekSelectionOnly() {
+        console.log('🧹 Очищаем только данные СДЭК (без переинициализации)');
+        
+        // Сбрасываем стоимость доставки
+        window.currentDeliveryCost = 0;
+        updateOrderTotal(0);
+        
+        // Очищаем скрытые поля с данными СДЭК
+        $('#cdek-delivery-cost').remove();
+        $('input[name="cdek_point_code"]').remove();
+        $('input[name="cdek_point_data"]').remove();
+        $('input[name="cdek_delivery_cost"]').remove();
+        
+        console.log('✅ Данные СДЭК очищены (карта НЕ переинициализируется)');
+    }
+    
     function initCdekDelivery() {
         // Добавляем принудительную переинициализацию при переключении вкладок
         const forceReinit = window.isInitialized === false;
@@ -2511,15 +2527,17 @@ jQuery(document).ready(function($) {
                             el.style.display = 'none';
                         });
                         
-                        // Сбрасываем флаги при переходе на самовывоз
-                        console.log('👋 Переход на самовывоз - очищаем данные СДЭК');
-                        window.cdekMap = null;
-                        cdekMap = null;
-                        window.isInitialized = false;
-                        isInitialized = false;
-                        
-                        // Очищаем выбранную точку и цену доставки
-                        clearCdekSelection();
+                        // ТОЛЬКО для самовывоза очищаем данные
+                        if (isPickupTab) {
+                            console.log('🧹 Переход на самовывоз - очищаем данные СДЭК');
+                            window.cdekMap = null;
+                            cdekMap = null;
+                            window.isInitialized = false;
+                            isInitialized = false;
+                            
+                            // Очищаем выбранную точку и цену доставки (БЕЗ переинициализации)
+                            clearCdekSelectionOnly();
+                        }
                     }
                 }
             };

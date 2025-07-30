@@ -37,8 +37,58 @@ function cdek_add_script() {
     <script>
     jQuery(function($) {
         function saveShippingData() {
-            var text = $('.wp-block-woocommerce-checkout-order-summary-shipping-block .wc-block-components-totals-item__label').text().trim();
-            var cost = $('.wp-block-woocommerce-checkout-order-summary-shipping-block .wc-block-components-totals-item__value').text().replace(/[^\d]/g, '');
+            console.log('🔍 СДЭК: Ищем данные доставки...');
+            
+            // Пробуем разные селекторы
+            var selectors = [
+                '.wp-block-woocommerce-checkout-order-summary-shipping-block .wc-block-components-totals-item__label',
+                '.wc-block-components-totals-shipping .wc-block-components-totals-item__label',
+                '.wc-block-components-totals-item__label:contains("Выберите")',
+                '[data-block-name="woocommerce/checkout-order-summary-shipping-block"] .wc-block-components-totals-item__label',
+                '.woocommerce-checkout-review-order-table .shipping td',
+                '.shipping_method'
+            ];
+            
+            var text = '';
+            var cost = '';
+            
+            // Пробуем найти текст доставки
+            for (var i = 0; i < selectors.length; i++) {
+                var element = $(selectors[i]);
+                if (element.length > 0) {
+                    text = element.text().trim();
+                    console.log('📍 Найден элемент ' + selectors[i] + ': ' + text);
+                    
+                    // Ищем стоимость рядом
+                    var costElement = element.closest('.wc-block-components-totals-item').find('.wc-block-components-totals-item__value');
+                    if (costElement.length === 0) {
+                        costElement = element.closest('tr').find('.amount, .woocommerce-Price-amount');
+                    }
+                    if (costElement.length > 0) {
+                        cost = costElement.text().replace(/[^\d]/g, '');
+                        console.log('💰 Найдена стоимость: ' + cost);
+                    }
+                    
+                    if (text && text !== 'Выберите пункт выдачи' && text.length > 10) {
+                        break;
+                    }
+                }
+            }
+            
+            // Если ничего не нашли, ищем везде
+            if (!text || text === 'Выберите пункт выдачи') {
+                console.log('🔍 Ищем по всей странице...');
+                $('*').each(function() {
+                    var elementText = $(this).text().trim();
+                    if (elementText.includes('Саратов') || elementText.includes('ул.') || elementText.includes('пр-т')) {
+                        if (elementText.length > 10 && elementText.length < 100) {
+                            text = elementText;
+                            console.log('📍 Найден адрес в элементе: ' + text);
+                            return false; // прерываем цикл
+                        }
+                    }
+                });
+            }
             
             if (text && text !== 'Выберите пункт выдачи' && text.length > 10) {
                 $('input[name="cdek_shipping_label"]').remove();
@@ -48,12 +98,16 @@ function cdek_add_script() {
                 $('body').append('<input type="hidden" name="cdek_shipping_label" value="' + text + '">');
                 $('body').append('<input type="hidden" name="cdek_shipping_cost" value="' + cost + '">');
                 $('body').append('<input type="hidden" name="cdek_shipping_captured" value="1">');
-                console.log('СДЭК: ' + text + ' (' + cost + ' руб.)');
+                console.log('✅ СДЭК: Сохранено - ' + text + ' (' + cost + ' руб.)');
+            } else {
+                console.log('❌ СДЭК: Данные не найдены. Найденный текст: "' + text + '"');
             }
         }
         
-        setTimeout(saveShippingData, 2000);
-        $(document.body).on('updated_checkout', saveShippingData);
+        setTimeout(saveShippingData, 1000);
+        setTimeout(saveShippingData, 3000);
+        setTimeout(saveShippingData, 5000);
+        $(document.body).on('updated_checkout updated_shipping_method', saveShippingData);
     });
     </script>
     <?php

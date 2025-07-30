@@ -1158,6 +1158,14 @@ jQuery(document).ready(function($) {
         const mapVisible = mapContainer && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0;
         const containerHasMap = mapContainer && mapContainer.children.length > 0;
         
+        // Если контейнер пустой, сбрасываем флаги
+        if (mapContainer && !containerHasMap) {
+            console.log('📦 Контейнер карты пустой, сбрасываем флаги');
+            window.cdekMap = null;
+            cdekMap = null;
+            window.isInitialized = false;
+        }
+        
         if (cdekMap && window.isInitialized !== false && mapVisible && containerHasMap) {
             console.log('🗺️ Карта уже инициализирована и видима');
             return;
@@ -2482,15 +2490,13 @@ jQuery(document).ready(function($) {
                         }
                         window.cdekMap = null;
                         
-                        // Полностью пересоздаем контейнер карты
-                        const oldMapContainer = document.getElementById('cdek-map');
-                        if (oldMapContainer) {
-                            console.log('🧹 Удаляем старый контейнер карты');
-                            const newMapContainer = document.createElement('div');
-                            newMapContainer.id = 'cdek-map';
-                            newMapContainer.style.cssText = 'width: 100%; height: 450px; border: 1px solid #ddd; border-radius: 6px; display: block !important;';
-                            oldMapContainer.parentNode.replaceChild(newMapContainer, oldMapContainer);
-                            console.log('✅ Создан новый контейнер карты');
+                        // Очищаем содержимое контейнера карты
+                        const mapContainer = document.getElementById('cdek-map');
+                        if (mapContainer) {
+                            console.log('🧹 Очищаем содержимое контейнера карты');
+                            mapContainer.innerHTML = '';
+                            mapContainer.style.cssText = 'width: 100%; height: 450px; border: 1px solid #ddd; border-radius: 6px; display: block !important;';
+                            console.log('✅ Контейнер карты очищен и готов');
                         }
                         
                         // Переинициализируем карту

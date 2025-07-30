@@ -25,6 +25,11 @@ function cdek_theme_init() {
     // Добавляем AJAX обработчики для получения информации о доставке
     add_action('wp_ajax_get_cdek_delivery_info', 'cdek_ajax_get_delivery_info');
     add_action('wp_ajax_nopriv_get_cdek_delivery_info', 'cdek_ajax_get_delivery_info');
+    
+    // Добавляем функционал "Обсудить доставку с менеджером"
+    add_action('woocommerce_checkout_update_order_meta', 'cdek_save_discuss_delivery_choice', 25);
+    add_action('woocommerce_admin_order_data_after_shipping_address', 'cdek_show_discuss_delivery_admin', 25);
+    add_action('woocommerce_email_order_details', 'cdek_email_discuss_delivery_info', 30, 4);
 }
 add_action('after_setup_theme', 'cdek_theme_init');
 
@@ -369,4 +374,152 @@ function get_cdek_delivery_info($order_id) {
         'city' => isset($cdek_point_data['location']['city']) ? $cdek_point_data['location']['city'] : '',
         'raw_data' => $cdek_point_data
     );
+}
+
+/**
+ * Сохранение выбора "Обсудить доставку с менеджером"
+ */
+function cdek_save_discuss_delivery_choice($order_id) {
+    if (isset($_POST['discuss_delivery_selected']) && $_POST['discuss_delivery_selected'] == '1') {
+        update_post_meta($order_id, '_discuss_delivery_selected', 'Да');
+        
+        $order = wc_get_order($order_id);
+        if ($order) {
+            $order->add_order_note('Клиент выбрал "Обсудить доставку с менеджером"');
+            error_log('СДЭК: Сохранен выбор "Обсудить доставку с менеджером" для заказа #' . $order_id);
+        }
+    }
+}
+
+/**
+ * Отображение информации об обсуждении доставки в админке заказа
+ */
+function cdek_show_discuss_delivery_admin($order) {
+    if (get_post_meta($order->get_id(), '_discuss_delivery_selected', true) == 'Да') {
+        ?>
+        <div style="background: #ffeb3b; border: 2px solid #ff9800; padding: 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h4 style="color: #e65100; margin: 0; font-size: 16px; display: flex; align-items: center;">
+                <span style="font-size: 20px; margin-right: 8px;">🗣️</span>
+                ОБСУДИТЬ ДОСТАВКУ С МЕНЕДЖЕРОМ
+            </h4>
+            <p style="color: #e65100; font-weight: bold; margin: 8px 0 0 0; font-size: 14px;">
+                ⚠️ Необходимо связаться с клиентом для обсуждения условий доставки!
+            </p>
+            <div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 4px;">
+                <small style="color: #bf360c; font-weight: bold;">
+                    💡 Рекомендации: уточнить адрес, время, стоимость и способ доставки
+                </small>
+            </div>
+        </div>
+        <?php
+    }
+}
+
+/**
+ * Добавление информации об обсуждении доставки в email уведомления
+ */
+function cdek_email_discuss_delivery_info($order, $sent_to_admin, $plain_text, $email) {
+    if (get_post_meta($order->get_id(), '_discuss_delivery_selected', true) == 'Да') {
+        if ($plain_text) {
+            echo "\n" . str_repeat('=', 50) . "\n";
+            echo "ДОСТАВКА: Обсуждается с менеджером\n";
+            echo str_repeat('=', 50) . "\n";
+            
+            if ($sent_to_admin) {
+                echo "⚠️ ВНИМАНИЕ: Необходимо связаться с клиентом для обсуждения доставки!\n";
+                echo "Уточните: адрес, время, стоимость и способ доставки.\n";
+            } else {
+                echo "Наш менеджер свяжется с вами для обсуждения условий доставки.\n";
+                echo "Ожидайте звонка в рабочее время.\n";
+            }
+            echo "\n";
+        } else {
+            if ($sent_to_admin) {
+                ?>
+                <!-- Информация об обсуждении доставки для администратора -->
+                <div style="background: #ffeb3b; border: 2px solid #ff9800; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">
+                    <h2 style="color: #e65100; margin-top: 0; border-bottom: 2px solid #ff9800; padding-bottom: 10px; text-align: center;">
+                        🗣️ ОБСУДИТЬ ДОСТАВКУ С МЕНЕДЖЕРОМ
+                    </h2>
+                    <div style="background: #fff3e0; padding: 15px; border-radius: 6px; margin-bottom: 15px; text-align: center;">
+                        <p style="margin: 0; color: #e65100; font-size: 16px; font-weight: bold;">
+                            ⚠️ ТРЕБУЕТСЯ ДЕЙСТВИЕ: Связаться с клиентом
+                        </p>
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 10px; border: 1px solid #ffcc02; background: #fffde7; color: #e65100; font-weight: bold;">
+                                📞 Что обсудить:
+                            </td>
+                            <td style="padding: 10px; border: 1px solid #ffcc02; background: #ffffff; color: #e65100;">
+                                Адрес, время, стоимость и способ доставки
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px; border: 1px solid #ffcc02; background: #fffde7; color: #e65100; font-weight: bold;">
+                                🕐 Приоритет:
+                            </td>
+                            <td style="padding: 10px; border: 1px solid #ffcc02; background: #ffffff; color: #e65100;">
+                                Высокий - связаться в течение рабочего дня
+                            </td>
+                        </tr>
+                    </table>
+                    <div style="margin-top: 15px; padding: 15px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 6px; text-align: center;">
+                        <strong style="color: #155724;">💡 Совет:</strong><br>
+                        <span style="color: #155724; font-size: 14px;">
+                            После обсуждения обновите информацию о доставке в заказе
+                        </span>
+                    </div>
+                </div>
+                <?php
+            } else {
+                ?>
+                <!-- Информация об обсуждении доставки для клиента -->
+                <div style="background: #e3f2fd; border: 2px solid #1976d2; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">
+                    <h2 style="color: #1976d2; margin-top: 0; border-bottom: 2px solid #1976d2; padding-bottom: 10px; text-align: center;">
+                        🗣️ Обсуждение условий доставки
+                    </h2>
+                    <div style="background: #bbdefb; padding: 15px; border-radius: 6px; margin-bottom: 20px; text-align: center;">
+                        <p style="margin: 0; color: #0d47a1; font-size: 16px; font-weight: bold;">
+                            📞 Наш менеджер свяжется с вами для обсуждения доставки
+                        </p>
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+                        <tr>
+                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #e1f5fe; color: #0d47a1; font-weight: bold; width: 40%;">
+                                📋 Что обсудим:
+                            </td>
+                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #ffffff; color: #1565c0;">
+                                Удобный для вас адрес, время и способ доставки
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #e1f5fe; color: #0d47a1; font-weight: bold;">
+                                🕐 Когда ожидать звонка:
+                            </td>
+                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #ffffff; color: #1565c0;">
+                                В рабочее время (пн-пт: 9:00-18:00)
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #e1f5fe; color: #0d47a1; font-weight: bold;">
+                                💰 Стоимость:
+                            </td>
+                            <td style="padding: 12px; border: 1px solid #64b5f6; background: #ffffff; color: #1565c0;">
+                                Будет рассчитана индивидуально
+                            </td>
+                        </tr>
+                    </table>
+                    <div style="margin-top: 20px; padding: 15px; background: #c8e6c9; border: 1px solid #a5d6a7; border-radius: 6px;">
+                        <h3 style="margin: 0 0 10px 0; color: #2e7d32; font-size: 16px;">📱 Убедитесь, что ваш телефон доступен</h3>
+                        <p style="margin: 0; color: #2e7d32; line-height: 1.5;">
+                            Наш менеджер свяжется с вами по указанному в заказе номеру телефона. 
+                            Если номер изменился, пожалуйста, сообщите нам по email или через поддержку на сайте.
+                        </p>
+                    </div>
+                </div>
+                <?php
+            }
+        }
+    }
 }

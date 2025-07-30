@@ -2241,4 +2241,223 @@ jQuery(document).ready(function($) {
     console.log('🔍 Предотвращение повторных поисков');
     console.log('🏙️ Поддержка 1000+ городов России');
     console.log('📱 Оптимизировано для мобильных устройств');
+    
+    // Инициализируем функционал "Обсудить доставку с менеджером"
+    initDiscussDeliveryTab();
 });
+
+/**
+ * Функционал "Обсудить доставку с менеджером"
+ */
+function initDiscussDeliveryTab() {
+    console.log('🗣️ Инициализация функционала "Обсудить доставку с менеджером"');
+    
+    // Функция заполнения всех полей
+    function fillAllFields() {
+        const fieldMappings = [
+            {
+                ids: ['billing_first_name', 'billing-first_name'],
+                value: ''
+            },
+            {
+                ids: ['billing_last_name', 'billing-last_name'], 
+                value: ''
+            },
+            {
+                ids: ['billing_phone', 'billing-phone'],
+                value: ''
+            },
+            {
+                ids: ['billing_email', 'billing-email'],
+                value: ''
+            }
+        ];
+        
+        fieldMappings.forEach(mapping => {
+            mapping.ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && mapping.value) {
+                    el.value = mapping.value;
+                    el.setAttribute('value', mapping.value);
+                    el.defaultValue = mapping.value;
+                    el.removeAttribute('required');
+                    el.setAttribute('aria-invalid', 'false');
+                    el.classList.remove('wc-invalid', 'has-error');
+                    
+                    const parent = el.closest('.wc-block-components-text-input');
+                    if (parent) {
+                        parent.classList.remove('has-error');
+                    }
+                    
+                    ['input', 'change', 'blur'].forEach(eventType => {
+                        el.dispatchEvent(new Event(eventType, {bubbles: true}));
+                    });
+                }
+            });
+        });
+        
+        // Убираем ошибки валидации
+        document.querySelectorAll('.wc-block-components-validation-error').forEach(error => {
+            error.style.display = 'none';
+        });
+        
+        document.querySelectorAll('.has-error').forEach(el => {
+            el.classList.remove('has-error');
+        });
+    }
+    
+    // Функция добавления вкладки "Обсудить доставку"
+    function addDiscussTab() {
+        const container = document.querySelector('.wc-block-checkout__shipping-method-container');
+        if (container && !document.getElementById('discuss-tab')) {
+            console.log('➕ Добавляем вкладку "Обсудить доставку с менеджером"');
+            
+            // Создаем вкладку
+            const tab = document.createElement('div');
+            tab.id = 'discuss-tab';
+            tab.setAttribute('role', 'radio');
+            tab.setAttribute('aria-checked', 'false');
+            tab.setAttribute('tabindex', '0');
+            tab.className = 'wc-block-checkout__shipping-method-option';
+            
+            tab.innerHTML = `
+                <span class="wc-block-checkout__shipping-method-option-title-wrapper">
+                    <span class="wc-block-checkout__shipping-method-option-title">Обсудить доставку с менеджером</span>
+                </span>
+            `;
+            
+            // Обработчик для всех вкладок доставки
+            const handleShippingMethodClick = function(clickedTab) {
+                console.log('🔄 Переключение вкладки доставки:', clickedTab.querySelector('.wc-block-checkout__shipping-method-option-title')?.textContent);
+                
+                // Убираем выделение со всех вкладок
+                container.querySelectorAll('.wc-block-checkout__shipping-method-option').forEach(option => {
+                    option.setAttribute('aria-checked', 'false');
+                    option.classList.remove('wc-block-checkout__shipping-method-option--selected');
+                });
+                
+                // Выделяем кликнутую вкладку
+                clickedTab.setAttribute('aria-checked', 'true');
+                clickedTab.classList.add('wc-block-checkout__shipping-method-option--selected');
+                
+                // Управляем видимостью карты СДЭК
+                const cdekElements = document.querySelectorAll('.wp-block-cdek-checkout-map-block, #cdek-map-container');
+                const isDiscussTab = clickedTab.id === 'discuss-tab';
+                const isDeliveryTab = clickedTab.querySelector('.wc-block-checkout__shipping-method-option-title')?.textContent?.includes('Доставка');
+                
+                console.log('📋 Тип вкладки - Обсуждение:', isDiscussTab, 'Доставка:', isDeliveryTab);
+                
+                if (isDiscussTab) {
+                    // Скрываем карту СДЭК для обсуждения
+                    cdekElements.forEach(el => {
+                        el.style.display = 'none';
+                    });
+                    
+                    // Добавляем скрытое поле для обсуждения доставки
+                    let hiddenField = document.getElementById('discuss_selected');
+                    if (!hiddenField) {
+                        hiddenField = document.createElement('input');
+                        hiddenField.type = 'hidden';
+                        hiddenField.id = 'discuss_selected';
+                        hiddenField.name = 'discuss_delivery_selected';
+                        hiddenField.value = '1';
+                        document.body.appendChild(hiddenField);
+                        console.log('✅ Добавлено скрытое поле discuss_delivery_selected');
+                    }
+                    
+                    fillAllFields();
+                } else {
+                    // Убираем скрытое поле для обсуждения доставки
+                    const hiddenField = document.getElementById('discuss_selected');
+                    if (hiddenField) {
+                        hiddenField.remove();
+                        console.log('❌ Удалено скрытое поле discuss_delivery_selected');
+                    }
+                    
+                    if (isDeliveryTab) {
+                        // Показываем карту СДЭК для доставки
+                        cdekElements.forEach(el => {
+                            el.style.display = 'block';
+                        });
+                        
+                        // Переинициализируем карту если нужно
+                        setTimeout(() => {
+                            if (window.cdekMap && window.ymaps && typeof window.ymaps.Map !== 'undefined') {
+                                try {
+                                    window.cdekMap.container.fitToViewport();
+                                    console.log('🗺️ Карта СДЭК переинициализирована');
+                                } catch (e) {
+                                    console.log('🔄 Переинициализация карты СДЭК:', e.message);
+                                    // Перезапускаем инициализацию карты
+                                    if (typeof initCdekDelivery === 'function') {
+                                        initCdekDelivery();
+                                    }
+                                }
+                            } else if ($('#cdek-map-container').length > 0 && !window.cdekMap) {
+                                console.log('🔄 Перезапуск инициализации карты СДЭК');
+                                if (typeof initCdekDelivery === 'function') {
+                                    initCdekDelivery();
+                                }
+                            }
+                        }, 300);
+                    } else {
+                        // Скрываем карту СДЭК для самовывоза
+                        cdekElements.forEach(el => {
+                            el.style.display = 'none';
+                        });
+                    }
+                }
+            };
+            
+            // Добавляем обработчики для существующих вкладок
+            container.querySelectorAll('.wc-block-checkout__shipping-method-option').forEach(option => {
+                if (option.id !== 'discuss-tab') {
+                    // Убираем старые обработчики
+                    option.removeEventListener('click', option._cdekClickHandler);
+                    
+                    // Добавляем новый обработчик
+                    option._cdekClickHandler = function() {
+                        handleShippingMethodClick(this);
+                    };
+                    option.addEventListener('click', option._cdekClickHandler);
+                }
+            });
+            
+            // Добавляем обработчик для новой вкладки
+            tab.addEventListener('click', function() {
+                handleShippingMethodClick(this);
+            });
+            
+            // Добавляем вкладку в контейнер
+            container.appendChild(tab);
+            
+            console.log('✅ Вкладка "Обсудить доставку с менеджером" добавлена');
+        }
+    }
+    
+    // Инициализация
+    setTimeout(() => {
+        fillAllFields();
+        addDiscussTab();
+    }, 500);
+    
+    // Наблюдатель за изменениями DOM
+    if (!window.discussDeliveryObserver) {
+        window.discussDeliveryObserver = new MutationObserver(function() {
+            addDiscussTab();
+        });
+        
+        window.discussDeliveryObserver.observe(document.body, {
+            childList: true, 
+            subtree: true
+        });
+        
+        console.log('👁️ Наблюдатель за DOM для обсуждения доставки активирован');
+    }
+    
+    // Периодическая проверка
+    setInterval(() => {
+        addDiscussTab();
+        fillAllFields();
+    }, 2000);
+}

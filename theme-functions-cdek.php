@@ -39,6 +39,9 @@ function cdek_theme_init() {
     // ПРИНУДИТЕЛЬНО включаем обработку email независимо от других обработчиков
     add_action('woocommerce_email_order_details', 'cdek_force_delivery_info_in_email', 5, 4);
     
+    // Добавляем информацию СДЭК через стандартный фильтр WooCommerce
+    add_filter('woocommerce_email_order_meta_fields', 'cdek_add_email_order_meta_fields', 10, 3);
+    
     // Добавляем админ функцию для ручного исправления заказов
     add_action('admin_init', 'cdek_maybe_fix_order_745');
     

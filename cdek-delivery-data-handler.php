@@ -31,9 +31,9 @@ class CDEK_Delivery_Data_Handler {
         add_action('woocommerce_checkout_order_processed', array($this, 'save_delivery_data_to_order'), 10, 3);
         add_action('woocommerce_checkout_update_order_meta', array($this, 'save_delivery_meta_data'), 10, 1);
         
-        // Дополнительные хуки для WooCommerce Blocks
-        add_action('woocommerce_store_api_checkout_update_order_meta', array($this, 'save_delivery_meta_data'), 10, 1);
-        add_action('woocommerce_blocks_checkout_order_processed', array($this, 'save_delivery_data_to_order'), 10, 3);
+        // Дополнительные хуки для WooCommerce Blocks (отключены - используется отдельный класс)
+        // add_action('woocommerce_store_api_checkout_update_order_meta', array($this, 'save_delivery_meta_data'), 10, 1);
+        // add_action('woocommerce_blocks_checkout_order_processed', array($this, 'save_delivery_data_to_order'), 10, 3);
         
         // Дополнительные хуки для совместимости
         add_action('woocommerce_order_status_changed', array($this, 'log_delivery_data_change'), 10, 3);

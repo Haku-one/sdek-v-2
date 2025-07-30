@@ -2532,19 +2532,58 @@ jQuery(document).ready(function($) {
                     
                     fillAllFields();
                     
-                    // Дополнительно уведомляем WooCommerce Blocks о выборе
-                    if (typeof wp !== 'undefined' && wp.data && wp.data.dispatch) {
-                        try {
+                    // Передача данных в WooCommerce Blocks
+                    try {
+                        // Способ 1: через wp.data store
+                        if (typeof wp !== 'undefined' && wp.data && wp.data.dispatch) {
                             const checkoutStore = wp.data.dispatch('wc/store/checkout');
-                            if (checkoutStore && checkoutStore.setCheckoutFields) {
-                                checkoutStore.setCheckoutFields({
-                                    discuss_delivery_selected: '1'
+                            if (checkoutStore && checkoutStore.__internalSetCheckoutData) {
+                                checkoutStore.__internalSetCheckoutData({
+                                    extensionData: {
+                                        'cdek-delivery': {
+                                            discuss_delivery_selected: '1'
+                                        }
+                                    }
                                 });
-                                console.log('✅ Данные переданы в WooCommerce Blocks store');
+                                console.log('✅ Данные переданы в WooCommerce Blocks через extensionData');
                             }
-                        } catch (e) {
-                            console.log('⚠️ Не удалось передать данные в WC Blocks store:', e);
                         }
+                        
+                        // Способ 2: через глобальную переменную для blocks
+                        if (typeof window.wc !== 'undefined' && window.wc.blocksCheckout) {
+                            window.wc.blocksCheckout.extensionData = window.wc.blocksCheckout.extensionData || {};
+                            window.wc.blocksCheckout.extensionData['cdek-delivery'] = {
+                                discuss_delivery_selected: '1'
+                            };
+                            console.log('✅ Данные установлены в глобальную переменную blocks');
+                        }
+                        
+                        // Способ 3: Перехватываем AJAX запросы
+                        if (typeof jQuery !== 'undefined') {
+                            const originalAjax = jQuery.ajax;
+                            jQuery.ajax = function(options) {
+                                if (options.url && options.url.includes('/wp-json/wc/store/v1/checkout')) {
+                                    options.data = options.data || {};
+                                    if (typeof options.data === 'string') {
+                                        try {
+                                            const parsedData = JSON.parse(options.data);
+                                            parsedData.extensions = parsedData.extensions || {};
+                                            parsedData.extensions['cdek-delivery'] = {
+                                                discuss_delivery_selected: '1'
+                                            };
+                                            options.data = JSON.stringify(parsedData);
+                                            console.log('✅ Данные добавлены в AJAX запрос checkout');
+                                        } catch (e) {
+                                            console.log('⚠️ Ошибка парсинга AJAX данных:', e);
+                                        }
+                                    }
+                                }
+                                return originalAjax.call(this, options);
+                            };
+                        }
+                        
+                    } catch (e) {
+                        console.log('⚠️ Ошибка передачи данных в WC Blocks:', e);
                     }
                     
                     // Альтернативный способ через событие

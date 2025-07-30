@@ -1030,3 +1030,8 @@ class CdekAPI {
         return $city;
     }
 }
+
+// Подключаем интеграцию с WooCommerce Blocks
+if (file_exists(plugin_dir_path(__FILE__) . 'woocommerce-blocks-integration.php')) {
+    require_once plugin_dir_path(__FILE__) . 'woocommerce-blocks-integration.php';
+}

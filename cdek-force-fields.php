@@ -1,6 +1,7 @@
 <?php
 /**
  * СДЭК - Принудительные поля для блочного checkout
+ * Улучшенная версия с множественными стратегиями инъекции
  */
 
 if (!defined('ABSPATH')) {
@@ -33,103 +34,189 @@ function cdek_force_add_fields_script() {
     ?>
     <script>
     jQuery(function($) {
-        console.log('🚀 СДЭК: Принудительная инициализация полей');
+        console.log('🚀 СДЭК: Улучшенная принудительная инициализация полей');
+        
+        // Стратегии поиска форм
+        var formStrategies = [
+            'form.wc-block-components-form',
+            'form.woocommerce-checkout', 
+            '.wc-block-checkout__form',
+            'form[name="checkout"]',
+            '.woocommerce-checkout',
+            'form',
+            'body'
+        ];
         
         // Принудительно добавляем поля в форму
         function forceAddFields() {
+            console.log('🔧 СДЭК: Попытка добавления полей...');
+            
             // Удаляем старые поля если есть
             $('input[name*="cdek_point_"]').remove();
             
-            // Ищем форму checkout
-            var form = $('form.wc-block-components-form, form.woocommerce-checkout, form').first();
-            if (form.length === 0) {
-                form = $('body');
+            var targetForm = null;
+            var strategyUsed = '';
+            
+            // Пробуем разные стратегии поиска формы
+            for (var i = 0; i < formStrategies.length; i++) {
+                var strategy = formStrategies[i];
+                var forms = $(strategy);
+                if (forms.length > 0) {
+                    targetForm = forms.first();
+                    strategyUsed = strategy;
+                    break;
+                }
             }
             
-            // Добавляем поля принудительно
-            form.append('<input type="hidden" name="cdek_point_name" id="cdek_point_name" value="">');
-            form.append('<input type="hidden" name="cdek_point_address" id="cdek_point_address" value="">');
-            form.append('<input type="hidden" name="cdek_point_cost" id="cdek_point_cost" value="">');
-            form.append('<input type="hidden" name="cdek_point_code" id="cdek_point_code" value="">');
+            if (!targetForm || targetForm.length === 0) {
+                console.log('❌ СДЭК: Не найдена подходящая форма!');
+                return false;
+            }
             
-            console.log('✅ СДЭК: Поля добавлены принудительно в', form.prop('tagName'));
+            // Создаем поля
+            var fields = [
+                '<input type="hidden" name="cdek_point_name" id="cdek_point_name" value="" data-cdek="field">',
+                '<input type="hidden" name="cdek_point_address" id="cdek_point_address" value="" data-cdek="field">',
+                '<input type="hidden" name="cdek_point_cost" id="cdek_point_cost" value="" data-cdek="field">',
+                '<input type="hidden" name="cdek_point_code" id="cdek_point_code" value="" data-cdek="field">'
+            ];
+            
+            // Добавляем поля
+            for (var j = 0; j < fields.length; j++) {
+                targetForm.append(fields[j]);
+            }
+            
+            console.log('✅ СДЭК: Поля добавлены в', strategyUsed, '(тег:', targetForm.prop('tagName') + ')');
             
             // Проверяем что поля добавились
             setTimeout(function() {
                 var addedFields = $('input[name*="cdek_point_"]').length;
-                console.log('🔧 СДЭК: Добавлено полей:', addedFields);
-            }, 100);
+                var fieldsByAttr = $('input[data-cdek="field"]').length;
+                console.log('🔧 СДЭК: Проверка полей - по name:', addedFields, ', по атрибуту:', fieldsByAttr);
+                
+                if (addedFields === 0) {
+                    console.log('⚠️ СДЭК: Поля не найдены после добавления, пробуем альтернативный способ...');
+                    // Альтернативный способ - добавляем в body
+                    $('body').append(fields.join(''));
+                    console.log('🔄 СДЭК: Поля добавлены в body как fallback');
+                }
+            }, 200);
+            
+            return true;
         }
-        
-        // Добавляем поля сразу и через таймеры
-        forceAddFields();
-        setTimeout(forceAddFields, 1000);
-        setTimeout(forceAddFields, 3000);
         
         // Функция обновления полей при выборе ПВЗ
         function updateCdekFields() {
-            var shippingItems = $('.wc-block-components-totals-item');
+            // Ищем доставочные блоки по разным селекторам
+            var selectors = [
+                '.wc-block-components-totals-item',
+                '.woocommerce-shipping-totals tr',
+                '[class*="shipping"]',
+                '[class*="delivery"]'
+            ];
             
-            shippingItems.each(function() {
-                var $item = $(this);
-                var label = $item.find('.wc-block-components-totals-item__label').text().trim();
-                var value = $item.find('.wc-block-components-totals-item__value').text().trim();
-                var description = $item.find('.wc-block-components-totals-item__description small').text().trim();
+            var found = false;
+            
+            for (var s = 0; s < selectors.length && !found; s++) {
+                var shippingItems = $(selectors[s]);
                 
-                // Проверяем что это доставка с реальным адресом
-                if (label && label !== 'Выберите пункт выдачи' && 
-                    (label.includes('ул.') || label.includes('пр-т') || label.includes('пр.') || 
-                     label.includes('пер.') || (label.includes(',') && label.length > 15))) {
+                shippingItems.each(function() {
+                    var $item = $(this);
+                    var label = $item.find('.wc-block-components-totals-item__label, .shipping-method-label, .method-label').text().trim();
+                    var value = $item.find('.wc-block-components-totals-item__value, .shipping-method-cost, .method-cost').text().trim();
+                    var description = $item.find('.wc-block-components-totals-item__description small, .shipping-method-description, .method-description').text().trim();
                     
-                    var cost = value.replace(/[^\d]/g, '');
-                    
-                    // Обновляем поля (с fallback если поля пропали)
-                    var nameField = $('input[name="cdek_point_name"]');
-                    var addressField = $('input[name="cdek_point_address"]');
-                    var costField = $('input[name="cdek_point_cost"]');
-                    var codeField = $('input[name="cdek_point_code"]');
-                    
-                    // Если полей нет - добавляем заново
-                    if (nameField.length === 0) {
-                        console.log('⚠️ СДЭК: Поля пропали, добавляем заново');
-                        forceAddFields();
-                        nameField = $('input[name="cdek_point_name"]');
-                        addressField = $('input[name="cdek_point_address"]');
-                        costField = $('input[name="cdek_point_cost"]');
-                        codeField = $('input[name="cdek_point_code"]');
+                    // Если не нашли в стандартных местах, ищем в любом тексте
+                    if (!label) {
+                        label = $item.text().trim();
                     }
                     
-                    // Заполняем поля
-                    nameField.val(label);
-                    addressField.val(description || label);
-                    costField.val(cost);
-                    codeField.val('AUTO_' + Math.random().toString(36).substr(2, 8));
-                    
-                    console.log('✅ СДЭК: Поля обновлены принудительно');
-                    console.log('📍 Название:', label);
-                    console.log('💰 Стоимость:', cost);
-                    console.log('📮 Адрес:', description || label);
-                    console.log('🔧 Поля в DOM:', nameField.length, addressField.length, costField.length, codeField.length);
-                    
-                    return false;
-                }
-            });
+                    // Проверяем что это доставка с реальным адресом
+                    if (label && label !== 'Выберите пункт выдачи' && label !== 'Select pickup point' &&
+                        (label.includes('ул.') || label.includes('пр-т') || label.includes('пр.') || 
+                         label.includes('пер.') || label.includes('улица') || label.includes('проспект') ||
+                         (label.includes(',') && label.length > 15))) {
+                        
+                        var cost = value.replace(/[^\d]/g, '');
+                        if (!cost && label.match(/\d+/)) {
+                            cost = label.match(/\d+/)[0];
+                        }
+                        
+                        // Обновляем поля (с fallback если поля пропали)
+                        var nameField = $('input[name="cdek_point_name"]');
+                        var addressField = $('input[name="cdek_point_address"]');
+                        var costField = $('input[name="cdek_point_cost"]');
+                        var codeField = $('input[name="cdek_point_code"]');
+                        
+                        // Если полей нет - добавляем заново
+                        if (nameField.length === 0) {
+                            console.log('⚠️ СДЭК: Поля пропали, добавляем заново');
+                            if (forceAddFields()) {
+                                nameField = $('input[name="cdek_point_name"]');
+                                addressField = $('input[name="cdek_point_address"]');
+                                costField = $('input[name="cdek_point_cost"]');
+                                codeField = $('input[name="cdek_point_code"]');
+                            }
+                        }
+                        
+                        // Заполняем поля
+                        if (nameField.length) nameField.val(label);
+                        if (addressField.length) addressField.val(description || label);
+                        if (costField.length) costField.val(cost);
+                        if (codeField.length) codeField.val('AUTO_' + Math.random().toString(36).substr(2, 8));
+                        
+                        console.log('✅ СДЭК: Поля обновлены с селектором', selectors[s]);
+                        console.log('📍 Название:', label);
+                        console.log('💰 Стоимость:', cost);
+                        console.log('📮 Адрес:', description || label);
+                        console.log('🔧 Поля в DOM:', nameField.length, addressField.length, costField.length, codeField.length);
+                        
+                        found = true;
+                        return false;
+                    }
+                });
+            }
         }
         
-        // Запускаем обновление
-        setInterval(updateCdekFields, 2000);
-        $(document.body).on('updated_checkout updated_shipping_method', updateCdekFields);
+        // Добавляем поля сразу и через таймеры для надежности
+        forceAddFields();
+        setTimeout(forceAddFields, 1000);
+        setTimeout(forceAddFields, 3000);
+        setTimeout(forceAddFields, 5000);
         
-        // Отслеживаем изменения DOM
+        // Запускаем обновление данных
+        setTimeout(updateCdekFields, 2000);
+        setInterval(updateCdekFields, 3000);
+        
+        // События WooCommerce
+        $(document.body).on('updated_checkout updated_shipping_method wc_checkout_place_order', function() {
+            setTimeout(function() {
+                forceAddFields();
+                updateCdekFields();
+            }, 500);
+        });
+        
+        // Отслеживаем изменения DOM более агрессивно
         var observer = new MutationObserver(function(mutations) {
+            var shouldUpdate = false;
             mutations.forEach(function(mutation) {
                 if (mutation.type === 'childList' || mutation.type === 'characterData') {
                     var target = $(mutation.target);
-                    if (target.closest('.wc-block-components-totals-item').length > 0) {
-                        setTimeout(updateCdekFields, 500);
+                    if (target.closest('.wc-block-components-totals-item, .shipping, .delivery').length > 0 ||
+                        target.find('.wc-block-components-totals-item, .shipping, .delivery').length > 0) {
+                        shouldUpdate = true;
                     }
                 }
             });
+            if (shouldUpdate) {
+                setTimeout(function() {
+                    updateCdekFields();
+                    // Проверяем что поля все еще на месте
+                    if ($('input[name*="cdek_point_"]').length === 0) {
+                        forceAddFields();
+                    }
+                }, 1000);
+            }
         });
         
         observer.observe(document.body, {
@@ -138,16 +225,66 @@ function cdek_force_add_fields_script() {
             characterData: true
         });
         
-        // Отслеживаем клики по кнопке "Размещение заказа"
-        $(document).on('click', '.wc-block-components-checkout-place-order-button, button[type="submit"]', function() {
-            console.log('📤 СДЭК: Отправка заказа, проверяем поля');
+        // Отслеживаем клики по кнопке отправки заказа
+        $(document).on('click', '.wc-block-components-checkout-place-order-button, button[type="submit"], input[type="submit"]', function() {
+            console.log('📤 СДЭК: Отправка заказа, финальная проверка полей');
+            
+            // Принудительно добавляем поля еще раз перед отправкой
+            if ($('input[name*="cdek_point_"]').length === 0) {
+                forceAddFields();
+                updateCdekFields();
+            }
+            
             var fields = $('input[name*="cdek_point_"]');
+            console.log('📊 СДЭК: Найдено полей перед отправкой:', fields.length);
+            
             fields.each(function() {
-                if (this.value) {
-                    console.log('📝 СДЭК: Поле', this.name, '=', this.value);
-                }
+                console.log('📝 СДЭК: Поле', this.name, '=', this.value);
             });
+            
+            // Последняя попытка для блочной формы
+            setTimeout(function() {
+                var finalFields = $('input[name*="cdek_point_"]');
+                if (finalFields.length === 0) {
+                    console.log('🆘 СДЭК: КРИТИЧНО! Поля пропали перед отправкой, экстренное восстановление...');
+                    $('body').append('<input type="hidden" name="cdek_point_name" value="' + (localStorage.getItem('cdek_last_name') || '') + '">');
+                    $('body').append('<input type="hidden" name="cdek_point_address" value="' + (localStorage.getItem('cdek_last_address') || '') + '">');
+                    $('body').append('<input type="hidden" name="cdek_point_cost" value="' + (localStorage.getItem('cdek_last_cost') || '') + '">');
+                    $('body').append('<input type="hidden" name="cdek_point_code" value="' + (localStorage.getItem('cdek_last_code') || '') + '">');
+                }
+            }, 100);
         });
+        
+        // Сохраняем данные в localStorage для экстренного восстановления
+        setInterval(function() {
+            var name = $('input[name="cdek_point_name"]').val();
+            var address = $('input[name="cdek_point_address"]').val();
+            var cost = $('input[name="cdek_point_cost"]').val();
+            var code = $('input[name="cdek_point_code"]').val();
+            
+            if (name) localStorage.setItem('cdek_last_name', name);
+            if (address) localStorage.setItem('cdek_last_address', address);
+            if (cost) localStorage.setItem('cdek_last_cost', cost);
+            if (code) localStorage.setItem('cdek_last_code', code);
+        }, 5000);
+        
+        // Отладочная функция для консоли
+        window.cdekDebug = function() {
+            console.log('=== СДЭК DEBUG ===');
+            console.log('Всего input полей:', $('input').length);
+            console.log('СДЭК полей по name:', $('input[name*="cdek_point_"]').length);
+            console.log('СДЭК полей по атрибуту:', $('input[data-cdek="field"]').length);
+            console.log('Формы на странице:', $('form').length);
+            $('form').each(function(i) {
+                console.log('Форма', i, ':', this.className, this.id);
+            });
+            $('input[name*="cdek_point_"]').each(function(){ 
+                console.log('Поле', this.name + ':', this.value); 
+            });
+            console.log('=================');
+        };
+        
+        console.log('🎯 СДЭК: Инициализация завершена. Используйте cdekDebug() для отладки');
     });
     </script>
     <?php

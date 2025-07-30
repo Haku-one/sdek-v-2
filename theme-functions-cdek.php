@@ -965,10 +965,19 @@ function cdek_find_real_shipping_address($order_id, $order) {
     foreach ($all_meta as $key => $values) {
         if (is_array($values)) {
             foreach ($values as $value) {
-                if (is_string($value) && $value !== 'Выберите пункт выдачи' && 
-                    strlen($value) > 10 && (strpos($value, 'ул.') !== false || strpos($value, 'Саратов') !== false)) {
-                    error_log('СДЭК FIND: Найден возможный адрес в ' . $key . ': ' . $value);
-                    return $value;
+                if (is_string($value) && $value !== 'Выберите пункт выдачи' && strlen($value) > 10) {
+                    
+                    // Пропускаем сериализованные данные
+                    if (strpos($value, 'a:') === 0) {
+                        error_log('СДЭК FIND: Пропускаем сериализованные данные в ' . $key);
+                        continue;
+                    }
+                    
+                    // Ищем адресные признаки
+                    if (strpos($value, 'ул.') !== false || strpos($value, 'Саратов') !== false) {
+                        error_log('СДЭК FIND: Найден возможный адрес в ' . $key . ': ' . $value);
+                        return $value;
+                    }
                 }
             }
         }
@@ -983,6 +992,40 @@ function cdek_find_real_shipping_address($order_id, $order) {
  */
 function cdek_force_create_correct_data($order_id, $address, $cost) {
     error_log('СДЭК CREATE: Создаем правильные данные для заказа #' . $order_id . ' с адресом: ' . $address);
+    
+    // ВАЖНО: Если $address это массив (сериализованные данные), извлекаем строку
+    if (is_array($address)) {
+        error_log('СДЭК CREATE: Адрес передан как массив, извлекаем строку');
+        if (isset($address['name'])) {
+            $address = $address['name'];
+        } elseif (isset($address['location']['address'])) {
+            $address = $address['location']['address'];
+        } else {
+            $address = 'Саратов'; // fallback
+        }
+    }
+    
+    // Если это сериализованная строка, пытаемся десериализовать
+    if (is_string($address) && strpos($address, 'a:') === 0) {
+        error_log('СДЭК CREATE: Обнаружены сериализованные данные, десериализуем');
+        $unserialized = @unserialize($address);
+        if ($unserialized && is_array($unserialized)) {
+            if (isset($unserialized['name'])) {
+                $address = $unserialized['name'];
+            } elseif (isset($unserialized['location']['address'])) {
+                $address = $unserialized['location']['address'];
+            } else {
+                $address = 'Саратов'; // fallback
+            }
+        }
+    }
+    
+    // Убеждаемся, что у нас нормальная строка
+    if (!is_string($address) || $address === 'Выберите пункт выдачи' || empty($address)) {
+        $address = 'Саратов';
+    }
+    
+    error_log('СДЭК CREATE: Итоговый адрес: ' . $address);
     
     $point_data = array(
         'name' => $address,
@@ -1152,13 +1195,38 @@ function cdek_fix_broken_order_shipping($order_id, $order) {
  * Добавление JavaScript для захвата данных из блока доставки
  */
 function cdek_add_shipping_data_capture_script() {
-    if (!is_checkout()) {
-        return;
+    // Проверяем, что мы на странице оформления заказа
+    if (!function_exists('is_checkout') || !is_checkout()) {
+        // Альтернативная проверка для страницы checkout
+        global $wp;
+        if (!(isset($wp->query_vars['pagename']) && $wp->query_vars['pagename'] === 'checkout') && 
+            !is_page('checkout') && strpos($_SERVER['REQUEST_URI'], '/checkout') === false) {
+            return;
+        }
     }
     ?>
     <script type="text/javascript">
-    jQuery(document).ready(function($) {
+    // Проверяем загрузку jQuery
+    if (typeof jQuery === 'undefined') {
+        console.error('❌ СДЭК: jQuery не загружен!');
+    } else {
+        console.log('✅ СДЭК: jQuery найден, версия:', jQuery.fn.jquery);
+    }
+    
+    // Основной код
+    (function($) {
+        if (typeof $ === 'undefined') {
+            console.error('❌ СДЭК: $ не определен, используем прямой вызов jQuery');
+            $ = jQuery;
+        }
+        
         console.log('🔧 СДЭК: Инициализация захвата данных доставки');
+        console.log('🔧 СДЭК: URL страницы:', window.location.href);
+        
+        // Проверяем, что мы на странице checkout
+        if (window.location.href.indexOf('checkout') === -1) {
+            console.log('⚠️ СДЭК: Не на странице checkout, но скрипт загружен');
+        }
         
         // Функция для извлечения данных из блока доставки
         function extractShippingData() {
@@ -1252,7 +1320,8 @@ function cdek_add_shipping_data_capture_script() {
             console.log('📤 СДЭК: Форма отправляется, финальный захват данных');
             extractShippingData();
         });
-    });
+        
+    })(jQuery); // Передаем jQuery явно
     </script>
     <?php
 }

@@ -1555,6 +1555,7 @@ jQuery(document).ready(function($) {
         
         $('#cdek-selected-point-code').remove();
         $('#cdek-selected-point-data').remove();
+        $('#cdek-delivery-cost').remove();
         
         resetCdekShippingToDefault();
         
@@ -1689,6 +1690,20 @@ jQuery(document).ready(function($) {
         });
         
         window.currentDeliveryCost = deliveryCost;
+        
+        // Сохраняем стоимость доставки в скрытое поле для отправки на сервер
+        if ($('#cdek-delivery-cost').length === 0) {
+            $('<input>').attr({
+                type: 'hidden',
+                id: 'cdek-delivery-cost',
+                name: 'cdek_delivery_cost',
+                value: deliveryCost
+            }).appendTo('form.checkout, form.woocommerce-checkout');
+        } else {
+            $('#cdek-delivery-cost').val(deliveryCost);
+        }
+        
+        console.log('💰 Стоимость доставки сохранена для заказа:', deliveryCost, 'руб.');
         
         $(document.body).trigger('updated_checkout');
         $(document.body).trigger('updated_cart_totals');

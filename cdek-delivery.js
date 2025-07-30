@@ -1198,13 +1198,38 @@ jQuery(document).ready(function($) {
             if (mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0) {
                 try {
                     ymaps.ready(function() {
-                        cdekMap = new ymaps.Map(mapContainer, {
-                            center: [55.753994, 37.622093],
-                            zoom: 10,
-                            controls: ['zoomControl', 'searchControl']
-                        });
-                        
-                        console.log('✅ Яндекс.Карты успешно инициализированы');
+                        try {
+                            console.log('🗺️ Создаем новую карту в контейнере:', mapContainer.id);
+                            
+                            cdekMap = new ymaps.Map(mapContainer, {
+                                center: [55.753994, 37.622093],
+                                zoom: 10,
+                                controls: ['zoomControl', 'searchControl']
+                            });
+                            
+                            // Принудительно обновляем размер карты
+                            setTimeout(() => {
+                                if (cdekMap && cdekMap.container) {
+                                    console.log('🔄 Обновляем размер карты');
+                                    cdekMap.container.fitToViewport();
+                                }
+                            }, 100);
+                            
+                            // Проверяем, что карта действительно загрузилась
+                            setTimeout(() => {
+                                if (cdekMap && cdekMap.getCenter) {
+                                    var center = cdekMap.getCenter();
+                                    console.log('✅ Карта успешно загружена, центр:', center);
+                                } else {
+                                    console.error('❌ Карта не загрузилась правильно');
+                                }
+                            }, 500);
+                            
+                            console.log('✅ Яндекс.Карты успешно инициализированы');
+                        } catch (initError) {
+                            console.error('❌ Ошибка создания карты:', initError);
+                            throw initError;
+                        }
                         
                         if (cdekPoints && cdekPoints.length > 0) {
                             console.log('🏪 Отображаем сохраненные точки СДЭК:', cdekPoints.length);

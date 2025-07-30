@@ -1153,16 +1153,17 @@ jQuery(document).ready(function($) {
     // ========== ОСТАЛЬНЫЕ ФУНКЦИИ (СОКРАЩЕННЫЕ) ==========
     
     function initYandexMap() {
-        // Проверяем, что карта действительно существует И контейнер видимый
+        // Проверяем, что карта действительно существует И контейнер видимый И в контейнере есть карта
         const mapContainer = document.getElementById('cdek-map');
         const mapVisible = mapContainer && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0;
+        const containerHasMap = mapContainer && mapContainer.children.length > 0;
         
-        if (cdekMap && window.isInitialized !== false && mapVisible) {
+        if (cdekMap && window.isInitialized !== false && mapVisible && containerHasMap) {
             console.log('🗺️ Карта уже инициализирована и видима');
             return;
         }
         
-        console.log('🚀 Начинаем инициализацию Яндекс.Карт (карта:', !!cdekMap, 'флаг:', window.isInitialized, 'видима:', mapVisible, ')');
+        console.log('🚀 Начинаем инициализацию Яндекс.Карт (карта:', !!cdekMap, 'флаг:', window.isInitialized, 'видима:', mapVisible, 'содержимое:', containerHasMap, ')');
         
         // Проверяем, произошла ли ошибка загрузки Яндекс.Карт
         if (window.yandexMapsLoadError) {

@@ -39,16 +39,66 @@ function cdek_add_hidden_fields() {
     </div>
     
     <script>
-    // Функция для обновления скрытых полей (вызывается из вашего cdek-delivery.js)
-    window.updateCdekFields = function(data) {
-        document.getElementById('cdek_point_name').value = data.name || '';
-        document.getElementById('cdek_point_address').value = data.address || '';
-        document.getElementById('cdek_point_cost').value = data.cost || '';
-        document.getElementById('cdek_point_code').value = data.code || '';
-        document.getElementById('cdek_data_captured').value = '1';
+    jQuery(function($) {
+        function checkAndUpdateCdekFields() {
+            // Ищем блок с информацией о доставке
+            var shippingBlock = $('.wc-block-components-totals-item');
+            
+            shippingBlock.each(function() {
+                var label = $(this).find('.wc-block-components-totals-item__label').text().trim();
+                var value = $(this).find('.wc-block-components-totals-item__value').text().trim();
+                var description = $(this).find('.wc-block-components-totals-item__description small').text().trim();
+                
+                // Проверяем что это блок доставки с реальным адресом (не "Выберите пункт выдачи")
+                if (label && label !== 'Выберите пункт выдачи' && 
+                    (label.includes('ул.') || label.includes('пр-т') || label.includes('пер.') || 
+                     label.includes(',') && label.length > 10)) {
+                    
+                    var cost = value.replace(/[^\d]/g, '');
+                    
+                    // Обновляем скрытые поля
+                    document.getElementById('cdek_point_name').value = label;
+                    document.getElementById('cdek_point_address').value = description || label;
+                    document.getElementById('cdek_point_cost').value = cost;
+                    document.getElementById('cdek_point_code').value = '';
+                    document.getElementById('cdek_data_captured').value = '1';
+                    
+                    console.log('✅ СДЭК: Поля обновлены автоматически');
+                    console.log('📍 Пункт: ' + label);
+                    console.log('💰 Стоимость: ' + cost + ' руб.');
+                    console.log('📮 Адрес: ' + (description || label));
+                    
+                    return false; // прерываем поиск
+                }
+            });
+        }
         
-        console.log('СДЭК: Поля обновлены - ' + data.name + ' (' + data.cost + ' руб.)');
-    };
+        // Запускаем проверку через интервалы
+        setInterval(checkAndUpdateCdekFields, 2000);
+        
+        // Также запускаем при событиях WooCommerce
+        $(document.body).on('updated_checkout updated_shipping_method', function() {
+            setTimeout(checkAndUpdateCdekFields, 1000);
+        });
+        
+        // Отслеживаем изменения в DOM
+        var observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                    var target = $(mutation.target);
+                    if (target.closest('.wc-block-components-totals-item').length > 0) {
+                        setTimeout(checkAndUpdateCdekFields, 500);
+                    }
+                }
+            });
+        });
+        
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+    });
     </script>
     <?php
 }

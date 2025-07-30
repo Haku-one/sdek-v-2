@@ -137,6 +137,16 @@ function cdek_determine_delivery_type($order, $discuss_delivery, $pickup_deliver
  */
 function cdek_save_captured_shipping_data($order_id) {
     error_log('СДЭК CAPTURE: Сохранение захваченных данных для заказа #' . $order_id);
+    error_log('СДЭК CAPTURE: Проверяем $_POST данные: ' . print_r(array_keys($_POST), true));
+    
+    // Логируем конкретные поля СДЭК
+    $cdek_fields_in_post = array();
+    foreach ($_POST as $key => $value) {
+        if (strpos($key, 'cdek_shipping') !== false) {
+            $cdek_fields_in_post[$key] = $value;
+        }
+    }
+    error_log('СДЭК CAPTURE: Найденные CDEK поля в $_POST: ' . print_r($cdek_fields_in_post, true));
     
     // Сохраняем данные из скрытых полей формы
     $fields_to_save = array(
@@ -1295,17 +1305,37 @@ function cdek_add_shipping_data_capture_script() {
         function updateHiddenField(name, value) {
             var field = $('input[name="' + name + '"]');
             if (field.length === 0) {
-                // Создаем новое поле
-                var form = $('form.woocommerce-checkout, form.checkout, .wc-block-checkout__form').first();
+                // Ищем форму более агрессивно
+                var form = $('form.woocommerce-checkout').first();
+                if (form.length === 0) {
+                    form = $('form.checkout').first();
+                }
+                if (form.length === 0) {
+                    form = $('.wc-block-checkout__form').first();
+                }
+                if (form.length === 0) {
+                    form = $('form').first();
+                }
                 if (form.length === 0) {
                     form = $('body');
                 }
+                
                 field = $('<input type="hidden" name="' + name + '" />');
                 form.append(field);
-                console.log('🔧 СДЭК: Создано скрытое поле:', name);
+                console.log('🔧 СДЭК: Создано скрытое поле:', name, 'в форме:', form.prop('tagName'));
             }
             field.val(value);
             console.log('📝 СДЭК: Обновлено поле', name + ':', value);
+            
+            // Дополнительная проверка
+            setTimeout(function() {
+                var checkField = $('input[name="' + name + '"]');
+                if (checkField.length > 0 && checkField.val() === value) {
+                    console.log('✅ СДЭК: Поле', name, 'успешно создано и содержит:', checkField.val());
+                } else {
+                    console.error('❌ СДЭК: Проблема с полем', name, '- длина:', checkField.length, 'значение:', checkField.val());
+                }
+            }, 100);
         }
         
         // Запускаем захват данных при загрузке

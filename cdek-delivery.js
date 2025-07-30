@@ -1242,25 +1242,7 @@ jQuery(document).ready(function($) {
                             console.log('🏪 Отображаем сохраненные точки СДЭК:', cdekPoints.length);
                             displayCdekPoints(cdekPoints);
                         } else {
-                            // Пытаемся найти точки автоматически
-                            console.log('🔍 Точки СДЭК не найдены, пытаемся загрузить автоматически');
-                            
-                            // Ищем адрес в поле адреса
-                            var addressField = document.querySelector('#shipping-address_1, input[name="address_1"], input[name="shipping-address_1"]');
-                            if (addressField && addressField.value) {
-                                var address = addressField.value.trim();
-                                var city = address.split(',')[0].trim();
-                                if (city.length > 2) {
-                                    console.log('🏙️ Найден адрес в поле:', city);
-                                    setTimeout(() => searchCdekPoints(city), 500);
-                                } else {
-                                    console.log('🌍 Загружаем точки для Москвы по умолчанию');
-                                    setTimeout(() => searchCdekPoints('Москва'), 500);
-                                }
-                            } else {
-                                console.log('🌍 Адрес не найден, загружаем точки для Москвы');
-                                setTimeout(() => searchCdekPoints('Москва'), 500);
-                            }
+                            console.log('ℹ️ Точки СДЭК не загружены. Введите город в поле адреса для поиска пунктов выдачи.');
                         }
                     });
                 } catch (error) {
@@ -2078,6 +2060,38 @@ jQuery(document).ready(function($) {
         updateOrderTotal(0);
     }
     
+    function clearCdekSelection() {
+        console.log('🧹 Очищаем выбранную точку СДЭК и стоимость доставки');
+        
+        // Сбрасываем стоимость доставки
+        window.currentDeliveryCost = 0;
+        updateOrderTotal(0);
+        
+        // Очищаем скрытые поля с данными СДЭК
+        $('#cdek-delivery-cost').remove();
+        $('input[name="cdek_point_code"]').remove();
+        $('input[name="cdek_point_data"]').remove();
+        $('input[name="cdek_delivery_cost"]').remove();
+        
+        // Очищаем выбранную точку на карте
+        if (window.cdekMap && typeof ymaps !== 'undefined') {
+            try {
+                window.cdekMap.geoObjects.removeAll();
+            } catch (e) {
+                console.log('Ошибка очистки точек на карте:', e);
+            }
+        }
+        
+        // Очищаем информацию о выбранной точке
+        $('#cdek-selected-point').hide();
+        $('#cdek-point-info').empty();
+        
+        // Очищаем список точек
+        $('#cdek-points-count').text('Введите город в поле адреса выше для поиска пунктов выдачи');
+        
+        console.log('✅ Данные СДЭК очищены');
+    }
+    
     function initCdekDelivery() {
         // Добавляем принудительную переинициализацию при переключении вкладок
         const forceReinit = window.isInitialized === false;
@@ -2498,11 +2512,14 @@ jQuery(document).ready(function($) {
                         });
                         
                         // Сбрасываем флаги при переходе на самовывоз
-                        console.log('👋 Переход на самовывоз - сбрасываем флаги карты');
+                        console.log('👋 Переход на самовывоз - очищаем данные СДЭК');
                         window.cdekMap = null;
                         cdekMap = null;
                         window.isInitialized = false;
                         isInitialized = false;
+                        
+                        // Очищаем выбранную точку и цену доставки
+                        clearCdekSelection();
                     }
                 }
             };

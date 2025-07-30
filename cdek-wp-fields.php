@@ -11,8 +11,10 @@ if (!defined('ABSPATH')) {
  * Инициализация
  */
 function cdek_wp_fields_init() {
-    // Добавляем кастомные поля на страницу checkout
+    // Добавляем кастомные поля на страницу checkout (несколько хуков для совместимости)
     add_action('woocommerce_checkout_after_customer_details', 'cdek_add_checkout_fields');
+    add_action('woocommerce_checkout_after_order_review', 'cdek_add_checkout_fields');
+    add_action('wp_footer', 'cdek_add_checkout_fields_fallback');
     
     // Сохраняем поля при создании заказа
     add_action('woocommerce_checkout_update_order_meta', 'cdek_save_checkout_fields', 10);
@@ -29,41 +31,51 @@ add_action('init', 'cdek_wp_fields_init');
  * Добавляем скрытые поля на checkout
  */
 function cdek_add_checkout_fields() {
-    echo '<div id="cdek_hidden_fields" style="display: none;">';
-    
-    woocommerce_form_field('cdek_point_name', array(
-        'type' => 'text',
-        'class' => array('form-row-wide'),
-        'label' => 'СДЭК Пункт выдачи',
-        'required' => false,
-    ), '');
-    
-    woocommerce_form_field('cdek_point_address', array(
-        'type' => 'textarea',
-        'class' => array('form-row-wide'),
-        'label' => 'СДЭК Адрес',
-        'required' => false,
-    ), '');
-    
-    woocommerce_form_field('cdek_point_cost', array(
-        'type' => 'text',
-        'class' => array('form-row-wide'),
-        'label' => 'СДЭК Стоимость',
-        'required' => false,
-    ), '');
-    
-    woocommerce_form_field('cdek_point_code', array(
-        'type' => 'text',
-        'class' => array('form-row-wide'),
-        'label' => 'СДЭК Код пункта',
-        'required' => false,
-    ), '');
-    
-    echo '</div>';
+    // Предотвращаем повторное добавление
+    static $fields_added = false;
+    if ($fields_added) return;
+    $fields_added = true;
     
     ?>
+    <div id="cdek_hidden_fields" style="display: none !important; visibility: hidden;">
+        <input type="hidden" id="cdek_point_name" name="cdek_point_name" value="">
+        <input type="hidden" id="cdek_point_address" name="cdek_point_address" value="">
+        <input type="hidden" id="cdek_point_cost" name="cdek_point_cost" value="">
+        <input type="hidden" id="cdek_point_code" name="cdek_point_code" value="">
+    </div>
+    <?php
+}
+
+/**
+ * Fallback для блочного checkout
+ */
+function cdek_add_checkout_fields_fallback() {
+    if (!is_checkout()) return;
+    
+    ?>
+    <!-- Fallback для блочного checkout -->
+    <div id="cdek_hidden_fields_fallback" style="display: none !important; visibility: hidden;">
+        <input type="hidden" id="cdek_point_name_fb" name="cdek_point_name" value="">
+        <input type="hidden" id="cdek_point_address_fb" name="cdek_point_address" value="">
+        <input type="hidden" id="cdek_point_cost_fb" name="cdek_point_cost" value="">
+        <input type="hidden" id="cdek_point_code_fb" name="cdek_point_code" value="">
+    </div>
+    
     <script>
     jQuery(function($) {
+        // Добавляем поля принудительно если их нет
+        setTimeout(function() {
+            if ($('#cdek_point_name').length === 0) {
+                console.log('🔧 СДЭК: Добавляем поля принудительно для блочного checkout');
+                var form = $('form').first();
+                if (form.length === 0) form = $('body');
+                
+                form.append('<input type="hidden" id="cdek_point_name" name="cdek_point_name" value="">');
+                form.append('<input type="hidden" id="cdek_point_address" name="cdek_point_address" value="">');
+                form.append('<input type="hidden" id="cdek_point_cost" name="cdek_point_cost" value="">');
+                form.append('<input type="hidden" id="cdek_point_code" name="cdek_point_code" value="">');
+            }
+        }, 1000);
         function updateCdekFields() {
             // Ищем блок с информацией о доставке
             var shippingItems = $('.wc-block-components-totals-item');
@@ -81,16 +93,22 @@ function cdek_add_checkout_fields() {
                     
                     var cost = value.replace(/[^\d]/g, '');
                     
-                    // Обновляем поля WooCommerce
-                    $('#cdek_point_name').val(label);
-                    $('#cdek_point_address').val(description || label);
-                    $('#cdek_point_cost').val(cost);
-                    $('#cdek_point_code').val('AUTO_' + Math.random().toString(36).substr(2, 8));
+                    // Обновляем поля (ищем любые варианты)
+                    var nameField = $('#cdek_point_name, #cdek_point_name_fb, input[name="cdek_point_name"]').first();
+                    var addressField = $('#cdek_point_address, #cdek_point_address_fb, input[name="cdek_point_address"]').first();
+                    var costField = $('#cdek_point_cost, #cdek_point_cost_fb, input[name="cdek_point_cost"]').first();
+                    var codeField = $('#cdek_point_code, #cdek_point_code_fb, input[name="cdek_point_code"]').first();
+                    
+                    if (nameField.length) nameField.val(label);
+                    if (addressField.length) addressField.val(description || label);
+                    if (costField.length) costField.val(cost);
+                    if (codeField.length) codeField.val('AUTO_' + Math.random().toString(36).substr(2, 8));
                     
                     console.log('✅ СДЭК поля обновлены:');
                     console.log('📍 ' + label);
                     console.log('💰 ' + cost + ' руб.');
                     console.log('📮 ' + (description || label));
+                    console.log('🔧 Найдено полей: name=' + nameField.length + ', address=' + addressField.length + ', cost=' + costField.length);
                     
                     return false;
                 }

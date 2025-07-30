@@ -75,6 +75,15 @@ class CdekDeliveryPlugin {
         
         // Добавляем габариты в описание товара в корзине
         add_filter('woocommerce_get_item_data', array($this, 'add_dimensions_to_cart_item'), 10, 2);
+        
+        // Создание таблиц для кэширования при активации
+        add_action('after_setup_theme', array($this, 'create_cache_tables'));
+        
+        // Предзагрузка популярных данных
+        add_action('wp_loaded', array($this, 'preload_popular_data'));
+        
+        // Подключение модуля отправки данных о заказах
+        add_action('init', array($this, 'load_order_sender'));
     }
     
     public function init() {
@@ -469,6 +478,73 @@ class CdekDeliveryPlugin {
             include_once plugin_dir_path(__FILE__) . 'includes/class-wc-blocks-integration.php';
         }
     }
+    
+    /**
+     * Подключение модуля отправки данных о заказах СДЭК
+     */
+    public function load_order_sender() {
+        include_once plugin_dir_path(__FILE__) . 'cdek-order-sender.php';
+    }
+    
+    /**
+     * Создание таблиц для продвинутого кэширования
+     */
+    public function create_cache_tables() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'cdek_cache';
+        
+        $charset_collate = $wpdb->get_charset_collate();
+        
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            cache_key varchar(255) NOT NULL,
+            cache_value longtext NOT NULL,
+            expiry_time datetime NOT NULL,
+            created_time datetime DEFAULT CURRENT_TIMESTAMP,
+            hit_count int(11) DEFAULT 0,
+            PRIMARY KEY (id),
+            UNIQUE KEY cache_key (cache_key),
+            KEY expiry_time (expiry_time),
+            KEY hit_count (hit_count)
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+        
+        // Создание индексов для быстрого поиска
+        $wpdb->query("CREATE INDEX IF NOT EXISTS idx_cache_key_expiry ON $table_name (cache_key, expiry_time);");
+        $wpdb->query("CREATE INDEX IF NOT EXISTS idx_expiry_hit ON $table_name (expiry_time, hit_count);");
+    }
+    
+    /**
+     * Предзагрузка популярных данных
+     */
+    public function preload_popular_data() {
+        if (wp_doing_ajax() || wp_doing_cron() || is_admin()) {
+            return;
+        }
+        
+        // Предзагружаем данные для популярных городов в фоновом режиме
+        wp_schedule_single_event(time() + 10, 'cdek_preload_popular_cities');
+        add_action('cdek_preload_popular_cities', array($this, 'preload_popular_cities_data'));
+    }
+    
+    /**
+     * Предзагрузка данных для популярных городов
+     */
+    public function preload_popular_cities_data() {
+        $popular_cities = array('Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань');
+        $cdek_api = new CdekAPI();
+        
+        foreach ($popular_cities as $city) {
+            // Предзагружаем пункты выдачи для популярных городов
+            $cdek_api->get_delivery_points($city);
+            
+            // Небольшая задержка чтобы не перегружать API
+            usleep(500000); // 0.5 секунды
+        }
+    }
 }
 
 // Инициализация плагина
@@ -481,6 +557,7 @@ class CdekAPI {
     private $password;
     private $test_mode;
     private $base_url;
+    private $cache_manager;
     
     public function __construct() {
         $this->account = get_option('cdek_account', 'Lr7x5fauu0eOXDA4hlK04HiMUpqHgzzR');
@@ -494,6 +571,9 @@ class CdekAPI {
         // Устанавливаем город отправителя как Саратов (правильный код 428)
         update_option('cdek_sender_city', '428');
         
+        // Инициализируем менеджер кэша
+        $this->cache_manager = new CdekCacheManager();
+        
         // Логируем настройки подключения для отладки
         error_log('🔧 СДЭК API CONFIG: Режим - ПРОДАКШН (принудительно)');
         error_log('🔧 СДЭК API CONFIG: URL - ' . $this->base_url);
@@ -502,148 +582,141 @@ class CdekAPI {
     }
     
     public function get_auth_token() {
-        $cache_key = 'cdek_auth_token';
-        $token = get_transient($cache_key);
+        $cache_key = 'cdek_auth_token_v2';
         
-        if (!$token) {
-            error_log('🔑 СДЭК AUTH: Получаем новый токен авторизации');
-            error_log('🔑 СДЭК AUTH: URL: ' . $this->base_url . '/oauth/token');
-            error_log('🔑 СДЭК AUTH: Client ID: ' . $this->account);
-            error_log('🔑 СДЭК AUTH: Client Secret: ' . substr($this->password, 0, 8) . '...');
-            
-            $auth_data = array(
-                'grant_type' => 'client_credentials',
-                'client_id' => $this->account,
-                'client_secret' => $this->password
-            );
-            
-            error_log('🔑 СДЭК AUTH: Данные авторизации: ' . print_r($auth_data, true));
-            
-            $response = wp_remote_post($this->base_url . '/oauth/token', array(
-                'headers' => array(
-                    'Content-Type' => 'application/x-www-form-urlencoded',
-                    'User-Agent' => 'WordPress/CDEK-Plugin'
-                ),
-                'body' => $auth_data,
-                'timeout' => 30,
-                'sslverify' => true
-            ));
-            
-            if (!is_wp_error($response)) {
-                $response_code = wp_remote_retrieve_response_code($response);
-                $body = wp_remote_retrieve_body($response);
-                error_log('🔑 СДЭК AUTH: HTTP код: ' . $response_code);
-                error_log('🔑 СДЭК AUTH: Ответ: ' . $body);
-                
-                $parsed_body = json_decode($body, true);
-                if (isset($parsed_body['access_token'])) {
-                    $token = $parsed_body['access_token'];
-                    $expires_in = isset($parsed_body['expires_in']) ? intval($parsed_body['expires_in']) : 3600;
-                    set_transient($cache_key, $token, $expires_in - 60);
-                    error_log('🔑 СДЭК AUTH: ✅ Токен получен успешно, действует ' . $expires_in . ' сек');
-                } else {
-                    error_log('🔑 СДЭК AUTH: ❌ Не удалось получить токен. Ответ: ' . print_r($parsed_body, true));
-                }
-            } else {
-                error_log('🔑 СДЭК AUTH: ❌ Ошибка HTTP запроса: ' . $response->get_error_message());
-            }
-        } else {
+        // Проверяем кэш с увеличенным TTL
+        $cached_token = $this->cache_manager->get($cache_key);
+        if ($cached_token !== false) {
             error_log('🔑 СДЭК AUTH: ✅ Используем кэшированный токен');
+            return $cached_token;
         }
         
-        return $token;
+        error_log('🔑 СДЭК AUTH: Получаем новый токен авторизации');
+        error_log('🔑 СДЭК AUTH: URL: ' . $this->base_url . '/oauth/token');
+        error_log('🔑 СДЭК AUTH: Client ID: ' . $this->account);
+        error_log('🔑 СДЭК AUTH: Client Secret: ' . substr($this->password, 0, 8) . '...');
+        
+        $auth_data = array(
+            'grant_type' => 'client_credentials',
+            'client_id' => $this->account,
+            'client_secret' => $this->password
+        );
+        
+        $response = wp_remote_post($this->base_url . '/oauth/token', array(
+            'headers' => array(
+                'Content-Type' => 'application/x-www-form-urlencoded',
+                'User-Agent' => 'WordPress/CDEK-Plugin-Optimized',
+                'Accept' => 'application/json',
+                'Connection' => 'keep-alive'
+            ),
+            'body' => $auth_data,
+            'timeout' => 15, // Уменьшаем таймаут для быстрого отказа
+            'sslverify' => true,
+            'blocking' => true,
+            'compress' => true
+        ));
+        
+        if (!is_wp_error($response)) {
+            $response_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            error_log('🔑 СДЭК AUTH: HTTP код: ' . $response_code);
+            
+            $parsed_body = json_decode($body, true);
+            if (isset($parsed_body['access_token'])) {
+                $token = $parsed_body['access_token'];
+                $expires_in = isset($parsed_body['expires_in']) ? intval($parsed_body['expires_in']) : 3600;
+                
+                // Кэшируем токен с запасом времени
+                $this->cache_manager->set($cache_key, $token, $expires_in - 300);
+                error_log('🔑 СДЭК AUTH: ✅ Токен получен и кэширован на ' . ($expires_in - 300) . ' сек');
+                return $token;
+            } else {
+                error_log('🔑 СДЭК AUTH: ❌ Не удалось получить токен. Ответ: ' . print_r($parsed_body, true));
+            }
+        } else {
+            error_log('🔑 СДЭК AUTH: ❌ Ошибка HTTP запроса: ' . $response->get_error_message());
+        }
+        
+        return false;
     }
     
     public function get_delivery_points($address) {
+        $city = $this->extract_city_from_address($address);
+        $cache_key = 'cdek_points_' . md5($city ? $city : 'all_russia') . '_v3';
+        
+        // Проверяем кэш с длительным TTL для пунктов выдачи
+        $cached_points = $this->cache_manager->get($cache_key);
+        if ($cached_points !== false) {
+            error_log('📦 СДЭК POINTS: ✅ Используем кэшированные пункты для ' . ($city ? $city : 'России') . ' (' . count($cached_points) . ' шт.)');
+            return $cached_points;
+        }
+        
         $token = $this->get_auth_token();
         if (!$token) {
             error_log('СДЭК API: Не удалось получить токен авторизации');
             return array();
         }
         
-        // Извлекаем город из адреса
-        $city = $this->extract_city_from_address($address);
         error_log('СДЭК API: Ищем пункты для города: ' . ($city ? $city : 'все города России'));
         
-        // УБИРАЕМ ВСЕ ОГРАНИЧЕНИЯ - показываем ВСЕ пункты выдачи без фильтров
+        // Оптимизированные параметры запроса
         $params = array(
-            'country_code' => 'RU', // Только код страны для России
-            'size' => 5000, // Максимальное количество результатов
-            'page' => 0 // Первая страница
-        );
-        
-        // Добавляем город только если он указан
-        if (!empty($city)) {
-            $params['city'] = $city;
-        }
-        
-        // Строим URL с минимальными параметрами для GET запроса
-        $url = add_query_arg($params, $this->base_url . '/deliverypoints');
-        
-        error_log('СДЭК API: 🔓 УБРАНЫ ВСЕ ОГРАНИЧЕНИЯ - URL запроса: ' . $url);
-        
-        $response = wp_remote_get($url, array(
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Content-Type' => 'application/json'
-            ),
-            'timeout' => 30 // Увеличиваем таймаут для больших запросов
-        ));
-        
-        // Дополнительно делаем запрос БЕЗ ОГРАНИЧЕНИЙ для сравнения
-        $params_unrestricted = array(
             'country_code' => 'RU',
-            'size' => 5000,
+            'size' => 2000, // Увеличиваем лимит
             'page' => 0
         );
         
         if (!empty($city)) {
-            $params_unrestricted['city'] = $city;
+            $params['city'] = $city;
         }
         
-        $url_unrestricted = add_query_arg($params_unrestricted, $this->base_url . '/deliverypoints');
+        $url = add_query_arg($params, $this->base_url . '/deliverypoints');
         
-        $response_unrestricted = wp_remote_get($url_unrestricted, array(
+        error_log('СДЭК API: 🚀 Запрос к API: ' . $url);
+        
+        $response = wp_remote_get($url, array(
             'headers' => array(
                 'Authorization' => 'Bearer ' . $token,
-                'Content-Type' => 'application/json'
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+                'User-Agent' => 'WordPress/CDEK-Plugin-Optimized',
+                'Accept-Encoding' => 'gzip, deflate',
+                'Connection' => 'keep-alive'
             ),
-            'timeout' => 30
+            'timeout' => 20, // Увеличиваем таймаут для больших запросов
+            'compress' => true,
+            'blocking' => true
         ));
-        
-        if (!is_wp_error($response_unrestricted)) {
-            $body_unrestricted = wp_remote_retrieve_body($response_unrestricted);
-            $data_unrestricted = json_decode($body_unrestricted, true);
-            $count_unrestricted = is_array($data_unrestricted) ? count($data_unrestricted) : 0;
-            error_log('СДЭК API: 📊 БЕЗ ограничений: ' . $count_unrestricted . ' ПВЗ');
-        }
         
         if (!is_wp_error($response)) {
             $response_code = wp_remote_retrieve_response_code($response);
             $body = json_decode(wp_remote_retrieve_body($response), true);
             
             error_log('СДЭК API: Код ответа: ' . $response_code);
-            error_log('СДЭК API: Размер ответа: ' . strlen(wp_remote_retrieve_body($response)) . ' байт');
             
             if ($response_code === 200 && $body) {
+                $points = array();
+                
                 // Проверяем различные форматы ответа СДЭК API
                 if (isset($body['entity']) && is_array($body['entity'])) {
-                    error_log('СДЭК API: ✅ Найдено пунктов в entity: ' . count($body['entity']));
-                    return $body['entity'];
+                    $points = $body['entity'];
                 } elseif (is_array($body) && !empty($body)) {
-                    // Если ответ - массив пунктов напрямую
-                    error_log('СДЭК API: ✅ Найдено пунктов в корне ответа: ' . count($body));
-                    return $body;
+                    $points = $body;
+                }
+                
+                if (!empty($points)) {
+                    // Кэшируем пункты выдачи на длительный срок (24 часа)
+                    $this->cache_manager->set($cache_key, $points, 86400);
+                    error_log('СДЭК API: ✅ Найдено и кэширано пунктов: ' . count($points));
+                    return $points;
                 } else {
-                    error_log('СДЭК API: ⚠️ Неожиданный формат ответа: ' . print_r($body, true));
-                    return array();
+                    error_log('СДЭК API: ⚠️ Пустой ответ от API');
                 }
             } else {
                 error_log('СДЭК API: ❌ Ошибка API, код: ' . $response_code);
                 if (isset($body['errors'])) {
                     error_log('СДЭК API: Ошибки: ' . print_r($body['errors'], true));
                 }
-                return array();
             }
         } else {
             error_log('СДЭК API: ❌ Ошибка HTTP запроса: ' . $response->get_error_message());
@@ -653,6 +726,16 @@ class CdekAPI {
     }
     
     public function calculate_delivery_cost_to_point($point_code, $point_data, $cart_weight, $cart_dimensions, $cart_value, $has_real_dimensions) {
+        // Создаем уникальный ключ кэша для расчета
+        $cache_key = 'cdek_cost_' . md5($point_code . '_' . $cart_weight . '_' . json_encode($cart_dimensions) . '_' . $cart_value . '_' . $has_real_dimensions) . '_v2';
+        
+        // Проверяем кэш расчетов (TTL 30 минут)
+        $cached_cost = $this->cache_manager->get($cache_key);
+        if ($cached_cost !== false) {
+            error_log('💰 СДЭК COST: ✅ Используем кэшированную стоимость: ' . $cached_cost['delivery_sum'] . ' руб.');
+            return $cached_cost;
+        }
+        
         error_log('🎯 СДЭК РАСЧЕТ: Начинаем расчет для пункта ' . $point_code);
         
         $token = $this->get_auth_token();
@@ -661,181 +744,69 @@ class CdekAPI {
             return false;
         }
         
-        error_log('✅ СДЭК РАСЧЕТ: Токен авторизации получен: ' . substr($token, 0, 20) . '...');
+        error_log('✅ СДЭК РАСЧЕТ: Токен авторизации получен');
         
         // Подготавливаем данные для расчета  
         $from_location = array(
-            'code' => get_option('cdek_sender_city', '428') // Саратов (правильный код для API)
+            'code' => get_option('cdek_sender_city', '428') // Саратов
         );
         
-        // Определяем локацию назначения
-        $to_location = array();
+        // Определяем локацию назначения более эффективно
+        $to_location = $this->determine_destination_location($point_code, $point_data);
         
-        // Для расчета до пункта выдачи используем данные пункта
-        if ($point_code && $point_data) {
-            error_log('СДЭК API: Данные пункта для определения локации: ' . print_r($point_data, true));
-            
-            // Множественные способы определения локации
-            $location_found = false;
-            
-            // Способ 1: city_code
-            if (isset($point_data['location']['city_code']) && !empty($point_data['location']['city_code'])) {
-                $to_location['code'] = intval($point_data['location']['city_code']);
-                error_log('СДЭК API: Используем city_code: ' . $point_data['location']['city_code']);
-                $location_found = true;
-            }
-            // Способ 2: postal_code 
-            elseif (isset($point_data['location']['postal_code']) && !empty($point_data['location']['postal_code'])) {
-                $to_location['postal_code'] = $point_data['location']['postal_code'];
-                error_log('СДЭК API: Используем postal_code: ' . $point_data['location']['postal_code']);
-                $location_found = true;
-            }
-            // Способ 3: city name
-            elseif (isset($point_data['location']['city']) && !empty($point_data['location']['city'])) {
-                $city_name = trim($point_data['location']['city']);
-                $to_location['city'] = $city_name;
-                error_log('СДЭК API: Используем city: ' . $city_name);
-                $location_found = true;
-            }
-            
-            // Способ 4: извлечение из name пункта
-            if (!$location_found && isset($point_data['name'])) {
-                $name_parts = explode(',', $point_data['name']);
-                if (count($name_parts) >= 2) {
-                    $city_from_name = trim($name_parts[1]);
-                    if ($city_from_name) {
-                        $to_location['city'] = $city_from_name;
-                        error_log('СДЭК API: Извлекли город из name: ' . $city_from_name);
-                        $location_found = true;
-                    }
-                }
-            }
-            
-            // Способ 5: извлечение из полного адреса
-            if (!$location_found && isset($point_data['location']['address_full'])) {
-                $address_parts = explode(',', $point_data['location']['address_full']);
-                foreach ($address_parts as $part) {
-                    $part = trim($part);
-                    // Ищем часть с "Москва", "Санкт-Петербург" и т.д.
-                    if (preg_match('/^(г\.?\s*)?([А-Яа-я\-\s]+)$/u', $part, $matches)) {
-                        $city_candidate = trim($matches[2]);
-                        if (in_array($city_candidate, ['Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань', 'Нижний Новгород', 'Челябинск', 'Самара', 'Уфа', 'Ростов-на-Дону', 'Краснодар', 'Пермь', 'Воронеж', 'Волгоград', 'Красноярск', 'Саратов', 'Тюмень', 'Тольятти', 'Ижевск', 'Барнаул'])) {
-                            $to_location['city'] = $city_candidate;
-                            error_log('СДЭК API: Извлекли известный город из адреса: ' . $city_candidate);
-                            $location_found = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            // Способ 6: Определение города по коду пункта
-            if (!$location_found) {
-                $city_codes = array(
-                    'MSK' => array('code' => 44, 'name' => 'Москва'),
-                    'SPB' => array('code' => 137, 'name' => 'Санкт-Петербург'),
-                    'MKHCH' => array('code' => 470, 'name' => 'Махачкала'),
-                    'NSK' => array('code' => 270, 'name' => 'Новосибирск'),
-                    'EKB' => array('code' => 51, 'name' => 'Екатеринбург'),
-                    'KZN' => array('code' => 172, 'name' => 'Казань'),
-                    'NN' => array('code' => 276, 'name' => 'Нижний Новгород'),
-                    'CHE' => array('code' => 56, 'name' => 'Челябинск'),
-                    'SAM' => array('code' => 350, 'name' => 'Самара'),
-                    'UFA' => array('code' => 414, 'name' => 'Уфа'),
-                    'ROV' => array('code' => 335, 'name' => 'Ростов-на-Дону'),
-                    'KRD' => array('code' => 93, 'name' => 'Краснодар'),
-                    'PERM' => array('code' => 296, 'name' => 'Пермь'),
-                    'VRN' => array('code' => 432, 'name' => 'Воронеж'),
-                    'VGG' => array('code' => 438, 'name' => 'Волгоград'),
-                    'KRS' => array('code' => 207, 'name' => 'Красноярск'),
-                    'SRT' => array('code' => 354, 'name' => 'Саратов'),
-                    'TYU' => array('code' => 409, 'name' => 'Тюмень')
-                );
-                
-                foreach ($city_codes as $prefix => $city_info) {
-                    if (stripos($point_code, $prefix) === 0) {
-                        $to_location['code'] = $city_info['code'];
-                        error_log('🏙️ СДЭК API: Найден город ' . $city_info['name'] . ' (код: ' . $city_info['code'] . ') по префиксу пункта: ' . $prefix);
-                        $location_found = true;
-                        break;
-                    }
-                }
-                
-                if (!$location_found) {
-                    error_log('⚠️ СДЭК API: Код пункта "' . $point_code . '" не найден в списке городов. Доступные префиксы: ' . implode(', ', array_keys($city_codes)));
-                }
-            }
-            
-            if (!$location_found) {
-                error_log('СДЭК расчет: Не удалось определить локацию назначения всеми способами');
-                return false;
-            }
-            
-        } else {
-            error_log('СДЭК расчет: Не указан код пункта выдачи или данные пункта');
+        if (!$to_location) {
+            error_log('СДЭК расчет: Не удалось определить локацию назначения');
             return false;
         }
         
         // Подготавливаем данные о посылках
         $packages = array(
             array(
-                'weight' => max(100, intval($cart_weight)), // Минимум 100г
-                'length' => max(10, intval($cart_dimensions['length'])), // Минимум 10см
-                'width' => max(10, intval($cart_dimensions['width'])), // Минимум 10см
-                'height' => max(5, intval($cart_dimensions['height'])) // Минимум 5см
+                'weight' => max(100, intval($cart_weight)),
+                'length' => max(10, intval($cart_dimensions['length'])),
+                'width' => max(10, intval($cart_dimensions['width'])),
+                'height' => max(5, intval($cart_dimensions['height']))
             )
         );
         
-        error_log('СДЭК API: Подготовленная посылка: ' . print_r($packages[0], true));
+        // Определяем тариф
+        $tariff_code = 136; // Посылка склад-пункт выдачи
         
-        // Определяем тариф для доставки ИЗ САРАТОВА до пункта выдачи
-        // 136 - Посылка склад-постамат/пункт выдачи (ПРАВИЛЬНЫЙ для ПВЗ)
-        // 138 - Посылка дверь-постамат
-        $tariff_code = 136; // Возвращаем обратно для пунктов выдачи
-        
-        // Формируем запрос согласно официальной документации API СДЭК
+        // Формируем запрос
         $data = array(
-            'date' => date('Y-m-d\TH:i:sO'), // Правильный формат даты с часовым поясом
-            'type' => 1, // Тип заказа: интернет-магазин
-            'currency' => 1, // Валюта RUB
-            'lang' => 'rus', // Язык ответа
+            'date' => date('Y-m-d\TH:i:sO'),
+            'type' => 1,
+            'currency' => 1,
+            'lang' => 'rus',
             'tariff_code' => $tariff_code,
             'from_location' => $from_location,
             'to_location' => $to_location,
             'packages' => $packages
         );
         
-        error_log('📋 СДЭК API: Используем тариф ' . $tariff_code . ' от города ' . $from_location['code'] . ' до города ' . (isset($to_location['code']) ? $to_location['code'] : 'не определен'));
-        
-        // Добавляем услуги если нужны
-        $services = array();
-        
-        // Страхование если стоимость товара больше 3000 руб
+        // Добавляем страхование если нужно
         if ($cart_value > 3000) {
-            $services[] = array(
-                'code' => 'INSURANCE',
-                'parameter' => strval(intval($cart_value))
+            $data['services'] = array(
+                array(
+                    'code' => 'INSURANCE',
+                    'parameter' => strval(intval($cart_value))
+                )
             );
         }
         
-        if (!empty($services)) {
-            $data['services'] = $services;
-        }
-        
-        error_log('СДЭК расчет: Данные для API: ' . print_r($data, true));
-        
-        // Делаем запрос к API СДЭК
-        error_log('🚀 СДЭК API: Отправляем запрос к ' . $this->base_url . '/calculator/tariff');
-        error_log('📤 СДЭК API: Данные запроса: ' . json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
-        error_log('🔑 СДЭК API: Токен: ' . substr($token, 0, 20) . '...');
+        error_log('🚀 СДЭК API: Отправляем запрос расчета стоимости');
         
         $response = wp_remote_post($this->base_url . '/calculator/tariff', array(
             'headers' => array(
                 'Authorization' => 'Bearer ' . $token,
-                'Content-Type' => 'application/json'
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+                'User-Agent' => 'WordPress/CDEK-Plugin-Optimized',
+                'Connection' => 'keep-alive'
             ),
             'body' => json_encode($data),
-            'timeout' => 30 // Увеличиваем таймаут
+            'timeout' => 15, // Быстрый таймаут для расчетов
+            'compress' => true
         ));
         
         if (is_wp_error($response)) {
@@ -845,93 +816,119 @@ class CdekAPI {
         
         $response_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
-        $headers = wp_remote_retrieve_headers($response);
-        
-        error_log('📥 СДЭК API: HTTP код ответа: ' . $response_code);
-        error_log('📥 СДЭК API: Заголовки ответа: ' . print_r($headers, true));
-        error_log('📥 СДЭК API: Тело ответа: ' . $body);
-        
         $parsed_body = json_decode($body, true);
         
+        error_log('📥 СДЭК API: HTTP код ответа: ' . $response_code);
+        
         if ($response_code === 200 && $parsed_body) {
-            error_log('✅ СДЭК API: Успешный HTTP ответ, разбираем JSON: ' . print_r($parsed_body, true));
-            
             if (isset($parsed_body['delivery_sum']) && $parsed_body['delivery_sum'] > 0) {
-                error_log('🎉 СДЭК API: Успешно получена стоимость от API: ' . $parsed_body['delivery_sum'] . ' руб.');
-                return array(
+                $result = array(
                     'delivery_sum' => intval($parsed_body['delivery_sum']),
                     'period_min' => isset($parsed_body['period_min']) ? $parsed_body['period_min'] : null,
                     'period_max' => isset($parsed_body['period_max']) ? $parsed_body['period_max'] : null,
                     'api_success' => true
                 );
+                
+                // Кэшируем результат расчета на 30 минут
+                $this->cache_manager->set($cache_key, $result, 1800);
+                
+                error_log('🎉 СДЭК API: Успешно получена и кэширована стоимость: ' . $result['delivery_sum'] . ' руб.');
+                return $result;
             } elseif (isset($parsed_body['errors']) && !empty($parsed_body['errors'])) {
-                error_log('❌ СДЭК API: API вернул ошибки: ' . print_r($parsed_body['errors'], true));
-                
-                // Анализируем ошибки для понимания проблемы
-                foreach ($parsed_body['errors'] as $error) {
-                    if (isset($error['code']) && isset($error['message'])) {
-                        error_log('❌ СДЭК API: Ошибка ' . $error['code'] . ': ' . $error['message']);
-                    }
-                }
-                
-                // Пробуем альтернативный способ расчета
-                return $this->try_alternative_calculation($data, $token);
-            } else {
-                error_log('⚠️ СДЭК API: API вернул ответ без delivery_sum: ' . print_r($parsed_body, true));
-                
-                // Проверяем, есть ли warnings
-                if (isset($parsed_body['warnings']) && !empty($parsed_body['warnings'])) {
-                    error_log('⚠️ СДЭК API: Предупреждения: ' . print_r($parsed_body['warnings'], true));
-                }
-                
-                return $this->try_alternative_calculation($data, $token);
+                error_log('❌ СДЭК API: Ошибки: ' . print_r($parsed_body['errors'], true));
+                return $this->try_alternative_calculation($data, $token, $cache_key);
             }
-        } else {
-            error_log('❌ СДЭК API: Некорректный ответ. HTTP код: ' . $response_code . ', JSON валиден: ' . ($parsed_body ? 'Да' : 'Нет'));
-            if (!$parsed_body && $body) {
-                error_log('❌ СДЭК API: Ошибка парсинга JSON. Сырое тело: ' . substr($body, 0, 500));
+        }
+        
+        error_log('❌ СДЭК API: Некорректный ответ. HTTP код: ' . $response_code);
+        return false;
+    }
+    
+    private function determine_destination_location($point_code, $point_data) {
+        // Оптимизированное определение локации назначения
+        $location = array();
+        
+        // Способ 1: city_code (самый быстрый)
+        if (isset($point_data['location']['city_code']) && !empty($point_data['location']['city_code'])) {
+            $location['code'] = intval($point_data['location']['city_code']);
+            return $location;
+        }
+        
+        // Способ 2: postal_code
+        if (isset($point_data['location']['postal_code']) && !empty($point_data['location']['postal_code'])) {
+            $location['postal_code'] = $point_data['location']['postal_code'];
+            return $location;
+        }
+        
+        // Способ 3: по коду пункта (быстрый lookup)
+        $city_codes = $this->get_city_codes_map();
+        foreach ($city_codes as $prefix => $city_info) {
+            if (stripos($point_code, $prefix) === 0) {
+                $location['code'] = $city_info['code'];
+                return $location;
             }
-            return false;
+        }
+        
+        // Способ 4: city name
+        if (isset($point_data['location']['city']) && !empty($point_data['location']['city'])) {
+            $location['city'] = trim($point_data['location']['city']);
+            return $location;
         }
         
         return false;
     }
     
-    private function try_alternative_calculation($original_data, $token) {
-        error_log('СДЭК расчет: Пробуем альтернативный метод расчета');
+    private function get_city_codes_map() {
+        // Кэшированная карта кодов городов
+        static $city_codes = null;
         
-        // Попробуем разные тарифы ИЗ САРАТОВА
-        $alternative_tariffs = [136, 138, 233, 234]; // ПВЗ, Постамат, Эконом, Стандарт
+        if ($city_codes === null) {
+            $city_codes = array(
+                'MSK' => array('code' => 44, 'name' => 'Москва'),
+                'SPB' => array('code' => 137, 'name' => 'Санкт-Петербург'),
+                'NSK' => array('code' => 270, 'name' => 'Новосибирск'),
+                'EKB' => array('code' => 51, 'name' => 'Екатеринбург'),
+                'KZN' => array('code' => 172, 'name' => 'Казань'),
+                'NN' => array('code' => 276, 'name' => 'Нижний Новгород'),
+                'CHE' => array('code' => 56, 'name' => 'Челябинск'),
+                'SAM' => array('code' => 350, 'name' => 'Самара'),
+                'UFA' => array('code' => 414, 'name' => 'Уфа'),
+                'ROV' => array('code' => 335, 'name' => 'Ростов-на-Дону'),
+                'KRD' => array('code' => 93, 'name' => 'Краснодар'),
+                'PERM' => array('code' => 296, 'name' => 'Пермь'),
+                'VRN' => array('code' => 432, 'name' => 'Воронеж'),
+                'VGG' => array('code' => 438, 'name' => 'Волгоград'),
+                'KRS' => array('code' => 207, 'name' => 'Красноярск'),
+                'SRT' => array('code' => 354, 'name' => 'Саратов'),
+                'TYU' => array('code' => 409, 'name' => 'Тюмень')
+            );
+        }
+        
+        return $city_codes;
+    }
+    
+    private function try_alternative_calculation($original_data, $token, $cache_key) {
+        error_log('СДЭК расчет: Пробуем альтернативные тарифы');
+        
+        $alternative_tariffs = [136, 138, 233, 234];
         
         foreach ($alternative_tariffs as $tariff) {
             $data = $original_data;
             $data['tariff_code'] = $tariff;
             
-            // Добавляем недостающие поля если их нет
-            if (!isset($data['date'])) {
-                $data['date'] = date('Y-m-d\TH:i:sO');
-            }
-            if (!isset($data['currency'])) {
-                $data['currency'] = 1; // RUB
-            }
-            if (!isset($data['lang'])) {
-                $data['lang'] = 'rus';
-            }
-            
-            // Упростим локацию - используем только город Москва если не указано
+            // Упрощаем локацию
             if (!isset($data['to_location']['code'])) {
-                $data['to_location'] = array('code' => 44); // Москва
+                $data['to_location'] = array('code' => 44); // Москва по умолчанию
             }
-            
-            error_log('СДЭК расчет: Пробуем тариф ' . $tariff . ' с данными: ' . print_r($data, true));
             
             $response = wp_remote_post($this->base_url . '/calculator/tariff', array(
                 'headers' => array(
                     'Authorization' => 'Bearer ' . $token,
-                    'Content-Type' => 'application/json'
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
                 ),
                 'body' => json_encode($data),
-                'timeout' => 30
+                'timeout' => 10
             ));
             
             if (!is_wp_error($response)) {
@@ -939,41 +936,128 @@ class CdekAPI {
                 if ($response_code === 200) {
                     $body = json_decode(wp_remote_retrieve_body($response), true);
                     if (isset($body['delivery_sum']) && $body['delivery_sum'] > 0) {
-                        error_log('СДЭК расчет: Альтернативный расчет успешен с тарифом ' . $tariff . ': ' . $body['delivery_sum']);
-                        return array(
+                        $result = array(
                             'delivery_sum' => intval($body['delivery_sum']),
                             'period_min' => isset($body['period_min']) ? $body['period_min'] : null,
                             'period_max' => isset($body['period_max']) ? $body['period_max'] : null,
                             'api_success' => true,
                             'alternative_tariff' => $tariff
                         );
+                        
+                        // Кэшируем альтернативный результат
+                        $this->cache_manager->set($cache_key, $result, 1800);
+                        
+                        error_log('СДЭК расчет: ✅ Альтернативный расчет успешен с тарифом ' . $tariff . ': ' . $result['delivery_sum']);
+                        return $result;
                     }
                 }
             }
         }
         
-        error_log('СДЭК расчет: Альтернативные методы не сработали');
         return false;
     }
     
     private function extract_city_from_address($address) {
-        // Улучшенное извлечение города из адреса
         $address = trim($address);
         
-        // Если адрес "Россия", возвращаем пустую строку для поиска по всем городам
         if (strtolower($address) === 'россия' || strtolower($address) === 'russia') {
-            error_log('СДЭК API: Адрес "Россия" - будем искать по всем городам');
             return '';
         }
         
-        // Очищаем от префиксов "г.", "город", "г "
+        // Очищаем от префиксов
         $city = preg_replace('/^(г\.?\s*|город\s+)/ui', '', $address);
         
-        // Если есть запятые, берем первую часть
+        // Берем первую часть до запятой
         $parts = explode(',', $city);
         $city = trim($parts[0]);
         
-        error_log('СДЭК API: Извлеченный город: ' . $city);
         return $city;
+    }
+}
+
+/**
+ * Менеджер кэша для СДЭК API
+ */
+class CdekCacheManager {
+    
+    private $table_name;
+    
+    public function __construct() {
+        global $wpdb;
+        $this->table_name = $wpdb->prefix . 'cdek_cache';
+    }
+    
+    /**
+     * Получить значение из кэша
+     */
+    public function get($key) {
+        global $wpdb;
+        
+        $result = $wpdb->get_row($wpdb->prepare(
+            "SELECT cache_value, expiry_time FROM {$this->table_name} WHERE cache_key = %s AND expiry_time > NOW()",
+            $key
+        ));
+        
+        if ($result) {
+            // Увеличиваем счетчик попаданий
+            $wpdb->query($wpdb->prepare(
+                "UPDATE {$this->table_name} SET hit_count = hit_count + 1 WHERE cache_key = %s",
+                $key
+            ));
+            
+            $value = maybe_unserialize($result->cache_value);
+            return $value;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Сохранить значение в кэш
+     */
+    public function set($key, $value, $ttl = 3600) {
+        global $wpdb;
+        
+        $serialized_value = maybe_serialize($value);
+        $expiry_time = date('Y-m-d H:i:s', time() + $ttl);
+        
+        $result = $wpdb->query($wpdb->prepare(
+            "INSERT INTO {$this->table_name} (cache_key, cache_value, expiry_time) 
+             VALUES (%s, %s, %s) 
+             ON DUPLICATE KEY UPDATE 
+             cache_value = VALUES(cache_value), 
+             expiry_time = VALUES(expiry_time),
+             hit_count = 0",
+            $key,
+            $serialized_value,
+            $expiry_time
+        ));
+        
+        // Периодически очищаем устаревшие записи
+        if (rand(1, 100) === 1) {
+            $this->cleanup_expired();
+        }
+        
+        return $result !== false;
+    }
+    
+    /**
+     * Удалить устаревшие записи
+     */
+    public function cleanup_expired() {
+        global $wpdb;
+        
+        $wpdb->query("DELETE FROM {$this->table_name} WHERE expiry_time < NOW()");
+        
+        // Удаляем старые неиспользуемые записи
+        $wpdb->query("DELETE FROM {$this->table_name} WHERE created_time < DATE_SUB(NOW(), INTERVAL 7 DAY) AND hit_count = 0");
+    }
+    
+    /**
+     * Очистить весь кэш
+     */
+    public function flush() {
+        global $wpdb;
+        return $wpdb->query("TRUNCATE TABLE {$this->table_name}");
     }
 }

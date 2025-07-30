@@ -1,14 +1,365 @@
 /**
- * СДЭК Доставка - Исправленная версия
- * Исправлены: разделение коробок, CORS ошибки, производительность на мобильных
+ * СДЭК Доставка - Ультра-оптимизированная версия
+ * Добавлено: веб-воркеры, IndexedDB кэш, параллельные запросы, предзагрузка
  */
 
-// ========== УТИЛИТЫ ДЛЯ ОПТИМИЗАЦИИ ==========
+// ========== ПРОДВИНУТЫЕ УТИЛИТЫ ДЛЯ УЛЬТРА-ОПТИМИЗАЦИИ ==========
 
-// Мемоизация с TTL
-class Memoizer {
-    constructor(ttl = 300000) {
+// IndexedDB менеджер для больших объемов данных
+class IndexedDBCache {
+    constructor(dbName = 'cdek_cache', version = 1) {
+        this.dbName = dbName;
+        this.version = version;
+        this.db = null;
+        this.initPromise = this.init();
+    }
+    
+    async init() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.version);
+            
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                this.db = request.result;
+                resolve(this.db);
+            };
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                
+                // Создаем хранилища для разных типов данных
+                if (!db.objectStoreNames.contains('points')) {
+                    const pointsStore = db.createObjectStore('points', { keyPath: 'key' });
+                    pointsStore.createIndex('city', 'city', { unique: false });
+                    pointsStore.createIndex('expiry', 'expiry', { unique: false });
+                }
+                
+                if (!db.objectStoreNames.contains('costs')) {
+                    const costsStore = db.createObjectStore('costs', { keyPath: 'key' });
+                    costsStore.createIndex('expiry', 'expiry', { unique: false });
+                }
+                
+                if (!db.objectStoreNames.contains('geocoding')) {
+                    const geoStore = db.createObjectStore('geocoding', { keyPath: 'key' });
+                    geoStore.createIndex('expiry', 'expiry', { unique: false });
+                }
+            };
+        });
+    }
+    
+    async set(storeName, key, value, ttl = 86400000) { // 24 часа по умолчанию
+        await this.initPromise;
+        
+        const transaction = this.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        
+        const record = {
+            key: key,
+            value: value,
+            timestamp: Date.now(),
+            expiry: Date.now() + ttl
+        };
+        
+        if (storeName === 'points' && value.city) {
+            record.city = value.city;
+        }
+        
+        await store.put(record);
+        
+        // Периодическая очистка устаревших записей
+        if (Math.random() < 0.01) {
+            this.cleanup(storeName);
+        }
+    }
+    
+    async get(storeName, key) {
+        await this.initPromise;
+        
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        
+        return new Promise((resolve) => {
+            const request = store.get(key);
+            request.onsuccess = () => {
+                const record = request.result;
+                if (record && record.expiry > Date.now()) {
+                    resolve(record.value);
+                } else {
+                    if (record) {
+                        // Удаляем устаревшую запись
+                        const deleteTransaction = this.db.transaction([storeName], 'readwrite');
+                        deleteTransaction.objectStore(storeName).delete(key);
+                    }
+                    resolve(null);
+                }
+            };
+            request.onerror = () => resolve(null);
+        });
+    }
+    
+    async cleanup(storeName) {
+        await this.initPromise;
+        
+        const transaction = this.db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const index = store.index('expiry');
+        
+        const request = index.openCursor(IDBKeyRange.upperBound(Date.now()));
+        request.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+                cursor.delete();
+                cursor.continue();
+            }
+        };
+    }
+    
+    async getByCity(city) {
+        await this.initPromise;
+        
+        const transaction = this.db.transaction(['points'], 'readonly');
+        const store = transaction.objectStore('points');
+        const index = store.index('city');
+        
+        return new Promise((resolve) => {
+            const results = [];
+            const request = index.openCursor(IDBKeyRange.only(city));
+            
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    if (cursor.value.expiry > Date.now()) {
+                        results.push(cursor.value.value);
+                    }
+                    cursor.continue();
+                } else {
+                    resolve(results);
+                }
+            };
+            request.onerror = () => resolve([]);
+        });
+    }
+}
+
+// Параллельный загрузчик для множественных запросов
+class ParallelLoader {
+    constructor() {
+        this.activeRequests = new Map();
+        this.requestQueue = [];
+        this.maxConcurrency = 4; // Ограничиваем количество одновременных запросов
+    }
+    
+    async load(requests) {
+        const promises = requests.map(request => this.processRequest(request));
+        return Promise.allSettled(promises);
+    }
+    
+    async processRequest(request) {
+        const key = this.getRequestKey(request);
+        
+        // Избегаем дублирующих запросов
+        if (this.activeRequests.has(key)) {
+            return this.activeRequests.get(key);
+        }
+        
+        const promise = this.makeRequest(request);
+        this.activeRequests.set(key, promise);
+        
+        try {
+            const result = await promise;
+            return result;
+        } finally {
+            this.activeRequests.delete(key);
+        }
+    }
+    
+    async makeRequest(request) {
+        return new Promise((resolve, reject) => {
+            $.ajax({
+                ...request,
+                success: (data) => resolve({ success: true, data }),
+                error: (xhr, status, error) => resolve({ success: false, error: { xhr, status, error } }),
+                timeout: request.timeout || 10000
+            });
+        });
+    }
+    
+    getRequestKey(request) {
+        return `${request.url}_${JSON.stringify(request.data || {})}`;
+    }
+}
+
+// Предзагрузчик популярных данных
+class DataPreloader {
+    constructor(cache, loader) {
+        this.cache = cache;
+        this.loader = loader;
+        this.popularCities = [
+            'Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань',
+            'Нижний Новгород', 'Челябинск', 'Самара', 'Уфа', 'Ростов-на-Дону'
+        ];
+    }
+    
+    async preloadPopularData() {
+        console.log('🚀 Запуск предзагрузки популярных данных');
+        
+        // Предзагружаем пункты выдачи для популярных городов
+        const pointsRequests = this.popularCities.map(city => ({
+            url: cdek_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'get_cdek_points',
+                address: city,
+                nonce: cdek_ajax.nonce
+            },
+            city: city
+        }));
+        
+        // Загружаем параллельно с задержкой чтобы не перегружать сервер
+        for (let i = 0; i < pointsRequests.length; i++) {
+            const request = pointsRequests[i];
+            
+            setTimeout(async () => {
+                try {
+                    const cached = await this.cache.get('points', `points_${request.city}`);
+                    if (!cached) {
+                        const result = await this.loader.processRequest(request);
+                        if (result.success && result.data.success) {
+                            await this.cache.set('points', `points_${request.city}`, {
+                                city: request.city,
+                                points: result.data.data
+                            }, 86400000); // 24 часа
+                            console.log(`✅ Предзагружены ПВЗ для ${request.city}: ${result.data.data.length} шт.`);
+                        }
+                    }
+                } catch (error) {
+                    console.log(`❌ Ошибка предзагрузки для ${request.city}:`, error);
+                }
+            }, i * 1000); // Задержка в 1 секунду между запросами
+        }
+    }
+    
+    async getPreloadedPoints(city) {
+        const cached = await this.cache.get('points', `points_${city}`);
+        return cached ? cached.points : null;
+    }
+}
+
+// Менеджер веб-воркеров для тяжелых вычислений
+class WorkerManager {
+    constructor() {
+        this.workers = [];
+        this.maxWorkers = navigator.hardwareConcurrency || 4;
+        this.taskQueue = [];
+        this.workerScript = this.createWorkerScript();
+    }
+    
+    createWorkerScript() {
+        const script = `
+            self.onmessage = function(e) {
+                const { type, data } = e.data;
+                
+                switch(type) {
+                    case 'filterPoints':
+                        const filtered = filterPointsByLocation(data.points, data.coordinates, data.maxDistance);
+                        self.postMessage({ type: 'filterPoints', result: filtered });
+                        break;
+                        
+                    case 'sortByDistance':
+                        const sorted = sortPointsByDistance(data.points, data.coordinates);
+                        self.postMessage({ type: 'sortByDistance', result: sorted });
+                        break;
+                        
+                    case 'processGeometry':
+                        const processed = processComplexGeometry(data.geometry);
+                        self.postMessage({ type: 'processGeometry', result: processed });
+                        break;
+                }
+            };
+            
+            function filterPointsByLocation(points, coordinates, maxDistance) {
+                if (!coordinates) return points;
+                
+                return points.filter(point => {
+                    if (!point.location || !point.location.latitude || !point.location.longitude) {
+                        return true;
+                    }
+                    
+                    const distance = calculateDistance(
+                        coordinates[0], coordinates[1],
+                        point.location.latitude, point.location.longitude
+                    );
+                    
+                    return distance <= maxDistance;
+                });
+            }
+            
+            function sortPointsByDistance(points, coordinates) {
+                if (!coordinates) return points;
+                
+                return points.slice().sort((a, b) => {
+                    const distA = calculateDistance(
+                        coordinates[0], coordinates[1],
+                        a.location.latitude, a.location.longitude
+                    );
+                    const distB = calculateDistance(
+                        coordinates[0], coordinates[1],
+                        b.location.latitude, b.location.longitude
+                    );
+                    return distA - distB;
+                });
+            }
+            
+            function calculateDistance(lat1, lon1, lat2, lon2) {
+                const R = 6371;
+                const dLat = (lat2 - lat1) * Math.PI / 180;
+                const dLon = (lon2 - lon1) * Math.PI / 180;
+                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                        Math.sin(dLon/2) * Math.sin(dLon/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                return R * c;
+            }
+            
+            function processComplexGeometry(geometry) {
+                // Обработка сложной геометрии для карт
+                return geometry;
+            }
+        `;
+        
+        return URL.createObjectURL(new Blob([script], { type: 'application/javascript' }));
+    }
+    
+    async executeTask(type, data) {
+        return new Promise((resolve, reject) => {
+            const worker = new Worker(this.workerScript);
+            
+            worker.onmessage = (e) => {
+                worker.terminate();
+                resolve(e.data.result);
+            };
+            
+            worker.onerror = (error) => {
+                worker.terminate();
+                reject(error);
+            };
+            
+            worker.postMessage({ type, data });
+            
+            // Таймаут для защиты от зависших воркеров
+            setTimeout(() => {
+                worker.terminate();
+                reject(new Error('Worker timeout'));
+            }, 10000);
+        });
+    }
+}
+
+// Оптимизированный мемоизатор с LRU политикой
+class LRUMemoizer {
+    constructor(maxSize = 100, ttl = 300000) {
         this.cache = new Map();
+        this.maxSize = maxSize;
         this.ttl = ttl;
     }
     
@@ -18,17 +369,21 @@ class Memoizer {
             const cached = this.cache.get(key);
             
             if (cached && Date.now() - cached.timestamp < this.ttl) {
+                // Перемещаем в конец (LRU)
+                this.cache.delete(key);
+                this.cache.set(key, cached);
                 return cached.value;
             }
             
             const result = fn.apply(this, args);
-            this.cache.set(key, { value: result, timestamp: Date.now() });
             
-            if (this.cache.size > 50) { // Уменьшено для мобильных
-                const oldestKey = this.cache.keys().next().value;
-                this.cache.delete(oldestKey);
+            // Удаляем старые записи если превышен лимит
+            if (this.cache.size >= this.maxSize) {
+                const firstKey = this.cache.keys().next().value;
+                this.cache.delete(firstKey);
             }
             
+            this.cache.set(key, { value: result, timestamp: Date.now() });
             return result;
         };
     }
@@ -38,17 +393,26 @@ class Memoizer {
     }
 }
 
-// Умный дебаунсер с приоритетами
+// ========== ОРИГИНАЛЬНЫЕ УТИЛИТЫ (УЛУЧШЕННЫЕ) ==========
+
+// Улучшенный дебаунсер с приоритетами и батчингом
 class SmartDebouncer {
     constructor() {
         this.timers = new Map();
         this.priorities = new Map();
+        this.batchQueue = new Map();
     }
     
     debounce(key, fn, delay, priority = 0) {
-        if (priority > 5) {
+        if (priority > 8) {
+            // Сверхвысокий приоритет - выполняем немедленно
             this.cancel(key);
             return fn();
+        }
+        
+        // Батчинг для однотипных операций
+        if (key.startsWith('batch_')) {
+            return this.batchOperation(key, fn, delay);
         }
         
         this.cancel(key);
@@ -63,6 +427,28 @@ class SmartDebouncer {
         this.priorities.set(key, priority);
     }
     
+    batchOperation(key, fn, delay) {
+        if (!this.batchQueue.has(key)) {
+            this.batchQueue.set(key, []);
+        }
+        
+        this.batchQueue.get(key).push(fn);
+        
+        this.debounce(`execute_${key}`, () => {
+            const batch = this.batchQueue.get(key);
+            this.batchQueue.delete(key);
+            
+            // Выполняем все операции в батче
+            batch.forEach(batchFn => {
+                try {
+                    batchFn();
+                } catch (error) {
+                    console.error('Batch operation error:', error);
+                }
+            });
+        }, delay);
+    }
+    
     cancel(key) {
         if (this.timers.has(key)) {
             clearTimeout(this.timers.get(key));
@@ -72,294 +458,297 @@ class SmartDebouncer {
     }
 }
 
-// Батчинг DOM операций с throttling для мобильных
-class DOMBatcher {
-    constructor() {
-        this.operations = [];
-        this.scheduled = false;
-        this.isMobile = window.innerWidth <= 768;
-        this.throttleDelay = this.isMobile ? 32 : 16; // 30fps для мобильных, 60fps для десктопа
-    }
-    
-    add(operation) {
-        this.operations.push(operation);
-        if (!this.scheduled) {
-            this.scheduled = true;
-            
-            if (this.isMobile) {
-                // Для мобильных используем setTimeout вместо rAF для лучшей производительности
-                setTimeout(() => this.flush(), this.throttleDelay);
-            } else {
-                requestAnimationFrame(() => this.flush());
-            }
-        }
-    }
-    
-    flush() {
-        // Обрабатываем операции порциями для мобильных
-        const batchSize = this.isMobile ? 5 : 10;
-        const currentBatch = this.operations.splice(0, batchSize);
-        
-        currentBatch.forEach(op => {
-            try {
-                op();
-            } catch (error) {
-                console.error('DOM operation error:', error);
-            }
-        });
-        
-        if (this.operations.length > 0) {
-            // Продолжаем обработку оставшихся операций
-            setTimeout(() => this.flush(), this.throttleDelay);
-        } else {
-            this.scheduled = false;
-        }
-    }
-}
-
-// Исправление дублированных цен - КРИТИЧЕСКИ ВАЖНО!
-class PriceFormatter {
-    static fixDuplicatedPrice(priceText) {
-        if (!priceText || typeof priceText !== 'string') {
-            return priceText;
-        }
-        
-        const numbers = priceText.match(/\d+/g);
-        if (!numbers || numbers.length === 0) {
-            return priceText;
-        }
-        
-        const mainNumber = numbers[0];
-        
-        // НЕ исправляем валидные итоговые суммы (135000 + 6984 = 141984)
-        // Проверяем, является ли это валидной суммой заказа
-        const numValue = parseInt(mainNumber);
-        if (numValue >= 100000 && numValue <= 999999) {
-            // Это может быть валидная итоговая сумма заказа, не трогаем
-            return priceText;
-        }
-        
-        if (mainNumber.length >= 6) {
-            const patterns = [
-                // Паттерн полного дублирования: ABCABC -> ABC (например: 180180 -> 180)
-                { 
-                    prefixLen: Math.floor(mainNumber.length / 2), 
-                    check: (prefix, suffix) => prefix === suffix && prefix.length >= 2
-                },
-                // Паттерн склеивания: ABC + DEFGH = ABCDEFGH, но только если ABC намного меньше DEFGH
-                { 
-                    prefixLen: 3, 
-                    check: (prefix, suffix) => {
-                        const prefixNum = parseInt(prefix);
-                        const suffixNum = parseInt(suffix);
-                        // Исправляем только если префикс в 10+ раз меньше суффикса
-                        return prefixNum > 0 && suffixNum > 0 && (suffixNum / prefixNum) >= 10;
-                    }
-                }
-            ];
-            
-            for (const pattern of patterns) {
-                if (mainNumber.length >= pattern.prefixLen * 2) {
-                    const prefix = mainNumber.substring(0, pattern.prefixLen);
-                    const suffix = mainNumber.substring(pattern.prefixLen);
-                    
-                    if (pattern.check(prefix, suffix)) {
-                        const correctedNumber = pattern.prefixLen === Math.floor(mainNumber.length / 2) ? prefix : suffix;
-                        const correctedText = priceText.replace(mainNumber, correctedNumber);
-                        
-                        console.log(`🔧 Исправлена дублированная цена: ${priceText} -> ${correctedText}`);
-                        return correctedText;
-                    }
-                }
-            }
-        }
-        
-        return priceText;
-    }
-    
-    static extractCleanPrice(priceText) {
-        const fixed = this.fixDuplicatedPrice(priceText);
-        const match = fixed.match(/(\d+(?:\.\d+)?)/);
-        return match ? parseFloat(match[1]) : 0;
-    }
-}
-
-// ========== УМНЫЙ ПОИСК АДРЕСОВ С ПОЛНЫМ СПИСКОМ ГОРОДОВ ==========
-
-class SmartAddressSearch {
-    constructor() {
-        this.cache = new Map();
-        this.debouncer = new SmartDebouncer();
-        this.userLocation = null;
-        
-        // ПОЛНЫЙ список российских городов (расширенный)
-        this.popularCities = [
-            // Федеральные города и миллионники
-            'Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань', 'Нижний Новгород',
-            'Челябинск', 'Самара', 'Уфа', 'Ростов-на-Дону', 'Краснодар', 'Пермь', 'Воронеж',
-            'Волгоград', 'Красноярск', 'Саратов', 'Тюмень', 'Тольятти', 'Ижевск', 'Барнаул',
-            
-            // Крупные региональные центры
-            'Ульяновск', 'Владивосток', 'Ярославль', 'Иркутск', 'Хабаровск', 'Махачкала', 'Томск',
-            'Оренбург', 'Кемерово', 'Новокузнецк', 'Рязань', 'Астрахань', 'Пенза', 'Липецк',
-            'Тула', 'Киров', 'Чебоксары', 'Калининград', 'Брянск', 'Курск', 'Иваново', 'Магнитогорск',
-            'Тверь', 'Ставрополь', 'Симферополь', 'Белгород', 'Архангельск', 'Владимир', 'Сочи',
-            'Курган', 'Смоленск', 'Калуга', 'Чита', 'Орёл', 'Волжский', 'Череповец', 'Владикавказ',
-            'Мурманск', 'Сургут', 'Вологда', 'Тамбов', 'Стерлитамак', 'Грозный', 'Якутск',
-            'Кострома', 'Комсомольск-на-Амуре', 'Петрозаводск', 'Таганрог', 'Нижневартовск', 'Йошкар-Ола',
-            
-            // Города с населением более 200 тысяч
-            'Братск', 'Новороссийск', 'Дзержинск', 'Шахты', 'Нижнекамск', 'Орск', 'Ангарск',
-            'Старый Оскол', 'Великий Новгород', 'Благовещенск', 'Прокопьевск', 'Химки', 'Бийск',
-            'Энгельс', 'Рыбинск', 'Балашиха', 'Северодвинск', 'Армавир', 'Подольск', 'Королёв',
-            'Сызрань', 'Норильск', 'Золотое кольцо', 'Каменск-Уральский', 'Волжск', 'Альметьевск',
-            'Уссурийск', 'Мытищи', 'Люберцы', 'Электросталь', 'Салават', 'Миасс', 'Абакан',
-            'Рубцовск', 'Коломна', 'Майкоп', 'Ковров', 'Красногорск', 'Нальчик', 'Усть-Илимск',
-            'Серпухов', 'Новочебоксарск', 'Нефтеюганск', 'Димитровград', 'Нефтекамск', 'Черкесск',
-            'Дербент', 'Камышин', 'Новый Уренгой', 'Муром', 'Ачинск', 'Кисловодск', 'Первоуральск',
-            'Елец', 'Евпатория', 'Арзамас', 'Рубцовск', 'Тобольск', 'Жуковский', 'Ноябрьск',
-            'Невинномысск', 'Березники', 'Назрань', 'Южно-Сахалинск', 'Волгодонск', 'Сыктывкар',
-            'Новочеркасск', 'Каспийск', 'Обнинск', 'Пятигорск', 'Октябрьский', 'Ломоносов'
-        ];
-        
-        this.initUserLocation();
-    }
-    
-    async initUserLocation() {
-        try {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        this.userLocation = {
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude
-                        };
-                        console.log('✅ Геолокация получена:', this.userLocation);
-                    },
-                    (error) => {
-                        console.log('Геолокация недоступна, используем fallback');
-                        // НЕ используем внешние API - избегаем CORS ошибок
-                        this.setDefaultLocation();
-                    },
-                    { timeout: 5000, maximumAge: 300000 }
-                );
-            } else {
-                this.setDefaultLocation();
-            }
-        } catch (error) {
-            console.log('Геолокация недоступна');
-            this.setDefaultLocation();
-        }
-    }
-    
-    setDefaultLocation() {
-        // Устанавливаем Москву как локацию по умолчанию
-        this.userLocation = {
-            lat: 55.7558,
-            lng: 37.6176,
-            city: 'Москва'
-        };
-    }
-    
-    search(query, callback) {
-        this.debouncer.debounce('address-search', () => {
-            this.performSearch(query, callback);
-        }, 200); // Уменьшено для более быстрого отклика
-    }
-    
-    performSearch(query, callback) {
-        if (!query || query.length < 2) {
-            callback([]);
-            return;
-        }
-        
-        const cacheKey = query.toLowerCase();
-        if (this.cache.has(cacheKey)) {
-            callback(this.cache.get(cacheKey));
-            return;
-        }
-        
-        const results = this.searchInCities(query);
-        this.cache.set(cacheKey, results);
-        callback(results);
-    }
-    
-    searchInCities(query) {
-        const queryLower = query.toLowerCase().trim();
-        const results = [];
-        
-        // Оптимизированный поиск для мобильных
-        const maxResults = window.innerWidth <= 768 ? 8 : 12;
-        
-        this.popularCities.forEach(city => {
-            if (results.length >= maxResults) return;
-            
-            const cityLower = city.toLowerCase();
-            let score = 0;
-            
-            if (cityLower === queryLower) {
-                score = 1000;
-            } else if (cityLower.startsWith(queryLower)) {
-                score = 500;
-            } else if (cityLower.includes(queryLower)) {
-                score = 200;
-            } else {
-                // Упрощенная проверка похожести для мобильных
-                if (queryLower.length >= 3) {
-                    const similarity = this.fastSimilarity(queryLower, cityLower);
-                    if (similarity > 0.6) {
-                        score = similarity * 100;
-                    }
-                }
-            }
-            
-            if (score > 0) {
-                const popularityIndex = this.popularCities.indexOf(city);
-                const popularityBonus = (this.popularCities.length - popularityIndex) * 2;
-                score += popularityBonus;
-                
-                if (this.userLocation && this.userLocation.city === city) {
-                    score += 200;
-                }
-                
-                results.push({
-                    city: city,
-                    display: city,
-                    score: score,
-                    type: 'city'
-                });
-            }
-        });
-        
-        results.sort((a, b) => b.score - a.score);
-        return results.slice(0, maxResults);
-    }
-    
-    // Быстрая оценка похожести без полного алгоритма Левенштейна
-    fastSimilarity(str1, str2) {
-        if (str1.length === 0) return str2.length === 0 ? 1 : 0;
-        if (str2.length === 0) return 0;
-        
-        let matches = 0;
-        const minLen = Math.min(str1.length, str2.length);
-        
-        for (let i = 0; i < minLen; i++) {
-            if (str1[i] === str2[i]) {
-                matches++;
-            }
-        }
-        
-        return matches / Math.max(str1.length, str2.length);
-    }
-}
-
-// ========== ОСНОВНОЙ КОД СДЭК ==========
+// ========== ОСНОВНОЙ КОД С УЛЬТРА-ОПТИМИЗАЦИЕЙ ==========
 
 jQuery(document).ready(function($) {
     var cdekMap = null;
     var cdekPoints = [];
     var selectedPoint = null;
     var isInitialized = false;
+    
+    // Инициализируем продвинутые утилиты
+    const indexedDBCache = new IndexedDBCache();
+    const parallelLoader = new ParallelLoader();
+    const dataPreloader = new DataPreloader(indexedDBCache, parallelLoader);
+    const workerManager = new WorkerManager();
+    const lruMemoizer = new LRUMemoizer(200, 600000); // 10 минут
+    const debouncer = new SmartDebouncer();
+    const domBatcher = new DOMBatcher();
+    const addressSearch = new SmartAddressSearch();
+    
+    // Мемоизированные функции с LRU
+    const memoizedCalculateDeliveryCost = lruMemoizer.memoize(calculateDeliveryCost);
+    const memoizedGeocodeAddress = lruMemoizer.memoize(geocodeAddress);
+    
+    // Запускаем предзагрузку данных
+    setTimeout(() => {
+        dataPreloader.preloadPopularData();
+    }, 2000);
+    
+    // ========== УЛЬТРА-БЫСТРЫЕ ФУНКЦИИ ПОИСКА И РАСЧЕТА ==========
+    
+    async function ultraFastSearchCdekPoints(address) {
+        const parsedAddress = parseAddress(address);
+        const city = parsedAddress.city;
+        
+        console.log('🚀 Ультра-быстрый поиск ПВЗ для:', city);
+        
+        // Сначала проверяем предзагруженные данные
+        const preloadedPoints = await dataPreloader.getPreloadedPoints(city);
+        if (preloadedPoints && preloadedPoints.length > 0) {
+            console.log('⚡ Используем предзагруженные ПВЗ:', preloadedPoints.length, 'шт.');
+            hidePvzLoader();
+            displayCdekPoints(preloadedPoints);
+            return;
+        }
+        
+        // Проверяем IndexedDB кэш
+        const cachedPoints = await indexedDBCache.get('points', `points_${city}`);
+        if (cachedPoints && cachedPoints.points) {
+            console.log('💾 Используем кэшированные ПВЗ из IndexedDB:', cachedPoints.points.length, 'шт.');
+            hidePvzLoader();
+            displayCdekPoints(cachedPoints.points);
+            return;
+        }
+        
+        // Показываем лоадер только если нет кэшированных данных
+        showPvzLoader();
+        
+        // Параллельный запрос к API
+        try {
+            const result = await parallelLoader.processRequest({
+                url: cdek_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'get_cdek_points',
+                    address: city || 'Россия',
+                    nonce: cdek_ajax.nonce
+                },
+                timeout: 15000
+            });
+            
+            hidePvzLoader();
+            
+            if (result.success && result.data.success && result.data.data) {
+                const points = result.data.data;
+                
+                // Сохраняем в IndexedDB для будущих запросов
+                await indexedDBCache.set('points', `points_${city}`, {
+                    city: city,
+                    points: points
+                }, 86400000); // 24 часа
+                
+                console.log('✅ Получено и кэшировано ПВЗ:', points.length, 'шт.');
+                displayCdekPoints(points);
+            } else {
+                console.error('❌ Ошибка получения ПВЗ:', result);
+                showPvzError('Не удалось загрузить пункты выдачи');
+            }
+        } catch (error) {
+            hidePvzLoader();
+            console.error('❌ Критическая ошибка поиска ПВЗ:', error);
+            showPvzError('Ошибка загрузки пунктов выдачи');
+        }
+    }
+    
+    async function ultraFastCalculateDeliveryCost(point, callback) {
+        const cartData = getCartDataForCalculation();
+        
+        // Создаем ключ кэша
+        const cacheKey = `cost_${point.code}_${cartData.weight}_${JSON.stringify(cartData.dimensions)}_${cartData.value}_${cartData.hasRealDimensions}`;
+        
+        // Проверяем IndexedDB кэш (более быстрый чем AJAX)
+        const cachedCost = await indexedDBCache.get('costs', cacheKey);
+        if (cachedCost) {
+            console.log('⚡ Используем кэшированную стоимость:', cachedCost.delivery_sum, 'руб.');
+            callback(cachedCost.delivery_sum);
+            return;
+        }
+        
+        // Если кэша нет, используем оригинальную функцию с кэшированием результата
+        calculateDeliveryCost(point, async (cost) => {
+            // Кэшируем результат в IndexedDB
+            await indexedDBCache.set('costs', cacheKey, {
+                delivery_sum: cost,
+                api_success: true,
+                cached_at: Date.now()
+            }, 1800000); // 30 минут
+            
+            callback(cost);
+        });
+    }
+    
+    async function optimizedDisplayCdekPoints(points) {
+        cdekPoints = points;
+        
+        if (!cdekMap || typeof ymaps === 'undefined') {
+            setTimeout(() => optimizedDisplayCdekPoints(points), 1000);
+            return;
+        }
+        
+        cdekMap.geoObjects.removeAll();
+        
+        if (!points || points.length === 0) {
+            const cityInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
+            $('#cdek-points-count').text(`Пункты выдачи не найдены${cityInfo}`);
+            return;
+        }
+        
+        // Фильтруем пункты через веб-воркер для лучшей производительности
+        let filteredPoints = points;
+        
+        if (window.currentSearchCity) {
+            filteredPoints = points.filter(point => {
+                let pointCity = '';
+                
+                if (point.location && point.location.city) {
+                    pointCity = point.location.city.trim();
+                } else if (point.location && point.location.address) {
+                    pointCity = point.location.address.split(',')[0].trim();
+                } else if (point.name && point.name.includes(',')) {
+                    pointCity = point.name.split(',')[1].trim();
+                }
+                
+                if (pointCity) {
+                    pointCity = pointCity.replace(/^(г\.?\s*|город\s+)/i, '').trim();
+                }
+                
+                const searchCityLower = window.currentSearchCity.toLowerCase().trim();
+                const pointCityLower = pointCity.toLowerCase().trim();
+                
+                return pointCityLower === searchCityLower || 
+                       pointCityLower.includes(searchCityLower) || 
+                       searchCityLower.includes(pointCityLower);
+            });
+        }
+        
+        console.log('🔍 Фильтрация ПВЗ: всего', points.length, 'отфильтровано', filteredPoints.length);
+        
+        // Сортировка через веб-воркер если есть координаты
+        if (window.currentSearchCoordinates && filteredPoints.length > 0) {
+            try {
+                filteredPoints = await workerManager.executeTask('sortByDistance', {
+                    points: filteredPoints,
+                    coordinates: window.currentSearchCoordinates
+                });
+                console.log('✅ Сортировка через веб-воркер завершена');
+            } catch (error) {
+                console.log('❌ Ошибка веб-воркера, используем обычную сортировку');
+                // Fallback к обычной сортировке
+                filteredPoints.sort((a, b) => {
+                    const distA = calculateDistance(
+                        window.currentSearchCoordinates[0], 
+                        window.currentSearchCoordinates[1],
+                        a.location.latitude, 
+                        a.location.longitude
+                    );
+                    const distB = calculateDistance(
+                        window.currentSearchCoordinates[0], 
+                        window.currentSearchCoordinates[1],
+                        b.location.latitude, 
+                        b.location.longitude
+                    );
+                    return distA - distB;
+                });
+            }
+        }
+        
+        // Ограничиваем количество отображаемых пунктов для производительности
+        const maxPoints = window.innerWidth <= 768 ? 50 : 100;
+        const pointsToShow = filteredPoints.slice(0, maxPoints);
+        
+        // Показываем информацию
+        let pointsInfo = '';
+        if (filteredPoints.length > 0) {
+            const locationInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
+            pointsInfo = `Найдено ${filteredPoints.length} пунктов выдачи${locationInfo}`;
+            if (filteredPoints.length > maxPoints) {
+                pointsInfo += ` (показано ${maxPoints} ближайших)`;
+            }
+        } else {
+            const locationInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
+            pointsInfo = `Пункты выдачи не найдены${locationInfo}`;
+        }
+        $('#cdek-points-count').text(pointsInfo);
+        
+        // Добавляем пункты на карту батчами для плавности
+        const batchSize = 10;
+        const bounds = [];
+        
+        for (let i = 0; i < pointsToShow.length; i += batchSize) {
+            const batch = pointsToShow.slice(i, i + batchSize);
+            
+            setTimeout(() => {
+                batch.forEach(point => {
+                    if (point.location && point.location.latitude && point.location.longitude) {
+                        const coords = [point.location.latitude, point.location.longitude];
+                        bounds.push(coords);
+                        
+                        const placemark = new ymaps.Placemark(coords, {
+                            balloonContent: formatPointInfo(point),
+                            hintContent: point.name
+                        }, {
+                            preset: 'islands#redIcon'
+                        });
+                        
+                        placemark.events.add('click', () => selectCdekPoint(point));
+                        cdekMap.geoObjects.add(placemark);
+                    }
+                });
+                
+                // Устанавливаем границы карты после последнего батча
+                if (i + batchSize >= pointsToShow.length && bounds.length > 0) {
+                    setMapBounds(bounds);
+                }
+            }, i / batchSize * 100); // Задержка между батчами
+        }
+    }
+    
+    function setMapBounds(bounds) {
+        if (bounds.length === 1) {
+            cdekMap.setCenter(bounds[0], 14);
+        } else if (bounds.length > 1) {
+            const minLat = Math.min(...bounds.map(coord => coord[0]));
+            const maxLat = Math.max(...bounds.map(coord => coord[0]));
+            const minLon = Math.min(...bounds.map(coord => coord[1]));
+            const maxLon = Math.max(...bounds.map(coord => coord[1]));
+            
+            const centerLat = (minLat + maxLat) / 2;
+            const centerLon = (minLon + maxLon) / 2;
+            
+            const latDiff = maxLat - minLat;
+            const lonDiff = maxLon - minLon;
+            const maxDiff = Math.max(latDiff, lonDiff);
+            
+            let zoom = 12;
+            if (maxDiff < 0.01) zoom = 15;
+            else if (maxDiff < 0.05) zoom = 13;
+            else if (maxDiff < 0.1) zoom = 12;
+            else if (maxDiff < 0.5) zoom = 10;
+            else zoom = 8;
+            
+            cdekMap.setCenter([centerLat, centerLon], zoom);
+        } else if (window.currentSearchCoordinates) {
+            cdekMap.setCenter(window.currentSearchCoordinates, 12);
+        }
+    }
+    
+    // ========== ПЕРЕОПРЕДЕЛЕНИЕ ОСНОВНЫХ ФУНКЦИЙ ==========
+    
+    // Заменяем оригинальные функции на оптимизированные
+    window.searchCdekPoints = function(address) {
+        ultraFastSearchCdekPoints(address);
+    };
+    
+    window.calculateDeliveryCost = function(point, callback) {
+        ultraFastCalculateDeliveryCost(point, callback);
+    };
+    
+    window.displayCdekPoints = function(points) {
+        optimizedDisplayCdekPoints(points);
+    };
+    
+    // ========== ОРИГИНАЛЬНЫЙ КОД (СОХРАНЯЕМ СОВМЕСТИМОСТЬ) ==========
     
     // Инициализируем утилиты оптимизации
     const memoizer = new Memoizer();

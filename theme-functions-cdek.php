@@ -21,7 +21,7 @@ function cdek_theme_init() {
     
     // Хуки для сохранения дополнительных данных
     add_action('woocommerce_checkout_update_order_meta', 'cdek_save_additional_delivery_meta', 20);
-    add_action('woocommerce_checkout_update_order_meta', 'cdek_save_captured_shipping_data', 15);
+    add_action('woocommerce_checkout_update_order_meta', 'cdek_save_captured_shipping_data', 5);
     
     // Добавляем AJAX обработчики для получения информации о доставке
     add_action('wp_ajax_get_cdek_delivery_info', 'cdek_ajax_get_delivery_info');
@@ -159,6 +159,18 @@ function cdek_save_captured_shipping_data($order_id) {
         $order = wc_get_order($order_id);
         if ($order) {
             $shipping_label = isset($_POST['cdek_shipping_label']) ? sanitize_text_field($_POST['cdek_shipping_label']) : '';
+            $shipping_cost = isset($_POST['cdek_shipping_cost']) ? sanitize_text_field($_POST['cdek_shipping_cost']) : '';
+            $full_address = isset($_POST['cdek_shipping_full_address']) ? sanitize_text_field($_POST['cdek_shipping_full_address']) : '';
+            
+            // Используем полный адрес если он есть, иначе лейбл
+            $address_to_use = ($full_address && strlen($full_address) > strlen($shipping_label)) ? $full_address : $shipping_label;
+            
+            // Создаем правильные данные СДЭК на основе захваченных данных
+            if ($address_to_use && $address_to_use !== 'Выберите пункт выдачи') {
+                cdek_force_create_correct_data($order_id, $address_to_use, $shipping_cost);
+                error_log('СДЭК CAPTURE: Созданы правильные данные СДЭК на основе захваченных: ' . $address_to_use);
+            }
+            
             $order->add_order_note('Захвачены данные СДЭК из блока доставки: ' . $shipping_label);
             error_log('СДЭК CAPTURE: Добавлена заметка к заказу о захваченных данных');
         }
@@ -675,8 +687,17 @@ function cdek_save_discuss_delivery_choice($order_id) {
                 $order->add_order_note('Клиент выбрал доставку СДЭК');
                 error_log('СДЭК: Сохранен выбор "Доставка СДЭК" для заказа #' . $order_id);
                 
-                // Пытаемся извлечь данные СДЭК из названия доставки в заказе
-                cdek_extract_shipping_data_from_order($order_id, $order);
+                // Проверяем, есть ли уже захваченные JavaScript'ом данные
+                $captured_flag = get_post_meta($order_id, '_cdek_shipping_captured', true);
+                $captured_label = get_post_meta($order_id, '_cdek_shipping_label', true);
+                
+                if ($captured_flag && $captured_label && $captured_label !== 'Выберите пункт выдачи') {
+                    error_log('СДЭК: Найдены захваченные данные, пропускаем извлечение из названия: ' . $captured_label);
+                } else {
+                    // Пытаемся извлечь данные СДЭК из названия доставки в заказе только если нет захваченных данных
+                    error_log('СДЭК: Захваченные данные не найдены, извлекаем из названия доставки');
+                    cdek_extract_shipping_data_from_order($order_id, $order);
+                }
             }
         }
         
@@ -882,6 +903,8 @@ function cdek_find_real_shipping_address($order_id, $order) {
     $captured_label = get_post_meta($order_id, '_cdek_shipping_label', true);
     $captured_full = get_post_meta($order_id, '_cdek_shipping_full_address', true);
     $captured_flag = get_post_meta($order_id, '_cdek_shipping_captured', true);
+    
+    error_log('СДЭК FIND: Проверяем захваченные данные - Flag: ' . ($captured_flag ? 'да' : 'нет') . ', Label: ' . ($captured_label ? $captured_label : 'нет') . ', Full: ' . ($captured_full ? $captured_full : 'нет'));
     
     if ($captured_flag && $captured_label && $captured_label !== 'Выберите пункт выдачи') {
         error_log('СДЭК FIND: Найден адрес из JavaScript захвата: ' . $captured_label);

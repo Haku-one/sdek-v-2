@@ -220,7 +220,12 @@ class CDEK_Delivery_Data_Handler {
                         $order->update_meta_data('Телефон ПВЗ', $point_data['phone']);
                     }
                     
-                    $order->update_meta_data('Код пункта СДЭК', $point_code);
+                    // Получаем код пункта
+                    $point_code = isset($_POST['cdek_selected_point_code']) ? sanitize_text_field($_POST['cdek_selected_point_code']) : '';
+                    if ($point_code) {
+                        $order->update_meta_data('Код пункта СДЭК', $point_code);
+                    }
+                    
                     $order->save();
                 }
                 
@@ -485,7 +490,7 @@ class CDEK_Delivery_Data_Handler {
             printWindow.document.write("<p><strong>Пункт выдачи:</strong> ' . esc_js($point_name) . '</p>");
             printWindow.document.write("<p><strong>Стоимость:</strong> ' . esc_js($delivery_cost) . ' руб.</p>");
             printWindow.document.write("<p><strong>Адрес:</strong> ' . esc_js($point_address) . '</p>");
-            printWindow.document.write("<p><strong>Код пункта:</strong> ' . esc_js($delivery_data['point_code']) . '</p>');
+            printWindow.document.write("<p><strong>Код пункта:</strong> ' . esc_js($delivery_data['point_code']) . '</p>");
             printWindow.document.write("</body></html>");
             printWindow.document.close();
             printWindow.print();

@@ -2459,7 +2459,24 @@ jQuery(document).ready(function($) {
                         
                         // Сбрасываем флаг инициализации для переинициализации
                         window.isInitialized = false;
+                        
+                        // Принудительно очищаем карту
+                        if (window.cdekMap) {
+                            try {
+                                console.log('🧹 Очищаем старую карту');
+                                window.cdekMap.destroy();
+                            } catch (e) {
+                                console.log('Ошибка при очистке карты:', e);
+                            }
+                        }
                         window.cdekMap = null;
+                        
+                        // Очищаем контейнер карты
+                        const mapContainer = document.getElementById('cdek-map');
+                        if (mapContainer) {
+                            console.log('🧹 Очищаем контейнер карты');
+                            mapContainer.innerHTML = '';
+                        }
                         
                         // Переинициализируем карту
                         setTimeout(() => {

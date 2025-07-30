@@ -1153,25 +1153,15 @@ jQuery(document).ready(function($) {
     // ========== ОСТАЛЬНЫЕ ФУНКЦИИ (СОКРАЩЕННЫЕ) ==========
     
     function initYandexMap() {
-        // Проверяем, что карта действительно существует И контейнер видимый И в контейнере есть карта
-        const mapContainer = document.getElementById('cdek-map');
-        const mapVisible = mapContainer && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0;
-        const containerHasMap = mapContainer && mapContainer.children.length > 0;
-        
-        // Если контейнер пустой, сбрасываем флаги
-        if (mapContainer && !containerHasMap) {
-            console.log('📦 Контейнер карты пустой, сбрасываем флаги');
-            window.cdekMap = null;
-            cdekMap = null;
-            window.isInitialized = false;
-        }
-        
-        if (cdekMap && window.isInitialized !== false && mapVisible && containerHasMap) {
-            console.log('🗺️ Карта уже инициализирована и видима');
+        // Простая проверка - если принудительно сброшены флаги, то инициализируем
+        if (window.isInitialized === false) {
+            console.log('🚀 Принудительная инициализация Яндекс.Карт (флаги сброшены)');
+        } else if (cdekMap) {
+            console.log('🗺️ Карта уже существует, пропускаем инициализацию');
             return;
+        } else {
+            console.log('🚀 Первичная инициализация Яндекс.Карт');
         }
-        
-        console.log('🚀 Начинаем инициализацию Яндекс.Карт (карта:', !!cdekMap, 'флаг:', window.isInitialized, 'видима:', mapVisible, 'содержимое:', containerHasMap, ')');
         
         // Проверяем, произошла ли ошибка загрузки Яндекс.Карт
         if (window.yandexMapsLoadError) {
@@ -2476,28 +2466,12 @@ jQuery(document).ready(function($) {
                             el.style.visibility = 'visible';
                         });
                         
-                        // Сбрасываем флаг инициализации для переинициализации
+                        // Принудительно сбрасываем все флаги для переинициализации
+                        console.log('🔄 Сброс флагов для переинициализации карты');
                         window.isInitialized = false;
-                        
-                        // Принудительно очищаем карту
-                        if (window.cdekMap) {
-                            try {
-                                console.log('🧹 Очищаем старую карту');
-                                window.cdekMap.destroy();
-                            } catch (e) {
-                                console.log('Ошибка при очистке карты:', e);
-                            }
-                        }
+                        isInitialized = false;
                         window.cdekMap = null;
-                        
-                        // Очищаем содержимое контейнера карты
-                        const mapContainer = document.getElementById('cdek-map');
-                        if (mapContainer) {
-                            console.log('🧹 Очищаем содержимое контейнера карты');
-                            mapContainer.innerHTML = '';
-                            mapContainer.style.cssText = 'width: 100%; height: 450px; border: 1px solid #ddd; border-radius: 6px; display: block !important;';
-                            console.log('✅ Контейнер карты очищен и готов');
-                        }
+                        cdekMap = null;
                         
                         // Переинициализируем карту
                         setTimeout(() => {
@@ -2523,26 +2497,12 @@ jQuery(document).ready(function($) {
                             el.style.display = 'none';
                         });
                         
-                        // Очищаем карту при переходе на самовывоз
-                        console.log('🧹 Переход на самовывоз - очищаем карту и сбрасываем флаги');
-                        if (window.cdekMap) {
-                            try {
-                                window.cdekMap.destroy();
-                                console.log('✅ Карта уничтожена');
-                            } catch (e) {
-                                console.log('Ошибка при очистке карты:', e);
-                            }
-                            window.cdekMap = null;
-                        }
+                        // Сбрасываем флаги при переходе на самовывоз
+                        console.log('👋 Переход на самовывоз - сбрасываем флаги карты');
+                        window.cdekMap = null;
+                        cdekMap = null;
                         window.isInitialized = false;
-                        isInitialized = false; // Сбрасываем локальный флаг тоже
-                        
-                        // Очищаем контейнер карты
-                        const mapContainer = document.getElementById('cdek-map');
-                        if (mapContainer) {
-                            mapContainer.innerHTML = '';
-                            console.log('✅ Контейнер карты очищен');
-                        }
+                        isInitialized = false;
                     }
                 }
             };

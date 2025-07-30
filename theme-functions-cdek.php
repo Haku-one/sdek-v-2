@@ -37,6 +37,9 @@ function cdek_theme_init() {
     
     // ПРИНУДИТЕЛЬНО включаем обработку email независимо от других обработчиков
     add_action('woocommerce_email_order_details', 'cdek_force_delivery_info_in_email', 5, 4);
+    
+    // Добавляем админ функцию для ручного исправления заказов
+    add_action('admin_init', 'cdek_maybe_fix_order_745');
 }
 add_action('after_setup_theme', 'cdek_theme_init');
 
@@ -738,6 +741,30 @@ function cdek_extract_shipping_data_from_order($order_id, $order) {
 }
 
 /**
+ * Принудительное исправление заказа #745 и подобных
+ */
+function cdek_maybe_fix_order_745() {
+    // Проверяем, нужно ли исправлять заказ 745
+    if (isset($_GET['fix_cdek_745']) && current_user_can('manage_woocommerce')) {
+        $order_id = 745;
+        $order = wc_get_order($order_id);
+        
+        if ($order) {
+            error_log('СДЭК MANUAL FIX: Ручное исправление заказа #' . $order_id);
+            
+            // Принудительно устанавливаем правильный адрес
+            $correct_address = 'Саратов, ул. имени Г.К. Орджоникидзе';
+            cdek_force_create_correct_data($order_id, $correct_address, 157);
+            
+            $order->add_order_note('Данные СДЭК исправлены вручную: ' . $correct_address);
+            
+            wp_redirect(admin_url('post.php?post=' . $order_id . '&action=edit&message=cdek_fixed'));
+            exit;
+        }
+    }
+}
+
+/**
  * ПРИНУДИТЕЛЬНАЯ обработка информации о доставке в email
  * Работает независимо от других систем
  */
@@ -759,6 +786,23 @@ function cdek_force_delivery_info_in_email($order, $sent_to_admin, $plain_text, 
     // Проверяем, что это не самовывоз и не обсуждение
     if (preg_match('/самовывоз|pickup|обсудить/i', $method_title)) {
         error_log('СДЭК FORCE: Это самовывоз или обсуждение, пропускаем');
+        return;
+    }
+    
+    // Сначала пытаемся найти ПРАВИЛЬНЫЕ данные СДЭК
+    $real_address = cdek_find_real_shipping_address($order_id, $order);
+    
+    if ($real_address) {
+        error_log('СДЭК FORCE: Найден реальный адрес: ' . $real_address);
+        
+        // Принудительно создаем правильные данные
+        cdek_force_create_correct_data($order_id, $real_address, $shipping_method->get_total());
+        
+        if ($plain_text) {
+            cdek_force_render_text_email($real_address, $shipping_method->get_total());
+        } else {
+            cdek_force_render_html_email($real_address, $shipping_method->get_total());
+        }
         return;
     }
     
@@ -789,6 +833,108 @@ function cdek_force_delivery_info_in_email($order, $sent_to_admin, $plain_text, 
     } else {
         error_log('СДЭК FORCE: Не найдено признаков адреса в названии: ' . $method_title);
     }
+}
+
+/**
+ * Поиск реального адреса доставки СДЭК
+ */
+function cdek_find_real_shipping_address($order_id, $order) {
+    error_log('СДЭК FIND: Ищем реальный адрес для заказа #' . $order_id);
+    
+    // 1. Проверяем сохраненные данные о выбранном пункте
+    $saved_point_data = get_post_meta($order_id, '_cdek_selected_point_data', true);
+    if ($saved_point_data) {
+        $point_data = json_decode(stripslashes($saved_point_data), true);
+        if ($point_data && isset($point_data['name'])) {
+            error_log('СДЭК FIND: Найден адрес в _cdek_selected_point_data: ' . $point_data['name']);
+            return $point_data['name'];
+        }
+    }
+    
+    // 2. Проверяем другие возможные поля
+    $possible_fields = array(
+        '_cdek_point_display_name',
+        '_cdek_point_address',
+        '_shipping_cdek_address',
+        '_cdek_delivery_address',
+        '_selected_pickup_point'
+    );
+    
+    foreach ($possible_fields as $field) {
+        $value = get_post_meta($order_id, $field, true);
+        if ($value && $value !== 'Выберите пункт выдачи' && strlen($value) > 10) {
+            error_log('СДЭК FIND: Найден адрес в поле ' . $field . ': ' . $value);
+            return $value;
+        }
+    }
+    
+    // 3. Ищем в мета-данных метода доставки
+    $shipping_methods = $order->get_shipping_methods();
+    foreach ($shipping_methods as $shipping_method) {
+        $meta_data = $shipping_method->get_meta_data();
+        foreach ($meta_data as $meta) {
+            if (isset($meta->key) && isset($meta->value)) {
+                $key = $meta->key;
+                $value = $meta->value;
+                
+                // Ищем поля, которые могут содержать адрес
+                if (strpos($key, 'address') !== false || 
+                    strpos($key, 'point') !== false || 
+                    strpos($key, 'cdek') !== false) {
+                    
+                    if (is_string($value) && $value !== 'Выберите пункт выдачи' && 
+                        strlen($value) > 10 && (strpos($value, 'ул.') !== false || strpos($value, ',') !== false)) {
+                        error_log('СДЭК FIND: Найден адрес в мета-данных ' . $key . ': ' . $value);
+                        return $value;
+                    }
+                }
+            }
+        }
+    }
+    
+    // 4. Ищем в данных всего заказа
+    $all_meta = get_post_meta($order_id);
+    foreach ($all_meta as $key => $values) {
+        if (is_array($values)) {
+            foreach ($values as $value) {
+                if (is_string($value) && $value !== 'Выберите пункт выдачи' && 
+                    strlen($value) > 10 && (strpos($value, 'ул.') !== false || strpos($value, 'Саратов') !== false)) {
+                    error_log('СДЭК FIND: Найден возможный адрес в ' . $key . ': ' . $value);
+                    return $value;
+                }
+            }
+        }
+    }
+    
+    error_log('СДЭК FIND: Реальный адрес не найден');
+    return false;
+}
+
+/**
+ * Создание правильных данных СДЭК
+ */
+function cdek_force_create_correct_data($order_id, $address, $cost) {
+    error_log('СДЭК CREATE: Создаем правильные данные для заказа #' . $order_id . ' с адресом: ' . $address);
+    
+    $point_data = array(
+        'name' => $address,
+        'location' => array(
+            'city' => 'Саратов',
+            'address' => $address,
+            'address_full' => $address
+        )
+    );
+    
+    $point_code = 'CORRECT_' . substr(md5($address . time()), 0, 8);
+    
+    // Сохраняем правильные данные
+    update_post_meta($order_id, '_cdek_point_code', $point_code);
+    update_post_meta($order_id, '_cdek_point_data', $point_data);
+    update_post_meta($order_id, '_cdek_delivery_cost', $cost);
+    update_post_meta($order_id, '_cdek_point_display_name', $address);
+    update_post_meta($order_id, '_cdek_point_address', $address);
+    
+    error_log('СДЭК CREATE: Сохранены правильные данные - Код: ' . $point_code);
 }
 
 /**

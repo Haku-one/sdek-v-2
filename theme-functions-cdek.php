@@ -1457,6 +1457,27 @@ function cdek_show_discuss_delivery_admin($order) {
 }
 
 /**
+ * Добавление информации СДЭК в email через стандартный фильтр WooCommerce
+ */
+function cdek_add_email_order_meta_fields($fields, $sent_to_admin, $order) {
+    $order_id = $order->get_id();
+    
+    // Проверяем захваченные данные
+    $label = get_post_meta($order_id, '_cdek_shipping_label', true);
+    $cost = get_post_meta($order_id, '_cdek_shipping_cost', true);
+    $address = get_post_meta($order_id, '_cdek_shipping_full_address', true);
+    
+    if ($label && $label !== 'Выберите пункт выдачи') {
+        $fields['cdek_info'] = array(
+            'label' => __('🚚 Доставка СДЭК'),
+            'value' => $label . ($cost ? ' (' . $cost . ' руб.)' : '') . ($address ? "\n" . $address : ''),
+        );
+    }
+    
+    return $fields;
+}
+
+/**
  * Добавление информации об обсуждении доставки в email уведомления
  * (отключено, так как обработка перенесена в cdek_add_delivery_info_to_any_email)
  */

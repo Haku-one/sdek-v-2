@@ -516,6 +516,19 @@ class CdekDeliveryPlugin {
         } else {
             error_log('СДЭК: Файл обработчика данных доставки не найден');
         }
+        
+        // Подключаем функции темы для обработки кастомных данных
+        if (file_exists(plugin_dir_path(__FILE__) . 'theme-functions-cdek.php')) {
+            include_once plugin_dir_path(__FILE__) . 'theme-functions-cdek.php';
+            
+            // Принудительно вызываем инициализацию функций темы
+            if (function_exists('cdek_theme_init')) {
+                cdek_theme_init();
+                error_log('СДЭК: Подключены и инициализированы функции темы');
+            }
+        } else {
+            error_log('СДЭК: Файл функций темы не найден');
+        }
     }
 }
 

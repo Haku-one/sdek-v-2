@@ -380,14 +380,28 @@ function get_cdek_delivery_info($order_id) {
  * Сохранение выбора "Обсудить доставку с менеджером"
  */
 function cdek_save_discuss_delivery_choice($order_id) {
-    if (isset($_POST['discuss_delivery_selected']) && $_POST['discuss_delivery_selected'] == '1') {
-        update_post_meta($order_id, '_discuss_delivery_selected', 'Да');
+    // Добавляем подробную отладочную информацию
+    error_log('СДЭК DEBUG: Функция cdek_save_discuss_delivery_choice вызвана для заказа #' . $order_id);
+    error_log('СДЭК DEBUG: $_POST данные: ' . print_r($_POST, true));
+    
+    if (isset($_POST['discuss_delivery_selected'])) {
+        error_log('СДЭК DEBUG: Поле discuss_delivery_selected найдено в $_POST со значением: ' . $_POST['discuss_delivery_selected']);
         
-        $order = wc_get_order($order_id);
-        if ($order) {
-            $order->add_order_note('Клиент выбрал "Обсудить доставку с менеджером"');
-            error_log('СДЭК: Сохранен выбор "Обсудить доставку с менеджером" для заказа #' . $order_id);
+        if ($_POST['discuss_delivery_selected'] == '1') {
+            update_post_meta($order_id, '_discuss_delivery_selected', 'Да');
+            error_log('СДЭК DEBUG: Сохранено в мета поле _discuss_delivery_selected значение "Да"');
+            
+            $order = wc_get_order($order_id);
+            if ($order) {
+                $order->add_order_note('Клиент выбрал "Обсудить доставку с менеджером"');
+                error_log('СДЭК: Сохранен выбор "Обсудить доставку с менеджером" для заказа #' . $order_id);
+            }
+        } else {
+            error_log('СДЭК DEBUG: Значение discuss_delivery_selected не равно "1": ' . $_POST['discuss_delivery_selected']);
         }
+    } else {
+        error_log('СДЭК DEBUG: Поле discuss_delivery_selected НЕ найдено в $_POST');
+        error_log('СДЭК DEBUG: Доступные POST поля: ' . implode(', ', array_keys($_POST)));
     }
 }
 

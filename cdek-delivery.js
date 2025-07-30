@@ -1153,7 +1153,10 @@ jQuery(document).ready(function($) {
     // ========== ОСТАЛЬНЫЕ ФУНКЦИИ (СОКРАЩЕННЫЕ) ==========
     
     function initYandexMap() {
-        if (cdekMap) return;
+        if (cdekMap && window.isInitialized !== false) {
+            console.log('🗺️ Карта уже инициализирована');
+            return;
+        }
         
         // Проверяем, произошла ли ошибка загрузки Яндекс.Карт
         if (window.yandexMapsLoadError) {
@@ -2023,8 +2026,14 @@ jQuery(document).ready(function($) {
     }
     
     function initCdekDelivery() {
-        if (isInitialized) return;
+        // Добавляем принудительную переинициализацию при переключении вкладок
+        const forceReinit = window.isInitialized === false;
+        if (isInitialized && !forceReinit) {
+            console.log('⏭️ СДЭК уже инициализирован, пропускаем');
+            return;
+        }
         
+        console.log('🚀 Инициализация СДЭК доставки' + (forceReinit ? ' (переинициализация)' : ''));
         removeDuplicateTotalElements();
         hideCdekShippingBlock();
         
@@ -2082,13 +2091,14 @@ jQuery(document).ready(function($) {
         }
         
         isInitialized = true;
+        window.isInitialized = true; // Синхронизируем глобальный флаг
         
         setTimeout(() => {
             removeDuplicateTotalElements();
             fixExistingDuplicatedPrices();
         }, 500);
         
-        console.log('✅ СДЭК доставка инициализирована');
+        console.log('✅ СДЭК доставка инициализирована' + (forceReinit ? ' (переинициализирована)' : ''));
     }
     
     function hideUnnecessaryFields() {
@@ -2342,9 +2352,11 @@ jQuery(document).ready(function($) {
                 // Управляем видимостью карты СДЭК
                 const cdekElements = document.querySelectorAll('.wp-block-cdek-checkout-map-block, #cdek-map-container');
                 const isDiscussTab = clickedTab.id === 'discuss-tab';
-                const isDeliveryTab = clickedTab.querySelector('.wc-block-checkout__shipping-method-option-title')?.textContent?.includes('Доставка');
+                const titleText = clickedTab.querySelector('.wc-block-checkout__shipping-method-option-title')?.textContent || '';
+                const isDeliveryTab = titleText.includes('Доставка') || titleText.includes('СДЭК') || titleText.toLowerCase().includes('delivery');
+                const isPickupTab = titleText.includes('Самовывоз') || titleText.includes('самовывоз') || titleText.toLowerCase().includes('pickup');
                 
-                console.log('📋 Тип вкладки - Обсуждение:', isDiscussTab, 'Доставка:', isDeliveryTab);
+                console.log('📋 Тип вкладки - Обсуждение:', isDiscussTab, 'Доставка:', isDeliveryTab, 'Самовывоз:', isPickupTab, 'Текст:', titleText);
                 
                 if (isDiscussTab) {
                     // Скрываем карту СДЭК для обсуждения
@@ -2360,8 +2372,26 @@ jQuery(document).ready(function($) {
                         hiddenField.id = 'discuss_selected';
                         hiddenField.name = 'discuss_delivery_selected';
                         hiddenField.value = '1';
-                        document.body.appendChild(hiddenField);
-                        console.log('✅ Добавлено скрытое поле discuss_delivery_selected');
+                        
+                        // Ищем форму оформления заказа
+                        const checkoutForm = document.querySelector('form.woocommerce-checkout, form.checkout') || 
+                                           document.querySelector('form[name="checkout"]') ||
+                                           document.querySelector('.wc-block-checkout__form') ||
+                                           document.body;
+                        
+                        checkoutForm.appendChild(hiddenField);
+                        console.log('✅ Добавлено скрытое поле discuss_delivery_selected в форму:', checkoutForm.tagName, 'со значением:', hiddenField.value);
+                        
+                        // Проверяем, что поле действительно в DOM
+                        setTimeout(() => {
+                            const checkField = document.getElementById('discuss_selected');
+                            if (checkField) {
+                                console.log('🔍 Проверка: скрытое поле найдено в DOM, name:', checkField.name, 'value:', checkField.value);
+                                console.log('🔍 Проверка: поле находится в:', checkField.closest('form')?.tagName || 'не в форме');
+                            } else {
+                                console.error('❌ Ошибка: скрытое поле не найдено в DOM!');
+                            }
+                        }, 100);
                     }
                     
                     fillAllFields();
@@ -2375,35 +2405,50 @@ jQuery(document).ready(function($) {
                     
                     if (isDeliveryTab) {
                         // Показываем карту СДЭК для доставки
+                        console.log('🗺️ Активируем вкладку доставки СДЭК');
                         cdekElements.forEach(el => {
                             el.style.display = 'block';
+                            el.style.visibility = 'visible';
                         });
                         
-                        // Переинициализируем карту если нужно
+                        // Сбрасываем флаг инициализации для переинициализации
+                        window.isInitialized = false;
+                        window.cdekMap = null;
+                        
+                        // Переинициализируем карту
                         setTimeout(() => {
-                            if (window.cdekMap && window.ymaps && typeof window.ymaps.Map !== 'undefined') {
-                                try {
-                                    window.cdekMap.container.fitToViewport();
-                                    console.log('🗺️ Карта СДЭК переинициализирована');
-                                } catch (e) {
-                                    console.log('🔄 Переинициализация карты СДЭК:', e.message);
-                                    // Перезапускаем инициализацию карты
-                                    if (typeof initCdekDelivery === 'function') {
-                                        initCdekDelivery();
-                                    }
-                                }
-                            } else if (jQuery('#cdek-map-container').length > 0 && !window.cdekMap) {
-                                console.log('🔄 Перезапуск инициализации карты СДЭК');
-                                if (typeof initCdekDelivery === 'function') {
-                                    initCdekDelivery();
+                            console.log('🔄 Принудительная переинициализация СДЭК доставки');
+                            if (typeof initCdekDelivery === 'function') {
+                                initCdekDelivery();
+                            }
+                        }, 100);
+                        
+                        // Дополнительная проверка через 500ms
+                        setTimeout(() => {
+                            if (!window.cdekMap && document.getElementById('cdek-map')) {
+                                console.log('🔄 Дополнительная переинициализация карты');
+                                if (typeof initYandexMap === 'function') {
+                                    initYandexMap();
                                 }
                             }
-                        }, 300);
+                        }, 500);
                     } else {
-                        // Скрываем карту СДЭК для самовывоза
+                        // Скрываем карту СДЭК для самовывоза и других вкладок
+                        console.log('👋 Скрываем карту СДЭК для самовывоза/других');
                         cdekElements.forEach(el => {
                             el.style.display = 'none';
                         });
+                        
+                        // Очищаем карту при переходе на самовывоз
+                        if (window.cdekMap) {
+                            try {
+                                window.cdekMap.destroy();
+                            } catch (e) {
+                                console.log('Ошибка при очистке карты:', e);
+                            }
+                            window.cdekMap = null;
+                        }
+                        window.isInitialized = false;
                     }
                 }
             };

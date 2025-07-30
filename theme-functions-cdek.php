@@ -27,6 +27,10 @@ function cdek_theme_init() {
     add_action('wp_ajax_get_cdek_delivery_info', 'cdek_ajax_get_delivery_info');
     add_action('wp_ajax_nopriv_get_cdek_delivery_info', 'cdek_ajax_get_delivery_info');
     
+    // AJAX обработчик для сохранения данных СДЭК
+    add_action('wp_ajax_save_cdek_data', 'cdek_ajax_save_data');
+    add_action('wp_ajax_nopriv_save_cdek_data', 'cdek_ajax_save_data');
+    
     // Добавляем функционал "Обсудить доставку с менеджером"
     add_action('woocommerce_checkout_update_order_meta', 'cdek_save_discuss_delivery_choice', 25);
     add_action('woocommerce_admin_order_data_after_shipping_address', 'cdek_show_discuss_delivery_admin', 25);
@@ -159,11 +163,26 @@ function cdek_save_captured_shipping_data($order_id) {
         'cdek_shipping_captured' => '_cdek_shipping_captured'
     );
     
+    $any_data_saved = false;
     foreach ($fields_to_save as $post_field => $meta_field) {
         if (isset($_POST[$post_field]) && !empty($_POST[$post_field])) {
             $value = sanitize_text_field($_POST[$post_field]);
             update_post_meta($order_id, $meta_field, $value);
             error_log('СДЭК CAPTURE: Сохранено ' . $meta_field . ': ' . $value);
+            $any_data_saved = true;
+        }
+    }
+    
+    // Если данные не найдены в $_POST, пытаемся получить их из глобальной переменной
+    if (!$any_data_saved && isset($GLOBALS['cdek_temp_data'])) {
+        $temp_data = $GLOBALS['cdek_temp_data'];
+        foreach ($fields_to_save as $post_field => $meta_field) {
+            $key = str_replace('cdek_shipping_', '', $post_field);
+            if (isset($temp_data[$key]) && !empty($temp_data[$key])) {
+                update_post_meta($order_id, $meta_field, $temp_data[$key]);
+                error_log('СДЭК CAPTURE: Сохранено из глобальной переменной ' . $meta_field . ': ' . $temp_data[$key]);
+                $any_data_saved = true;
+            }
         }
     }
     
@@ -589,6 +608,26 @@ function cdek_ajax_get_delivery_info() {
     );
     
     wp_send_json_success($delivery_info);
+}
+
+/**
+ * AJAX обработчик для сохранения данных СДЭК
+ */
+function cdek_ajax_save_data() {
+    $data = array(
+        'label' => sanitize_text_field($_POST['label'] ?? ''),
+        'cost' => sanitize_text_field($_POST['cost'] ?? ''),
+        'full_address' => sanitize_text_field($_POST['full_address'] ?? ''),
+        'captured' => '1'
+    );
+    
+    // Сохраняем в глобальную переменную для использования при создании заказа
+    $GLOBALS['cdek_temp_data'] = $data;
+    
+    // Также сохраняем в опции для последующего использования
+    set_transient('cdek_temp_' . session_id(), $data, 3600);
+    
+    wp_send_json_success('Data saved');
 }
 
 /**
@@ -1295,6 +1334,9 @@ function cdek_add_shipping_data_capture_script() {
                     updateHiddenField('cdek_shipping_full_address', fullAddress);
                     updateHiddenField('cdek_shipping_captured', '1');
                     
+                    // НОВОЕ: Отправляем данные напрямую через AJAX
+                    sendDataToServer(shippingText, shippingCost, fullAddress);
+                    
                     console.log('✅ СДЭК: Данные сохранены в скрытые поля');
                     return true;
                 }
@@ -1302,6 +1344,17 @@ function cdek_add_shipping_data_capture_script() {
             
             console.log('❌ СДЭК: Данные доставки не найдены');
             return false;
+        }
+        
+        // Функция для отправки данных напрямую на сервер
+        function sendDataToServer(label, cost, fullAddress) {
+            // Сохраняем в sessionStorage для использования при создании заказа
+            sessionStorage.setItem('cdek_shipping_label', label);
+            sessionStorage.setItem('cdek_shipping_cost', cost);
+            sessionStorage.setItem('cdek_shipping_full_address', fullAddress);
+            sessionStorage.setItem('cdek_shipping_captured', '1');
+            
+            console.log('💾 СДЭК: Данные сохранены в sessionStorage');
         }
         
         // Функция для создания/обновления скрытого поля
@@ -1375,7 +1428,26 @@ function cdek_add_shipping_data_capture_script() {
         $('form.woocommerce-checkout').on('submit', function() {
             console.log('📤 СДЭК: Форма отправляется, финальный захват данных');
             extractShippingData();
+            
+            // Подставляем данные из sessionStorage в скрытые поля
+            restoreFromSessionStorage();
         });
+        
+        // Функция для восстановления данных из sessionStorage
+        function restoreFromSessionStorage() {
+            var label = sessionStorage.getItem('cdek_shipping_label');
+            var cost = sessionStorage.getItem('cdek_shipping_cost');
+            var fullAddress = sessionStorage.getItem('cdek_shipping_full_address');
+            var captured = sessionStorage.getItem('cdek_shipping_captured');
+            
+            if (captured && label) {
+                console.log('🔄 СДЭК: Восстанавливаем данные из sessionStorage');
+                updateHiddenField('cdek_shipping_label', label);
+                updateHiddenField('cdek_shipping_cost', cost);
+                updateHiddenField('cdek_shipping_full_address', fullAddress);
+                updateHiddenField('cdek_shipping_captured', captured);
+            }
+        }
         
     })(jQuery); // Передаем jQuery явно
     </script>

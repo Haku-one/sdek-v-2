@@ -2244,16 +2244,15 @@ jQuery(document).ready(function($) {
     
     // Инициализируем функционал "Обсудить доставку с менеджером"
     initDiscussDeliveryTab();
-});
-
-/**
- * Функционал "Обсудить доставку с менеджером"
- */
-function initDiscussDeliveryTab() {
-    console.log('🗣️ Инициализация функционала "Обсудить доставку с менеджером"');
     
-    // Функция заполнения всех полей
-    function fillAllFields() {
+    /**
+     * Функционал "Обсудить доставку с менеджером"
+     */
+    function initDiscussDeliveryTab() {
+        console.log('🗣️ Инициализация функционала "Обсудить доставку с менеджером"');
+        
+        // Функция заполнения всех полей
+        function fillAllFields() {
         const fieldMappings = [
             {
                 ids: ['billing_first_name', 'billing-first_name'],
@@ -2306,9 +2305,9 @@ function initDiscussDeliveryTab() {
         });
     }
     
-    // Функция добавления вкладки "Обсудить доставку"
-    function addDiscussTab() {
-        const container = document.querySelector('.wc-block-checkout__shipping-method-container');
+            // Функция добавления вкладки "Обсудить доставку"
+        function addDiscussTab() {
+            const container = document.querySelector('.wc-block-checkout__shipping-method-container');
         if (container && !document.getElementById('discuss-tab')) {
             console.log('➕ Добавляем вкладку "Обсудить доставку с менеджером"');
             
@@ -2393,7 +2392,7 @@ function initDiscussDeliveryTab() {
                                         initCdekDelivery();
                                     }
                                 }
-                            } else if ($('#cdek-map-container').length > 0 && !window.cdekMap) {
+                            } else if (jQuery('#cdek-map-container').length > 0 && !window.cdekMap) {
                                 console.log('🔄 Перезапуск инициализации карты СДЭК');
                                 if (typeof initCdekDelivery === 'function') {
                                     initCdekDelivery();
@@ -2435,29 +2434,30 @@ function initDiscussDeliveryTab() {
         }
     }
     
-    // Инициализация
-    setTimeout(() => {
-        fillAllFields();
-        addDiscussTab();
-    }, 500);
-    
-    // Наблюдатель за изменениями DOM
-    if (!window.discussDeliveryObserver) {
-        window.discussDeliveryObserver = new MutationObserver(function() {
+            // Инициализация
+        setTimeout(() => {
+            fillAllFields();
             addDiscussTab();
-        });
+        }, 500);
         
-        window.discussDeliveryObserver.observe(document.body, {
-            childList: true, 
-            subtree: true
-        });
+        // Наблюдатель за изменениями DOM
+        if (!window.discussDeliveryObserver) {
+            window.discussDeliveryObserver = new MutationObserver(function() {
+                addDiscussTab();
+            });
+            
+            window.discussDeliveryObserver.observe(document.body, {
+                childList: true, 
+                subtree: true
+            });
+            
+            console.log('👁️ Наблюдатель за DOM для обсуждения доставки активирован');
+        }
         
-        console.log('👁️ Наблюдатель за DOM для обсуждения доставки активирован');
+        // Периодическая проверка
+        setInterval(() => {
+            addDiscussTab();
+            fillAllFields();
+        }, 2000);
     }
-    
-    // Периодическая проверка
-    setInterval(() => {
-        addDiscussTab();
-        fillAllFields();
-    }, 2000);
-}
+});

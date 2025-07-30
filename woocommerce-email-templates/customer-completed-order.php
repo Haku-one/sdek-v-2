@@ -10,12 +10,14 @@
  * happen. When this occurs the version of the template file will be bumped and
  * the readme will list any important changes.
  *
- * @see https://docs.woocommerce.com/document/template-structure/
- * @package WooCommerce\Templates\Emails\HTML
+ * @see https://woocommerce.com/document/template-structure/
+ * @package WooCommerce\Templates\Emails
  * @version 3.7.0
  */
 
-defined( 'ABSPATH' ) || exit;
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
 
 /*
  * @hooked WC_Emails::email_header() Output the email header

@@ -1207,7 +1207,28 @@ jQuery(document).ready(function($) {
                         console.log('✅ Яндекс.Карты успешно инициализированы');
                         
                         if (cdekPoints && cdekPoints.length > 0) {
+                            console.log('🏪 Отображаем сохраненные точки СДЭК:', cdekPoints.length);
                             displayCdekPoints(cdekPoints);
+                        } else {
+                            // Пытаемся найти точки автоматически
+                            console.log('🔍 Точки СДЭК не найдены, пытаемся загрузить автоматически');
+                            
+                            // Ищем адрес в поле адреса
+                            var addressField = document.querySelector('#shipping-address_1, input[name="address_1"], input[name="shipping-address_1"]');
+                            if (addressField && addressField.value) {
+                                var address = addressField.value.trim();
+                                var city = address.split(',')[0].trim();
+                                if (city.length > 2) {
+                                    console.log('🏙️ Найден адрес в поле:', city);
+                                    setTimeout(() => searchCdekPoints(city), 500);
+                                } else {
+                                    console.log('🌍 Загружаем точки для Москвы по умолчанию');
+                                    setTimeout(() => searchCdekPoints('Москва'), 500);
+                                }
+                            } else {
+                                console.log('🌍 Адрес не найден, загружаем точки для Москвы');
+                                setTimeout(() => searchCdekPoints('Москва'), 500);
+                            }
                         }
                     });
                 } catch (error) {

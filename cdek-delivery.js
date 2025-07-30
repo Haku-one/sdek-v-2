@@ -1158,6 +1158,8 @@ jQuery(document).ready(function($) {
             return;
         }
         
+        console.log('🚀 Начинаем инициализацию Яндекс.Карт');
+        
         // Проверяем, произошла ли ошибка загрузки Яндекс.Карт
         if (window.yandexMapsLoadError) {
             console.warn('СДЭК: Яндекс.Карты не загрузились, используем fallback');
@@ -1188,10 +1190,12 @@ jQuery(document).ready(function($) {
     function initMapContainer() {
         var mapContainer = document.getElementById('cdek-map');
         if (!mapContainer) {
+            console.log('❌ Контейнер карты не найден, повторяем через 500ms');
             setTimeout(initYandexMap, 500);
             return;
         }
         
+        console.log('📦 Настраиваем контейнер карты:', mapContainer.id);
         mapContainer.style.cssText = 'display: block !important; width: 100% !important; height: 450px !important; visibility: visible !important; position: relative !important;';
         
         var checkContainer = function() {
@@ -2471,11 +2475,15 @@ jQuery(document).ready(function($) {
                         }
                         window.cdekMap = null;
                         
-                        // Очищаем контейнер карты
-                        const mapContainer = document.getElementById('cdek-map');
-                        if (mapContainer) {
-                            console.log('🧹 Очищаем контейнер карты');
-                            mapContainer.innerHTML = '';
+                        // Полностью пересоздаем контейнер карты
+                        const oldMapContainer = document.getElementById('cdek-map');
+                        if (oldMapContainer) {
+                            console.log('🧹 Удаляем старый контейнер карты');
+                            const newMapContainer = document.createElement('div');
+                            newMapContainer.id = 'cdek-map';
+                            newMapContainer.style.cssText = 'width: 100%; height: 450px; border: 1px solid #ddd; border-radius: 6px; display: block !important;';
+                            oldMapContainer.parentNode.replaceChild(newMapContainer, oldMapContainer);
+                            console.log('✅ Создан новый контейнер карты');
                         }
                         
                         // Переинициализируем карту

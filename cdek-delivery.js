@@ -1155,11 +1155,34 @@ jQuery(document).ready(function($) {
     function initYandexMap() {
         if (cdekMap) return;
         
-        if (typeof ymaps === 'undefined') {
-            setTimeout(initYandexMap, 200);
+        // Проверяем, произошла ли ошибка загрузки Яндекс.Карт
+        if (window.yandexMapsLoadError) {
+            console.warn('СДЭК: Яндекс.Карты не загрузились, используем fallback');
+            showMapFallback();
             return;
         }
         
+        // Проверяем доступность ymaps с таймаутом
+        var maxAttempts = 50; // 10 секунд максимум
+        var attempts = 0;
+        
+        function checkYmaps() {
+            attempts++;
+            
+            if (typeof ymaps !== 'undefined' && ymaps.Map) {
+                initMapContainer();
+            } else if (attempts < maxAttempts) {
+                setTimeout(checkYmaps, 200);
+            } else {
+                console.warn('СДЭК: Яндекс.Карты не загрузились за 10 секунд, используем fallback');
+                showMapFallback();
+            }
+        }
+        
+        checkYmaps();
+    }
+    
+    function initMapContainer() {
         var mapContainer = document.getElementById('cdek-map');
         if (!mapContainer) {
             setTimeout(initYandexMap, 500);
@@ -1171,20 +1194,22 @@ jQuery(document).ready(function($) {
         var checkContainer = function() {
             if (mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0) {
                 try {
-                    cdekMap = new ymaps.Map(mapContainer, {
-                        center: [55.753994, 37.622093],
-                        zoom: 10,
-                        controls: ['zoomControl', 'searchControl']
+                    ymaps.ready(function() {
+                        cdekMap = new ymaps.Map(mapContainer, {
+                            center: [55.753994, 37.622093],
+                            zoom: 10,
+                            controls: ['zoomControl', 'searchControl']
+                        });
+                        
+                        console.log('✅ Яндекс.Карты успешно инициализированы');
+                        
+                        if (cdekPoints && cdekPoints.length > 0) {
+                            displayCdekPoints(cdekPoints);
+                        }
                     });
-                
-                    if (cdekPoints && cdekPoints.length > 0) {
-                        displayCdekPoints(cdekPoints);
-                    }
                 } catch (error) {
-                    setTimeout(function() {
-                        cdekMap = null;
-                        initYandexMap();
-                    }, 1000);
+                    console.error('СДЭК: Ошибка инициализации карты:', error);
+                    showMapFallback();
                 }
             } else {
                 setTimeout(checkContainer, 300);
@@ -1193,6 +1218,98 @@ jQuery(document).ready(function($) {
         
         setTimeout(checkContainer, 200);
     }
+    
+    function showMapFallback() {
+        var mapContainer = document.getElementById('cdek-map');
+        if (!mapContainer) return;
+        
+        mapContainer.innerHTML = `
+            <div style="
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 450px;
+                background: #f8f9fa;
+                border: 2px dashed #dee2e6;
+                border-radius: 8px;
+                color: #6c757d;
+                text-align: center;
+                padding: 20px;
+            ">
+                <div style="font-size: 48px; margin-bottom: 20px;">🗺️</div>
+                <h4 style="margin: 0 0 10px 0; color: #495057;">Карта временно недоступна</h4>
+                <p style="margin: 0 0 15px 0; font-size: 14px;">Яндекс.Карты не загрузились, но вы можете выбрать пункт выдачи из списка ниже</p>
+                <div id="fallback-points-list" style="
+                    max-width: 600px;
+                    max-height: 300px;
+                    overflow-y: auto;
+                    background: white;
+                    border: 1px solid #dee2e6;
+                    border-radius: 4px;
+                    padding: 15px;
+                    text-align: left;
+                    width: 100%;
+                "></div>
+            </div>
+        `;
+        
+        // Если есть пункты выдачи, показываем их списком
+        if (cdekPoints && cdekPoints.length > 0) {
+            displayPointsAsList();
+        }
+    }
+    
+    function displayPointsAsList() {
+        var listContainer = document.getElementById('fallback-points-list');
+        if (!listContainer || !cdekPoints) return;
+        
+        var html = '<h5 style="margin: 0 0 15px 0;">Доступные пункты выдачи:</h5>';
+        
+        cdekPoints.slice(0, 10).forEach(function(point, index) {
+            var pointName = point.name || 'Пункт выдачи';
+            var address = '';
+            
+            if (point.location && point.location.address_full) {
+                address = point.location.address_full;
+            } else if (point.location && point.location.address) {
+                address = point.location.address;
+            }
+            
+            html += `
+                <div class="fallback-point-item" style="
+                    padding: 10px;
+                    margin-bottom: 10px;
+                    border: 1px solid #e9ecef;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                " data-point-index="${index}" onclick="selectPointFromList(${index})">
+                    <div style="font-weight: bold; margin-bottom: 5px;">${pointName}</div>
+                    <div style="font-size: 12px; color: #6c757d;">${address}</div>
+                    <div style="font-size: 12px; color: #007cba;">Код: ${point.code}</div>
+                </div>
+            `;
+        });
+        
+        listContainer.innerHTML = html;
+        
+        // Добавляем стили при наведении
+        $(document).on('mouseenter', '.fallback-point-item', function() {
+            $(this).css('background-color', '#f8f9fa');
+        }).on('mouseleave', '.fallback-point-item', function() {
+            $(this).css('background-color', 'transparent');
+        });
+    }
+    
+    function selectPointFromList(index) {
+        if (cdekPoints && cdekPoints[index]) {
+            selectCdekPoint(cdekPoints[index]);
+        }
+    }
+    
+    // Делаем функцию глобальной для использования в onclick
+    window.selectPointFromList = selectPointFromList;
     
     function geocodeAddress(address, callback) {
         if (typeof ymaps !== 'undefined') {

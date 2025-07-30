@@ -24,18 +24,58 @@ class CDEK_Delivery_Data_Handler {
      * Инициализация хуков WordPress
      */
     private function init_hooks() {
-        // Хуки для отправки данных доставки в email
-        add_action('woocommerce_email_order_details', array($this, 'add_delivery_info_to_email'), 20, 4);
+        // Этот файл теперь используется только как резерв
+        // Основной функционал перенесен в тему через стандартные шаблоны WooCommerce
         
-        // Хуки для сохранения данных в заказе
+        // Хуки для сохранения данных в заказе (основной функционал)
         add_action('woocommerce_checkout_order_processed', array($this, 'save_delivery_data_to_order'), 10, 3);
         add_action('woocommerce_checkout_update_order_meta', array($this, 'save_delivery_meta_data'), 10, 1);
         
-        // Хуки для отображения в админке
-        add_action('woocommerce_admin_order_data_after_shipping_address', array($this, 'display_delivery_info_in_admin'), 15);
-        
         // Дополнительные хуки для совместимости
         add_action('woocommerce_order_status_changed', array($this, 'log_delivery_data_change'), 10, 3);
+        
+        // Резервный хук для email (если тема не содержит шаблонов)
+        add_action('init', array($this, 'maybe_add_fallback_email_hook'));
+    }
+    
+    /**
+     * Проверка необходимости добавления резервных хуков
+     */
+    public function maybe_add_fallback_email_hook() {
+        // Проверяем, есть ли кастомные шаблоны в теме
+        $theme_has_templates = $this->theme_has_cdek_templates();
+        
+        if (!$theme_has_templates) {
+            // Если в теме нет шаблонов, добавляем резервные хуки
+            add_action('woocommerce_email_order_details', array($this, 'add_delivery_info_to_email'), 20, 4);
+            add_action('woocommerce_admin_order_data_after_shipping_address', array($this, 'display_delivery_info_in_admin'), 15);
+            
+            error_log('СДЭК Data Handler: Кастомные шаблоны в теме не найдены, используется резервный функционал');
+        } else {
+            error_log('СДЭК Data Handler: Найдены кастомные шаблоны в теме, резервный функционал отключен');
+        }
+    }
+    
+    /**
+     * Проверка наличия СДЭК шаблонов в теме
+     */
+    private function theme_has_cdek_templates() {
+        $theme_dir = get_template_directory();
+        
+        // Проверяем наличие кастомных email шаблонов
+        $admin_template = $theme_dir . '/woocommerce/emails/admin-new-order.php';
+        $customer_template = $theme_dir . '/woocommerce/emails/customer-completed-order.php';
+        
+        // Проверяем наличие СДЭК функций в functions.php темы
+        $functions_file = $theme_dir . '/functions.php';
+        $has_functions = false;
+        
+        if (file_exists($functions_file)) {
+            $functions_content = file_get_contents($functions_file);
+            $has_functions = strpos($functions_content, 'cdek_theme_init') !== false;
+        }
+        
+        return (file_exists($admin_template) || file_exists($customer_template) || $has_functions);
     }
     
     /**

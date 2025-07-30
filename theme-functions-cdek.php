@@ -30,6 +30,10 @@ function cdek_theme_init() {
     add_action('woocommerce_checkout_update_order_meta', 'cdek_save_discuss_delivery_choice', 25);
     add_action('woocommerce_admin_order_data_after_shipping_address', 'cdek_show_discuss_delivery_admin', 25);
     add_action('woocommerce_email_order_details', 'cdek_email_discuss_delivery_info', 30, 4);
+    
+    // Дополнительные хуки для извлечения данных СДЭК
+    add_action('woocommerce_checkout_order_processed', 'cdek_process_order_shipping_data', 30, 3);
+    add_action('woocommerce_order_status_changed', 'cdek_reprocess_shipping_data_on_status_change', 10, 3);
 }
 add_action('after_setup_theme', 'cdek_theme_init');
 
@@ -50,6 +54,8 @@ function cdek_setup_email_templates() {
  * Определение типа доставки на основе всех доступных данных
  */
 function cdek_determine_delivery_type($order, $discuss_delivery, $pickup_delivery, $shipping_method) {
+    $order_id = $order->get_id();
+    
     // 1. Проверяем прямые мета-поля
     if ($discuss_delivery == 'Да') {
         return 'discuss';
@@ -59,32 +65,60 @@ function cdek_determine_delivery_type($order, $discuss_delivery, $pickup_deliver
         return 'pickup';
     }
     
-    // 2. Проверяем по способу доставки
-    if ($shipping_method) {
-        $method_title = strtolower($shipping_method->get_method_title());
-        
-        if (strpos($method_title, 'самовывоз') !== false || 
-            strpos($method_title, 'pickup') !== false ||
-            strpos($method_title, 'самовызов') !== false) {
-            return 'pickup';
-        }
-        
-        if (strpos($method_title, 'сдэк') !== false || 
-            strpos($method_title, 'cdek') !== false ||
-            strpos($method_title, 'доставка') !== false) {
-            return 'cdek';
-        }
-    }
-    
-    // 3. Проверяем наличие данных СДЭК
-    $cdek_point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
-    $cdek_point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
+    // 2. Проверяем наличие данных СДЭК
+    $cdek_point_code = get_post_meta($order_id, '_cdek_point_code', true);
+    $cdek_point_data = get_post_meta($order_id, '_cdek_point_data', true);
     
     if ($cdek_point_code && $cdek_point_data) {
         return 'cdek';
     }
     
-    // 4. По умолчанию обычная доставка
+    // 3. Проверяем по способу доставки
+    if ($shipping_method) {
+        $method_title = strtolower($shipping_method->get_method_title());
+        $method_id = strtolower($shipping_method->get_method_id());
+        
+        // Проверяем самовывоз
+        if (strpos($method_title, 'самовывоз') !== false || 
+            strpos($method_title, 'pickup') !== false ||
+            strpos($method_title, 'самовызов') !== false ||
+            strpos($method_id, 'pickup') !== false) {
+            return 'pickup';
+        }
+        
+        // Проверяем СДЭК - если есть адрес в названии, скорее всего это СДЭК
+        if (strpos($method_title, 'сдэк') !== false || 
+            strpos($method_title, 'cdek') !== false ||
+            strpos($method_id, 'cdek') !== false ||
+            // Если в названии есть конкретный адрес с улицей, это вероятно СДЭК
+            (preg_match('/ул\.|улица|пр\.|проспект|пер\.|переулок/', $method_title))) {
+            
+            // Пытаемся извлечь данные прямо сейчас
+            cdek_extract_shipping_data_from_order($order_id, $order);
+            return 'cdek';
+        }
+    }
+    
+    // 4. Дополнительная проверка по содержимому заказа
+    $shipping_lines = $order->get_items('shipping');
+    foreach ($shipping_lines as $shipping_line) {
+        $shipping_data = $shipping_line->get_data();
+        error_log('СДЭК DEBUG: Дополнительные данные доставки: ' . print_r($shipping_data, true));
+        
+        // Проверяем есть ли в метаданных информация о СДЭК
+        if (isset($shipping_data['meta_data'])) {
+            foreach ($shipping_data['meta_data'] as $meta) {
+                if (isset($meta->key) && (
+                    strpos(strtolower($meta->key), 'cdek') !== false ||
+                    strpos(strtolower($meta->key), 'сдэк') !== false
+                )) {
+                    return 'cdek';
+                }
+            }
+        }
+    }
+    
+    // 5. По умолчанию обычная доставка
     return 'standard';
 }
 
@@ -571,29 +605,167 @@ function cdek_save_discuss_delivery_choice($order_id) {
             error_log('СДЭК DEBUG: Значение discuss_delivery_selected не равно "1": ' . $_POST['discuss_delivery_selected']);
         }
     } else {
-        // Проверяем тип доставки по способу доставки в заказе
+        // Анализируем данные о доставке из заказа
         $shipping_methods = $order->get_shipping_methods();
         $shipping_method = reset($shipping_methods);
         
         if ($shipping_method) {
             $method_title = $shipping_method->get_method_title();
+            $method_id = $shipping_method->get_method_id();
+            
+            error_log('СДЭК DEBUG: Анализ доставки - Title: ' . $method_title . ', ID: ' . $method_id);
             
             // Определяем тип доставки по названию метода
-            if (strpos($method_title, 'Самовывоз') !== false || strpos($method_title, 'самовывоз') !== false) {
+            if (strpos(strtolower($method_title), 'самовывоз') !== false || 
+                strpos(strtolower($method_title), 'pickup') !== false ||
+                strpos(strtolower($method_id), 'pickup') !== false) {
+                
                 update_post_meta($order_id, '_pickup_delivery_selected', 'Да');
                 $order->add_order_note('Клиент выбрал самовывоз');
                 error_log('СДЭК: Сохранен выбор "Самовывоз" для заказа #' . $order_id);
-            } elseif (strpos($method_title, 'СДЭК') !== false || strpos($method_title, 'сдэк') !== false) {
+                
+            } elseif (strpos(strtolower($method_title), 'сдэк') !== false || 
+                      strpos(strtolower($method_title), 'cdek') !== false ||
+                      strpos(strtolower($method_id), 'cdek') !== false) {
+                
                 update_post_meta($order_id, '_cdek_delivery_selected', 'Да');
                 $order->add_order_note('Клиент выбрал доставку СДЭК');
                 error_log('СДЭК: Сохранен выбор "Доставка СДЭК" для заказа #' . $order_id);
+                
+                // Пытаемся извлечь данные СДЭК из названия доставки в заказе
+                cdek_extract_shipping_data_from_order($order_id, $order);
             }
-            
-            error_log('СДЭК DEBUG: Тип доставки определен по методу: ' . $method_title);
         }
         
         error_log('СДЭК DEBUG: Поле discuss_delivery_selected НЕ найдено в $_POST');
         error_log('СДЭК DEBUG: Доступные POST поля: ' . implode(', ', array_keys($_POST)));
+    }
+}
+
+/**
+ * Извлечение данных о доставке СДЭК из заказа
+ */
+function cdek_extract_shipping_data_from_order($order_id, $order) {
+    $shipping_methods = $order->get_shipping_methods();
+    $shipping_method = reset($shipping_methods);
+    
+    if (!$shipping_method) {
+        return;
+    }
+    
+    // Получаем метаданные метода доставки
+    $method_meta = $shipping_method->get_meta_data();
+    $shipping_total = $shipping_method->get_total();
+    
+    error_log('СДЭК DEBUG: Метаданные доставки: ' . print_r($method_meta, true));
+    error_log('СДЭК DEBUG: Стоимость доставки: ' . $shipping_total);
+    
+    // Пытаемся извлечь данные из названия доставки
+    $method_title = $shipping_method->get_method_title();
+    
+    // Пытаемся извлечь данные из любого места в названии доставки
+    $extracted = false;
+    
+    // Вариант 1: Полный адрес с улицей
+    if (preg_match('/(.+),\s*(.+)/', $method_title, $matches)) {
+        $point_name = trim($matches[1]);
+        $address_info = trim($matches[2]);
+        
+        // Определяем полный адрес
+        $full_address = $method_title;
+        if ($shipping_method->get_instance_id()) {
+            // Пытаемся найти дополнительную информацию в метаданных
+            $instance_settings = get_option('woocommerce_' . $shipping_method->get_method_id() . '_' . $shipping_method->get_instance_id() . '_settings', array());
+            if (!empty($instance_settings)) {
+                error_log('СДЭК DEBUG: Настройки метода доставки: ' . print_r($instance_settings, true));
+            }
+        }
+        
+        $extracted = true;
+    }
+    // Вариант 2: Просто название с адресом
+    elseif (preg_match('/ул\.|улица|пр\.|проспект|пер\.|переулок/', $method_title)) {
+        $point_name = $method_title;
+        $address_info = $method_title;
+        $full_address = $method_title;
+        $extracted = true;
+    }
+    // Вариант 3: Любой текст, если это не самовывоз
+    elseif (!preg_match('/самовывоз|pickup/i', $method_title) && strlen(trim($method_title)) > 5) {
+        $point_name = $method_title;
+        $address_info = $method_title;
+        $full_address = $method_title;
+        $extracted = true;
+    }
+    
+    if ($extracted) {
+        // Создаем псевдо-данные пункта СДЭК на основе информации из заказа
+        $point_data = array(
+            'name' => $point_name,
+            'location' => array(
+                'city' => 'Саратов',
+                'address' => $full_address,
+                'address_full' => $full_address
+            )
+        );
+        
+        // Генерируем псевдо-код пункта
+        $point_code = 'AUTO_' . substr(md5($method_title), 0, 8);
+        
+        // Сохраняем данные
+        update_post_meta($order_id, '_cdek_point_code', $point_code);
+        update_post_meta($order_id, '_cdek_point_data', $point_data);
+        update_post_meta($order_id, '_cdek_delivery_cost', $shipping_total);
+        update_post_meta($order_id, '_cdek_point_display_name', $point_name);
+        update_post_meta($order_id, '_cdek_point_address', $full_address);
+        
+        error_log('СДЭК: Автоматически извлечены данные из названия доставки для заказа #' . $order_id);
+        error_log('СДЭК: Пункт: ' . $point_name . ', Код: ' . $point_code);
+        error_log('СДЭК: Полный адрес: ' . $full_address);
+        
+        $order->add_order_note('Данные СДЭК автоматически извлечены: ' . $point_name);
+    }
+    
+    // Дополнительно проверяем данные заказа на наличие скрытых полей СДЭК
+    if (isset($_POST['shipping_cdek_point_info'])) {
+        $cdek_info = sanitize_text_field($_POST['shipping_cdek_point_info']);
+        update_post_meta($order_id, '_cdek_shipping_info', $cdek_info);
+        error_log('СДЭК: Сохранена дополнительная информация о доставке: ' . $cdek_info);
+    }
+}
+
+/**
+ * Обработка данных доставки после создания заказа
+ */
+function cdek_process_order_shipping_data($order_id, $posted_data, $order) {
+    error_log('СДЭК DEBUG: Дополнительная обработка данных доставки для заказа #' . $order_id);
+    
+    // Принудительно пытаемся извлечь данные СДЭК
+    $shipping_methods = $order->get_shipping_methods();
+    $shipping_method = reset($shipping_methods);
+    
+    if ($shipping_method) {
+        $method_title = $shipping_method->get_method_title();
+        error_log('СДЭК DEBUG: Обработка метода доставки: ' . $method_title);
+        
+        // Если это не самовывоз и не обсуждение с менеджером
+        if (!preg_match('/самовывоз|pickup|обсудить/i', $method_title)) {
+            cdek_extract_shipping_data_from_order($order_id, $order);
+        }
+    }
+}
+
+/**
+ * Переобработка данных доставки при изменении статуса заказа
+ */
+function cdek_reprocess_shipping_data_on_status_change($order_id, $old_status, $new_status) {
+    // Переобрабатываем только при переходе в обработку/завершение
+    if (in_array($new_status, array('processing', 'completed'))) {
+        $order = wc_get_order($order_id);
+        if ($order) {
+            error_log('СДЭК DEBUG: Переобработка данных доставки при смене статуса заказа #' . $order_id);
+            cdek_process_order_shipping_data($order_id, array(), $order);
+        }
     }
 }
 

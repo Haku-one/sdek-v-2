@@ -31,6 +31,10 @@ class CDEK_Delivery_Data_Handler {
         add_action('woocommerce_checkout_order_processed', array($this, 'save_delivery_data_to_order'), 10, 3);
         add_action('woocommerce_checkout_update_order_meta', array($this, 'save_delivery_meta_data'), 10, 1);
         
+        // Дополнительные хуки для WooCommerce Blocks
+        add_action('woocommerce_store_api_checkout_update_order_meta', array($this, 'save_delivery_meta_data'), 10, 1);
+        add_action('woocommerce_blocks_checkout_order_processed', array($this, 'save_delivery_data_to_order'), 10, 3);
+        
         // Дополнительные хуки для совместимости
         add_action('woocommerce_order_status_changed', array($this, 'log_delivery_data_change'), 10, 3);
         
@@ -118,6 +122,51 @@ class CDEK_Delivery_Data_Handler {
      * @param int $order_id ID заказа
      */
     public function save_delivery_meta_data($order_id) {
+        // Сохраняем выбор "Обсудить доставку с менеджером"
+        // Проверяем различные способы передачи данных
+        $discuss_selected = null;
+        
+        if (isset($_POST['discuss_delivery_selected'])) {
+            $discuss_selected = $_POST['discuss_delivery_selected'];
+            error_log('СДЭК Data Handler: Поле discuss_delivery_selected найдено в $_POST со значением: ' . $discuss_selected);
+        }
+        
+        // Альтернативная проверка через WooCommerce блоки
+        if (!$discuss_selected && isset($_REQUEST['discuss_delivery_selected'])) {
+            $discuss_selected = $_REQUEST['discuss_delivery_selected'];
+            error_log('СДЭК Data Handler: Поле discuss_delivery_selected найдено в $_REQUEST со значением: ' . $discuss_selected);
+        }
+        
+        // Дополнительная проверка в JSON данных
+        if (!$discuss_selected) {
+            $input = file_get_contents('php://input');
+            if ($input) {
+                $json_data = json_decode($input, true);
+                if (isset($json_data['discuss_delivery_selected'])) {
+                    $discuss_selected = $json_data['discuss_delivery_selected'];
+                    error_log('СДЭК Data Handler: Поле discuss_delivery_selected найдено в JSON данных со значением: ' . $discuss_selected);
+                }
+            }
+        }
+        
+        if ($discuss_selected) {
+            if ($discuss_selected == '1') {
+                update_post_meta($order_id, '_discuss_delivery_selected', 'Да');
+                error_log('СДЭК Data Handler: Сохранено в мета поле _discuss_delivery_selected значение "Да" для заказа ' . $order_id);
+                
+                $order = wc_get_order($order_id);
+                if ($order) {
+                    $order->add_order_note('Клиент выбрал "Обсудить доставку с менеджером"');
+                }
+            } else {
+                error_log('СДЭК Data Handler: Значение discuss_delivery_selected не равно "1": ' . $discuss_selected);
+            }
+        } else {
+            error_log('СДЭК Data Handler: Поле discuss_delivery_selected НЕ найдено ни в одном источнике данных');
+            error_log('СДЭК Data Handler: Доступные POST поля: ' . implode(', ', array_keys($_POST)));
+            error_log('СДЭК Data Handler: Доступные REQUEST поля: ' . implode(', ', array_keys($_REQUEST)));
+        }
+        
         // Сохраняем стоимость доставки СДЭК
         if (isset($_POST['cdek_delivery_cost']) && !empty($_POST['cdek_delivery_cost'])) {
             $delivery_cost = sanitize_text_field($_POST['cdek_delivery_cost']);

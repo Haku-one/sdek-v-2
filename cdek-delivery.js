@@ -2504,14 +2504,19 @@ jQuery(document).ready(function($) {
                         hiddenField.name = 'discuss_delivery_selected';
                         hiddenField.value = '1';
                         
-                        // Ищем форму оформления заказа
+                        // Ищем форму оформления заказа (улучшенный поиск)
                         const checkoutForm = document.querySelector('form.woocommerce-checkout, form.checkout') || 
                                            document.querySelector('form[name="checkout"]') ||
                                            document.querySelector('.wc-block-checkout__form') ||
+                                           document.querySelector('form') ||
+                                           document.querySelector('.wc-block-checkout') ||
                                            document.body;
                         
                         checkoutForm.appendChild(hiddenField);
                         console.log('✅ Добавлено скрытое поле discuss_delivery_selected в форму:', checkoutForm.tagName, 'со значением:', hiddenField.value);
+                        console.log('🔍 Форма найдена по селектору:', checkoutForm.className || 'нет классов');
+                        console.log('🔍 Форма имеет атрибут action:', checkoutForm.action || 'нет action');
+                        console.log('🔍 Форма имеет атрибут method:', checkoutForm.method || 'нет method');
                         
                         // Проверяем, что поле действительно в DOM
                         setTimeout(() => {
@@ -2526,6 +2531,26 @@ jQuery(document).ready(function($) {
                     }
                     
                     fillAllFields();
+                    
+                    // Дополнительно уведомляем WooCommerce Blocks о выборе
+                    if (typeof wp !== 'undefined' && wp.data && wp.data.dispatch) {
+                        try {
+                            const checkoutStore = wp.data.dispatch('wc/store/checkout');
+                            if (checkoutStore && checkoutStore.setCheckoutFields) {
+                                checkoutStore.setCheckoutFields({
+                                    discuss_delivery_selected: '1'
+                                });
+                                console.log('✅ Данные переданы в WooCommerce Blocks store');
+                            }
+                        } catch (e) {
+                            console.log('⚠️ Не удалось передать данные в WC Blocks store:', e);
+                        }
+                    }
+                    
+                    // Альтернативный способ через событие
+                    document.dispatchEvent(new CustomEvent('cdek_discuss_delivery_selected', {
+                        detail: { selected: true, value: '1' }
+                    }));
                 } else {
                     // Убираем скрытое поле для обсуждения доставки
                     const hiddenField = document.getElementById('discuss_selected');

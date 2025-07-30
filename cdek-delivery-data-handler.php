@@ -39,6 +39,9 @@ class CDEK_Delivery_Data_Handler {
         
         // Резервный хук для email (если тема не содержит шаблонов)
         add_action('init', array($this, 'maybe_add_fallback_email_hook'));
+        
+        // Добавляем кастомные поля в email через стандартный WooCommerce фильтр
+        add_filter('woocommerce_email_order_meta_fields', array($this, 'add_delivery_fields_to_email'), 10, 3);
     }
     
     /**
@@ -640,6 +643,100 @@ class CDEK_Delivery_Data_Handler {
             $order->update_meta_data('Стоимость доставки СДЭК', $delivery_cost . ' руб.');
             $order->save();
         }
+    }
+    
+    /**
+     * Добавляем кастомные поля доставки в email через стандартный WooCommerce фильтр
+     *
+     * @param array $fields Существующие поля
+     * @param bool $sent_to_admin Отправляется ли администратору
+     * @param WC_Order $order Объект заказа
+     * @return array Обновленные поля
+     */
+    public function add_delivery_fields_to_email($fields, $sent_to_admin, $order) {
+        if (!$order || !is_a($order, 'WC_Order')) {
+            return $fields;
+        }
+        
+        // Получаем кастомные поля доставки
+        $delivery_type = $order->get_meta('Тип доставки');
+        $delivery_status = $order->get_meta('Статус доставки');
+        $manager_action = $order->get_meta('Действие менеджера');
+        
+        // Поля СДЭК
+        $cdek_point = $order->get_meta('Пункт выдачи СДЭК');
+        $cdek_address = $order->get_meta('Адрес пункта выдачи');
+        $cdek_code = $order->get_meta('Код пункта СДЭК');
+        $cdek_cost = $order->get_meta('Стоимость доставки СДЭК');
+        $cdek_work_time = $order->get_meta('Время работы ПВЗ');
+        $cdek_phone = $order->get_meta('Телефон ПВЗ');
+        
+        // Добавляем поля только если они не пустые
+        if (!empty($delivery_type)) {
+            $fields['delivery_type'] = array(
+                'label' => __('Тип доставки'),
+                'value' => $delivery_type,
+            );
+        }
+        
+        if (!empty($delivery_status)) {
+            $fields['delivery_status'] = array(
+                'label' => __('Статус доставки'),
+                'value' => $delivery_status,
+            );
+        }
+        
+        if (!empty($manager_action)) {
+            $fields['manager_action'] = array(
+                'label' => __('Действие менеджера'),
+                'value' => $manager_action,
+            );
+        }
+        
+        // Поля СДЭК
+        if (!empty($cdek_point)) {
+            $fields['cdek_point'] = array(
+                'label' => __('Пункт выдачи СДЭК'),
+                'value' => $cdek_point,
+            );
+        }
+        
+        if (!empty($cdek_address)) {
+            $fields['cdek_address'] = array(
+                'label' => __('Адрес пункта выдачи'),
+                'value' => $cdek_address,
+            );
+        }
+        
+        if (!empty($cdek_code)) {
+            $fields['cdek_code'] = array(
+                'label' => __('Код пункта СДЭК'),
+                'value' => $cdek_code,
+            );
+        }
+        
+        if (!empty($cdek_cost)) {
+            $fields['cdek_cost'] = array(
+                'label' => __('Стоимость доставки СДЭК'),
+                'value' => $cdek_cost,
+            );
+        }
+        
+        if (!empty($cdek_work_time)) {
+            $fields['cdek_work_time'] = array(
+                'label' => __('Время работы ПВЗ'),
+                'value' => $cdek_work_time,
+            );
+        }
+        
+        if (!empty($cdek_phone)) {
+            $fields['cdek_phone'] = array(
+                'label' => __('Телефон ПВЗ'),
+                'value' => $cdek_phone,
+            );
+        }
+        
+        return $fields;
     }
     
     /**

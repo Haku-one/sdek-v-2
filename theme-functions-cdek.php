@@ -34,6 +34,9 @@ function cdek_theme_init() {
     // Дополнительные хуки для извлечения данных СДЭК
     add_action('woocommerce_checkout_order_processed', 'cdek_process_order_shipping_data', 30, 3);
     add_action('woocommerce_order_status_changed', 'cdek_reprocess_shipping_data_on_status_change', 10, 3);
+    
+    // ПРИНУДИТЕЛЬНО включаем обработку email независимо от других обработчиков
+    add_action('woocommerce_email_order_details', 'cdek_force_delivery_info_in_email', 5, 4);
 }
 add_action('after_setup_theme', 'cdek_theme_init');
 
@@ -735,6 +738,132 @@ function cdek_extract_shipping_data_from_order($order_id, $order) {
 }
 
 /**
+ * ПРИНУДИТЕЛЬНАЯ обработка информации о доставке в email
+ * Работает независимо от других систем
+ */
+function cdek_force_delivery_info_in_email($order, $sent_to_admin, $plain_text, $email) {
+    error_log('СДЭК FORCE: Принудительная обработка email для заказа #' . $order->get_id());
+    
+    $order_id = $order->get_id();
+    $shipping_methods = $order->get_shipping_methods();
+    $shipping_method = reset($shipping_methods);
+    
+    if (!$shipping_method) {
+        error_log('СДЭК FORCE: Нет метода доставки в заказе');
+        return;
+    }
+    
+    $method_title = $shipping_method->get_method_title();
+    error_log('СДЭК FORCE: Метод доставки: ' . $method_title);
+    
+    // Проверяем, что это не самовывоз и не обсуждение
+    if (preg_match('/самовывоз|pickup|обсудить/i', $method_title)) {
+        error_log('СДЭК FORCE: Это самовывоз или обсуждение, пропускаем');
+        return;
+    }
+    
+    // Проверяем, содержит ли название конкретный адрес
+    if (preg_match('/ул\.|улица|пр\.|проспект|пер\.|переулок/i', $method_title) || 
+        strpos($method_title, ',') !== false) {
+        
+        error_log('СДЭК FORCE: Найден адрес в названии доставки, принудительно выводим');
+        
+        // Принудительно извлекаем данные
+        cdek_force_extract_shipping_data($order_id, $order);
+        
+        // Получаем обновленные данные
+        $cdek_point_code = get_post_meta($order_id, '_cdek_point_code', true);
+        $cdek_point_data = get_post_meta($order_id, '_cdek_point_data', true);
+        
+        if ($cdek_point_code && $cdek_point_data) {
+            error_log('СДЭК FORCE: Данные найдены, выводим в email');
+            
+            if ($plain_text) {
+                cdek_force_render_text_email($method_title, $shipping_method->get_total());
+            } else {
+                cdek_force_render_html_email($method_title, $shipping_method->get_total());
+            }
+        } else {
+            error_log('СДЭК FORCE: Данные не найдены после извлечения');
+        }
+    } else {
+        error_log('СДЭК FORCE: Не найдено признаков адреса в названии: ' . $method_title);
+    }
+}
+
+/**
+ * Принудительное извлечение данных о доставке
+ */
+function cdek_force_extract_shipping_data($order_id, $order) {
+    $shipping_methods = $order->get_shipping_methods();
+    $shipping_method = reset($shipping_methods);
+    
+    if (!$shipping_method) {
+        return;
+    }
+    
+    $method_title = $shipping_method->get_method_title();
+    $shipping_total = $shipping_method->get_total();
+    
+    error_log('СДЭК FORCE EXTRACT: Обрабатываем: ' . $method_title);
+    
+    // Принудительно создаем данные на основе названия
+    $point_data = array(
+        'name' => $method_title,
+        'location' => array(
+            'city' => 'Саратов',
+            'address' => $method_title,
+            'address_full' => $method_title
+        )
+    );
+    
+    $point_code = 'FORCE_' . substr(md5($method_title . time()), 0, 8);
+    
+    // Сохраняем данные принудительно
+    update_post_meta($order_id, '_cdek_point_code', $point_code);
+    update_post_meta($order_id, '_cdek_point_data', $point_data);
+    update_post_meta($order_id, '_cdek_delivery_cost', $shipping_total);
+    update_post_meta($order_id, '_cdek_point_display_name', $method_title);
+    update_post_meta($order_id, '_cdek_point_address', $method_title);
+    
+    error_log('СДЭК FORCE EXTRACT: Принудительно сохранены данные - Код: ' . $point_code . ', Название: ' . $method_title);
+}
+
+/**
+ * Принудительный вывод HTML email
+ */
+function cdek_force_render_html_email($address, $cost) {
+    echo '<div style="background: #f8f9fa; border: 1px solid #28a745; padding: 20px; margin: 20px 0; border-radius: 8px; font-family: Arial, sans-serif;">';
+    echo '<h3 style="color: #28a745; margin-top: 0; border-bottom: 2px solid #28a745; padding-bottom: 10px;">📦 Доставка СДЭК</h3>';
+    echo '<p><strong>Пункт выдачи:</strong> ' . esc_html($address) . '</p>';
+    
+    if ($cost) {
+        echo '<p><strong>Стоимость доставки:</strong> <span style="color: #28a745; font-weight: bold;">' . esc_html($cost) . ' руб.</span></p>';
+    }
+    
+    echo '<p><strong>Адрес:</strong> <small style="color: #666;">' . esc_html($address) . '</small></p>';
+    echo '<div style="margin-top: 15px; padding: 10px; background: #e8f5e8; border-radius: 4px; font-size: 14px;">';
+    echo '<strong>💡 Важно:</strong> Сохраните эту информацию для получения заказа в пункте выдачи СДЭК.';
+    echo '</div>';
+    echo '</div>';
+}
+
+/**
+ * Принудительный вывод текстового email
+ */
+function cdek_force_render_text_email($address, $cost) {
+    echo "\n" . str_repeat('=', 50) . "\n";
+    echo "ИНФОРМАЦИЯ О ДОСТАВКЕ СДЭК\n";
+    echo str_repeat('=', 50) . "\n";
+    echo "Пункт выдачи: " . $address . "\n";
+    if ($cost) {
+        echo "Стоимость доставки: " . $cost . " руб.\n";
+    }
+    echo "Адрес: " . $address . "\n";
+    echo str_repeat('=', 50) . "\n\n";
+}
+
+/**
  * Обработка данных доставки после создания заказа
  */
 function cdek_process_order_shipping_data($order_id, $posted_data, $order) {
@@ -748,11 +877,61 @@ function cdek_process_order_shipping_data($order_id, $posted_data, $order) {
         $method_title = $shipping_method->get_method_title();
         error_log('СДЭК DEBUG: Обработка метода доставки: ' . $method_title);
         
+        // Проверяем, не является ли это проблемным заказом с "Выберите пункт выдачи"
+        if ($method_title === 'Выберите пункт выдачи') {
+            error_log('СДЭК DEBUG: Найден проблемный заказ с "Выберите пункт выдачи", пытаемся исправить');
+            cdek_fix_broken_order_shipping($order_id, $order);
+        }
         // Если это не самовывоз и не обсуждение с менеджером
-        if (!preg_match('/самовывоз|pickup|обсудить/i', $method_title)) {
+        else if (!preg_match('/самовывоз|pickup|обсудить/i', $method_title)) {
             cdek_extract_shipping_data_from_order($order_id, $order);
         }
     }
+}
+
+/**
+ * Исправление заказов с неправильными данными доставки
+ */
+function cdek_fix_broken_order_shipping($order_id, $order) {
+    error_log('СДЭК FIX: Попытка исправить заказ #' . $order_id);
+    
+    // Ищем любые данные, которые могли сохраниться при оформлении заказа
+    $all_meta = get_post_meta($order_id);
+    
+    error_log('СДЭК FIX: Все метаданные заказа: ' . print_r(array_keys($all_meta), true));
+    
+    // Проверяем, есть ли какие-то данные о выбранном пункте
+    $saved_point_data = get_post_meta($order_id, '_cdek_selected_point_data', true);
+    $saved_point_code = get_post_meta($order_id, '_cdek_selected_point_code', true);
+    
+    if ($saved_point_data && $saved_point_code) {
+        error_log('СДЭК FIX: Найдены сохраненные данные пункта, восстанавливаем');
+        
+        $point_data = json_decode(stripslashes($saved_point_data), true);
+        if ($point_data && is_array($point_data)) {
+            // Восстанавливаем правильные данные
+            update_post_meta($order_id, '_cdek_point_code', $saved_point_code);
+            update_post_meta($order_id, '_cdek_point_data', $point_data);
+            
+            $point_name = $point_data['name'];
+            if (isset($point_data['location']['city'])) {
+                $city = $point_data['location']['city'];
+                $point_name = $city . ', ' . str_replace($city, '', $point_name);
+                $point_name = trim($point_name, ', ');
+            }
+            
+            update_post_meta($order_id, '_cdek_point_display_name', $point_name);
+            
+            error_log('СДЭК FIX: Восстановлены данные - Код: ' . $saved_point_code . ', Название: ' . $point_name);
+            
+            $order->add_order_note('Данные СДЭК восстановлены автоматически: ' . $point_name);
+            
+            return true;
+        }
+    }
+    
+    error_log('СДЭК FIX: Не удалось найти сохраненные данные для восстановления');
+    return false;
 }
 
 /**

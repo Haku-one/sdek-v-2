@@ -578,40 +578,40 @@ class CdekOrderSender {
      * Генерация XML для 1С
      */
     private function generate_1c_xml($order, $formatted_info, $shipping_cost) {
-        ob_start();
-        ?>
-        <?xml version="1.0" encoding="UTF-8"?>
-        <Документ>
-            <ЗаказКлиента>
-                <Номер><?php echo esc_xml($order->get_order_number()); ?></Номер>
-                <Дата><?php echo esc_xml($order->get_date_created()->format('Y-m-d\TH:i:s')); ?></Дата>
-                <Клиент>
-                    <Наименование><?php echo esc_xml($order->get_formatted_billing_full_name()); ?></Наименование>
-                    <Email><?php echo esc_xml($order->get_billing_email()); ?></Email>
-                    <Телефон><?php echo esc_xml($order->get_billing_phone()); ?></Телефон>
-                </Клиент>
-                <СуммаДокумента><?php echo esc_xml($order->get_total()); ?></СуммаДокумента>
-                <Доставка>
-                    <Способ>СДЭК - Пункт выдачи</Способ>
-                    <ПунктВыдачи><?php echo esc_xml($formatted_info['point_name']); ?></ПунктВыдачи>
-                    <КодПВЗ><?php echo esc_xml($formatted_info['point_code']); ?></КодПВЗ>
-                    <Адрес><?php echo esc_xml($formatted_info['address']); ?></Адрес>
-                    <Стоимость><?php echo esc_xml($shipping_cost); ?></Стоимость>
-                </Доставка>
-                <СоставЗаказа>
-                    <?php foreach ($order->get_items() as $item): ?>
-                    <ПозицияЗаказа>
-                        <Наименование><?php echo esc_xml($item->get_name()); ?></Наименование>
-                        <Количество><?php echo esc_xml($item->get_quantity()); ?></Количество>
-                        <Цена><?php echo esc_xml($item->get_total() / $item->get_quantity()); ?></Цена>
-                        <Сумма><?php echo esc_xml($item->get_total()); ?></Сумма>
-                    </ПозицияЗаказа>
-                    <?php endforeach; ?>
-                </СоставЗаказа>
-            </ЗаказКлиента>
-        </Документ>
-        <?php
-        return ob_get_clean();
+        $xml_content = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+        $xml_content .= '<Документ>' . "\n";
+        $xml_content .= '    <ЗаказКлиента>' . "\n";
+        $xml_content .= '        <Номер>' . esc_xml($order->get_order_number()) . '</Номер>' . "\n";
+        $xml_content .= '        <Дата>' . esc_xml($order->get_date_created()->format('Y-m-d\TH:i:s')) . '</Дата>' . "\n";
+        $xml_content .= '        <Клиент>' . "\n";
+        $xml_content .= '            <Наименование>' . esc_xml($order->get_formatted_billing_full_name()) . '</Наименование>' . "\n";
+        $xml_content .= '            <Email>' . esc_xml($order->get_billing_email()) . '</Email>' . "\n";
+        $xml_content .= '            <Телефон>' . esc_xml($order->get_billing_phone()) . '</Телефон>' . "\n";
+        $xml_content .= '        </Клиент>' . "\n";
+        $xml_content .= '        <СуммаДокумента>' . esc_xml($order->get_total()) . '</СуммаДокумента>' . "\n";
+        $xml_content .= '        <Доставка>' . "\n";
+        $xml_content .= '            <Способ>СДЭК - Пункт выдачи</Способ>' . "\n";
+        $xml_content .= '            <ПунктВыдачи>' . esc_xml($formatted_info['point_name']) . '</ПунктВыдачи>' . "\n";
+        $xml_content .= '            <КодПВЗ>' . esc_xml($formatted_info['point_code']) . '</КодПВЗ>' . "\n";
+        $xml_content .= '            <Адрес>' . esc_xml($formatted_info['address']) . '</Адрес>' . "\n";
+        $xml_content .= '            <Стоимость>' . esc_xml($shipping_cost) . '</Стоимость>' . "\n";
+        $xml_content .= '        </Доставка>' . "\n";
+        $xml_content .= '        <СоставЗаказа>' . "\n";
+        
+        foreach ($order->get_items() as $item) {
+            $xml_content .= '            <ПозицияЗаказа>' . "\n";
+            $xml_content .= '                <Наименование>' . esc_xml($item->get_name()) . '</Наименование>' . "\n";
+            $xml_content .= '                <Количество>' . esc_xml($item->get_quantity()) . '</Количество>' . "\n";
+            $xml_content .= '                <Цена>' . esc_xml($item->get_total() / $item->get_quantity()) . '</Цена>' . "\n";
+            $xml_content .= '                <Сумма>' . esc_xml($item->get_total()) . '</Сумма>' . "\n";
+            $xml_content .= '            </ПозицияЗаказа>' . "\n";
+        }
+        
+        $xml_content .= '        </СоставЗаказа>' . "\n";
+        $xml_content .= '    </ЗаказКлиента>' . "\n";
+        $xml_content .= '</Документ>';
+        
+        return $xml_content;
     }
     
     /**

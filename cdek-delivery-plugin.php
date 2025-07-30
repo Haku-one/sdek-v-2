@@ -512,9 +512,17 @@ class CdekDeliveryPlugin {
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
         
-        // Создание индексов для быстрого поиска
-        $wpdb->query("CREATE INDEX IF NOT EXISTS idx_cache_key_expiry ON $table_name (cache_key, expiry_time);");
-        $wpdb->query("CREATE INDEX IF NOT EXISTS idx_expiry_hit ON $table_name (expiry_time, hit_count);");
+        // Создание индексов для быстрого поиска (с проверкой на существование)
+        $existing_indexes = $wpdb->get_results("SHOW INDEX FROM $table_name");
+        $index_names = array_column($existing_indexes, 'Key_name');
+        
+        if (!in_array('idx_cache_key_expiry', $index_names)) {
+            $wpdb->query("CREATE INDEX idx_cache_key_expiry ON $table_name (cache_key, expiry_time);");
+        }
+        
+        if (!in_array('idx_expiry_hit', $index_names)) {
+            $wpdb->query("CREATE INDEX idx_expiry_hit ON $table_name (expiry_time, hit_count);");
+        }
     }
     
     /**

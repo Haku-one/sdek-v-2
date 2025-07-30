@@ -21,6 +21,7 @@ function cdek_theme_init() {
     
     // Хуки для сохранения дополнительных данных
     add_action('woocommerce_checkout_update_order_meta', 'cdek_save_additional_delivery_meta', 20);
+    add_action('woocommerce_checkout_update_order_meta', 'cdek_save_captured_shipping_data', 15);
     
     // Добавляем AJAX обработчики для получения информации о доставке
     add_action('wp_ajax_get_cdek_delivery_info', 'cdek_ajax_get_delivery_info');
@@ -40,6 +41,9 @@ function cdek_theme_init() {
     
     // Добавляем админ функцию для ручного исправления заказов
     add_action('admin_init', 'cdek_maybe_fix_order_745');
+    
+    // Добавляем JavaScript для сохранения данных из блока доставки
+    add_action('wp_footer', 'cdek_add_shipping_data_capture_script');
 }
 add_action('after_setup_theme', 'cdek_theme_init');
 
@@ -126,6 +130,39 @@ function cdek_determine_delivery_type($order, $discuss_delivery, $pickup_deliver
     
     // 5. По умолчанию обычная доставка
     return 'standard';
+}
+
+/**
+ * Сохранение данных, захваченных JavaScript из блока доставки
+ */
+function cdek_save_captured_shipping_data($order_id) {
+    error_log('СДЭК CAPTURE: Сохранение захваченных данных для заказа #' . $order_id);
+    
+    // Сохраняем данные из скрытых полей формы
+    $fields_to_save = array(
+        'cdek_shipping_label' => '_cdek_shipping_label',
+        'cdek_shipping_cost' => '_cdek_shipping_cost', 
+        'cdek_shipping_full_address' => '_cdek_shipping_full_address',
+        'cdek_shipping_captured' => '_cdek_shipping_captured'
+    );
+    
+    foreach ($fields_to_save as $post_field => $meta_field) {
+        if (isset($_POST[$post_field]) && !empty($_POST[$post_field])) {
+            $value = sanitize_text_field($_POST[$post_field]);
+            update_post_meta($order_id, $meta_field, $value);
+            error_log('СДЭК CAPTURE: Сохранено ' . $meta_field . ': ' . $value);
+        }
+    }
+    
+    // Если данные захвачены, отмечаем заказ как содержащий правильные данные СДЭК
+    if (isset($_POST['cdek_shipping_captured']) && $_POST['cdek_shipping_captured'] === '1') {
+        $order = wc_get_order($order_id);
+        if ($order) {
+            $shipping_label = isset($_POST['cdek_shipping_label']) ? sanitize_text_field($_POST['cdek_shipping_label']) : '';
+            $order->add_order_note('Захвачены данные СДЭК из блока доставки: ' . $shipping_label);
+            error_log('СДЭК CAPTURE: Добавлена заметка к заказу о захваченных данных');
+        }
+    }
 }
 
 /**
@@ -841,7 +878,38 @@ function cdek_force_delivery_info_in_email($order, $sent_to_admin, $plain_text, 
 function cdek_find_real_shipping_address($order_id, $order) {
     error_log('СДЭК FIND: Ищем реальный адрес для заказа #' . $order_id);
     
-    // 1. Проверяем сохраненные данные о выбранном пункте
+    // 1. ПРИОРИТЕТ: Проверяем данные, захваченные JavaScript из блока доставки
+    $captured_label = get_post_meta($order_id, '_cdek_shipping_label', true);
+    $captured_full = get_post_meta($order_id, '_cdek_shipping_full_address', true);
+    $captured_flag = get_post_meta($order_id, '_cdek_shipping_captured', true);
+    
+    if ($captured_flag && $captured_label && $captured_label !== 'Выберите пункт выдачи') {
+        error_log('СДЭК FIND: Найден адрес из JavaScript захвата: ' . $captured_label);
+        
+        // Возвращаем полный адрес если есть, иначе лейбл
+        if ($captured_full && strlen($captured_full) > strlen($captured_label)) {
+            error_log('СДЭК FIND: Используем полный адрес: ' . $captured_full);
+            return $captured_full;
+        }
+        return $captured_label;
+    }
+    
+    // 2. Проверяем данные из $_POST (если они есть при создании заказа)
+    if (isset($_POST['cdek_shipping_label']) && $_POST['cdek_shipping_label'] !== 'Выберите пункт выдачи') {
+        $post_label = sanitize_text_field($_POST['cdek_shipping_label']);
+        error_log('СДЭК FIND: Найден адрес в POST данных: ' . $post_label);
+        
+        // Сохраняем для будущего использования
+        update_post_meta($order_id, '_cdek_shipping_label', $post_label);
+        if (isset($_POST['cdek_shipping_full_address'])) {
+            update_post_meta($order_id, '_cdek_shipping_full_address', sanitize_text_field($_POST['cdek_shipping_full_address']));
+        }
+        update_post_meta($order_id, '_cdek_shipping_captured', '1');
+        
+        return $post_label;
+    }
+    
+    // 3. Проверяем сохраненные данные о выбранном пункте
     $saved_point_data = get_post_meta($order_id, '_cdek_selected_point_data', true);
     if ($saved_point_data) {
         $point_data = json_decode(stripslashes($saved_point_data), true);
@@ -851,7 +919,7 @@ function cdek_find_real_shipping_address($order_id, $order) {
         }
     }
     
-    // 2. Проверяем другие возможные поля
+    // 4. Проверяем другие возможные поля
     $possible_fields = array(
         '_cdek_point_display_name',
         '_cdek_point_address',
@@ -1078,6 +1146,115 @@ function cdek_fix_broken_order_shipping($order_id, $order) {
     
     error_log('СДЭК FIX: Не удалось найти сохраненные данные для восстановления');
     return false;
+}
+
+/**
+ * Добавление JavaScript для захвата данных из блока доставки
+ */
+function cdek_add_shipping_data_capture_script() {
+    if (!is_checkout()) {
+        return;
+    }
+    ?>
+    <script type="text/javascript">
+    jQuery(document).ready(function($) {
+        console.log('🔧 СДЭК: Инициализация захвата данных доставки');
+        
+        // Функция для извлечения данных из блока доставки
+        function extractShippingData() {
+            console.log('🔍 СДЭК: Ищем данные в блоке доставки');
+            
+            // Ищем блок с информацией о доставке
+            var shippingBlock = $('.wp-block-woocommerce-checkout-order-summary-shipping-block .wc-block-components-totals-item__label');
+            
+            if (shippingBlock.length > 0) {
+                var shippingText = shippingBlock.text().trim();
+                console.log('📍 СДЭК: Найден текст доставки:', shippingText);
+                
+                // Проверяем, что это не "Выберите пункт выдачи"
+                if (shippingText && shippingText !== 'Выберите пункт выдачи' && shippingText.length > 10) {
+                    
+                    // Ищем стоимость доставки
+                    var costElement = shippingBlock.closest('.wc-block-components-totals-item').find('.wc-block-components-totals-item__value');
+                    var shippingCost = costElement.length > 0 ? costElement.text().trim().replace(/[^\d]/g, '') : '';
+                    
+                    // Ищем описание адреса
+                    var descElement = shippingBlock.closest('.wc-block-components-totals-item').find('.wc-block-components-totals-item__description small');
+                    var fullAddress = descElement.length > 0 ? descElement.text().trim() : shippingText;
+                    
+                    console.log('💰 СДЭК: Стоимость:', shippingCost);
+                    console.log('📍 СДЭК: Полный адрес:', fullAddress);
+                    
+                    // Создаем или обновляем скрытые поля
+                    updateHiddenField('cdek_shipping_label', shippingText);
+                    updateHiddenField('cdek_shipping_cost', shippingCost);
+                    updateHiddenField('cdek_shipping_full_address', fullAddress);
+                    updateHiddenField('cdek_shipping_captured', '1');
+                    
+                    console.log('✅ СДЭК: Данные сохранены в скрытые поля');
+                    return true;
+                }
+            }
+            
+            console.log('❌ СДЭК: Данные доставки не найдены');
+            return false;
+        }
+        
+        // Функция для создания/обновления скрытого поля
+        function updateHiddenField(name, value) {
+            var field = $('input[name="' + name + '"]');
+            if (field.length === 0) {
+                // Создаем новое поле
+                var form = $('form.woocommerce-checkout, form.checkout, .wc-block-checkout__form').first();
+                if (form.length === 0) {
+                    form = $('body');
+                }
+                field = $('<input type="hidden" name="' + name + '" />');
+                form.append(field);
+                console.log('🔧 СДЭК: Создано скрытое поле:', name);
+            }
+            field.val(value);
+            console.log('📝 СДЭК: Обновлено поле', name + ':', value);
+        }
+        
+        // Запускаем захват данных при загрузке
+        setTimeout(extractShippingData, 1000);
+        
+        // Отслеживаем изменения в блоке доставки
+        var observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                    var target = $(mutation.target);
+                    if (target.closest('.wp-block-woocommerce-checkout-order-summary-shipping-block').length > 0) {
+                        console.log('🔄 СДЭК: Обнаружены изменения в блоке доставки');
+                        setTimeout(extractShippingData, 500);
+                    }
+                }
+            });
+        });
+        
+        // Начинаем отслеживание изменений
+        var targetNode = document.body;
+        observer.observe(targetNode, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+        
+        // Дополнительно запускаем при событиях WooCommerce
+        $(document.body).on('updated_checkout updated_shipping_method', function() {
+            console.log('🔄 СДЭК: Checkout обновлен, перезапускаем захват данных');
+            setTimeout(extractShippingData, 1000);
+        });
+        
+        // Запускаем перед отправкой формы
+        $('form.woocommerce-checkout').on('submit', function() {
+            console.log('📤 СДЭК: Форма отправляется, финальный захват данных');
+            extractShippingData();
+        });
+    });
+    </script>
+    <?php
 }
 
 /**

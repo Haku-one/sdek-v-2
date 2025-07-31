@@ -517,18 +517,33 @@ jQuery(document).ready(function($) {
         if (totalsBlock) {
             const observer = new MutationObserver(function(mutationsList) {
                 for (let mutation of mutationsList) {
-                    if (mutation.type === 'childList') {
-                        // Проверяем, добавился ли блок с информацией о доставке/ПВЗ
-                        const addedNodes = Array.from(mutation.addedNodes);
-                        const hasShippingInfo = addedNodes.some(node => 
-                            node.nodeType === 1 && 
-                            (node.classList && node.classList.contains('wc-block-components-totals-shipping') ||
-                             node.querySelector && node.querySelector('.wc-block-components-totals-shipping'))
-                        );
+                    // Отслеживаем изменения содержимого и добавление новых элементов
+                    if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                        // Проверяем, есть ли изменения в блоке доставки
+                        const target = mutation.target;
+                        const isShippingRelated = target.closest && target.closest('.wc-block-components-totals-shipping') ||
+                                                 target.classList && target.classList.contains('wc-block-components-totals-shipping') ||
+                                                 target.querySelector && target.querySelector('.wc-block-components-totals-shipping');
                         
-                        if (hasShippingInfo) {
-                            console.log('📦 Обнаружена информация о доставке/ПВЗ в блоке итогов');
+                        if (isShippingRelated) {
+                            console.log('📦 Обнаружены изменения в блоке доставки');
                             debouncedUpdate();
+                            continue;
+                        }
+                        
+                        // Проверяем добавленные узлы
+                        if (mutation.addedNodes) {
+                            const addedNodes = Array.from(mutation.addedNodes);
+                            const hasShippingInfo = addedNodes.some(node => 
+                                node.nodeType === 1 && 
+                                (node.classList && node.classList.contains('wc-block-components-totals-shipping') ||
+                                 node.querySelector && node.querySelector('.wc-block-components-totals-shipping'))
+                            );
+                            
+                            if (hasShippingInfo) {
+                                console.log('📦 Обнаружена информация о доставке/ПВЗ в блоке итогов');
+                                debouncedUpdate();
+                            }
                         }
                     }
                 }
@@ -536,10 +551,33 @@ jQuery(document).ready(function($) {
             
             observer.observe(totalsBlock, {
                 childList: true,
-                subtree: true
+                subtree: true,
+                characterData: true,
+                characterDataOldValue: true
             });
             
             console.log('👁️ Наблюдатель за блоком итогов установлен');
+        }
+        
+        // Дополнительный наблюдатель конкретно за блоком доставки
+        const shippingBlock = document.querySelector('.wc-block-components-totals-shipping');
+        if (shippingBlock) {
+            const shippingObserver = new MutationObserver(function(mutationsList) {
+                for (let mutation of mutationsList) {
+                    console.log('📦 Изменение в блоке доставки, тип:', mutation.type);
+                    debouncedUpdate();
+                    break; // Достаточно одного срабатывания
+                }
+            });
+            
+            shippingObserver.observe(shippingBlock, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+                attributes: true
+            });
+            
+            console.log('👁️ Прямой наблюдатель за блоком доставки установлен');
         }
     }
     

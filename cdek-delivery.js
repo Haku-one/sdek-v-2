@@ -1162,13 +1162,15 @@ jQuery(document).ready(function($) {
             const mapContainerParent = document.getElementById('cdek-map-container');
             
             if (mapContainer) {
-                mapContainer.style.display = 'block';
-                mapContainer.style.visibility = 'visible';
+                mapContainer.style.setProperty('display', 'block', 'important');
+                mapContainer.style.setProperty('visibility', 'visible', 'important');
+                mapContainer.style.setProperty('opacity', '1', 'important');
             }
             
             if (mapContainerParent) {
-                mapContainerParent.style.display = 'block';
-                mapContainerParent.style.visibility = 'visible';
+                mapContainerParent.style.setProperty('display', 'block', 'important');
+                mapContainerParent.style.setProperty('visibility', 'visible', 'important');
+                mapContainerParent.style.setProperty('opacity', '1', 'important');
             }
             
             // Обновляем размер карты
@@ -2555,7 +2557,7 @@ jQuery(document).ready(function($) {
                 if (isDiscussTab) {
                     // Скрываем карту СДЭК для обсуждения (БЕЗ уничтожения)
                     cdekElements.forEach(el => {
-                        el.style.display = 'none';
+                        el.style.setProperty('display', 'none', 'important');
                     });
                     
                     console.log('👁️ Скрываем карту при переходе на "Обсудить с менеджером" (без уничтожения)');
@@ -2608,7 +2610,7 @@ jQuery(document).ready(function($) {
                         // САМОВЫВОЗ - скрываем карту и очищаем данные
                         console.log('👋 Переход на самовывоз - скрываем карту');
                         cdekElements.forEach(el => {
-                            el.style.display = 'none';
+                            el.style.setProperty('display', 'none', 'important');
                         });
                         
                         console.log('🧹 Переход на самовывоз - очищаем данные СДЭК');
@@ -2623,8 +2625,14 @@ jQuery(document).ready(function($) {
                         console.log('🗺️ Активируем вкладку доставки СДЭК');
                         cdekElements.forEach((el, index) => {
                             console.log(`🔍 Показываем элемент ${index + 1}: ${el.id || el.className}`);
-                            el.style.display = 'block';
-                            el.style.visibility = 'visible';
+                            // Сначала очищаем все inline стили display
+                            el.style.removeProperty('display');
+                            el.style.removeProperty('visibility');
+                            el.style.removeProperty('opacity');
+                            // Затем принудительно устанавливаем видимость
+                            el.style.setProperty('display', 'block', 'important');
+                            el.style.setProperty('visibility', 'visible', 'important');
+                            el.style.setProperty('opacity', '1', 'important');
                         });
                         
                         // Проверяем состояние карты и инициализируем при необходимости
@@ -2641,19 +2649,30 @@ jQuery(document).ready(function($) {
                             // Принудительно показываем все элементы карты
                             cdekElements.forEach((el, index) => {
                                 console.log(`🔧 Принудительно показываем элемент ${index + 1}: ${el.id || el.className}`);
-                                el.style.display = 'block !important';
-                                el.style.visibility = 'visible !important';
-                                el.style.opacity = '1';
+                                // Сначала очищаем все inline стили
+                                el.style.removeProperty('display');
+                                el.style.removeProperty('visibility');
+                                el.style.removeProperty('opacity');
+                                // Затем принудительно устанавливаем видимость
+                                el.style.setProperty('display', 'block', 'important');
+                                el.style.setProperty('visibility', 'visible', 'important');
+                                el.style.setProperty('opacity', '1', 'important');
                             });
                             
                             // Дополнительно показываем внутренний контейнер карты
                             const mapContainer = document.getElementById('cdek-map');
                             if (mapContainer) {
                                 console.log('🔧 Принудительно показываем внутренний контейнер карты');
-                                mapContainer.style.display = 'block !important';
-                                mapContainer.style.visibility = 'visible !important';
-                                mapContainer.style.height = '450px';
-                                mapContainer.style.width = '100%';
+                                // Сначала очищаем все inline стили
+                                mapContainer.style.removeProperty('display');
+                                mapContainer.style.removeProperty('visibility');
+                                mapContainer.style.removeProperty('opacity');
+                                // Затем принудительно устанавливаем видимость
+                                mapContainer.style.setProperty('display', 'block', 'important');
+                                mapContainer.style.setProperty('visibility', 'visible', 'important');
+                                mapContainer.style.setProperty('opacity', '1', 'important');
+                                mapContainer.style.setProperty('height', '450px', 'important');
+                                mapContainer.style.setProperty('width', '100%', 'important');
                             }
                             
                             // Обновляем размер карты
@@ -2682,8 +2701,9 @@ jQuery(document).ready(function($) {
                             // Показываем карту
                             cdekElements.forEach((el, index) => {
                                 console.log(`🔧 Показываем элемент ${index + 1} для неопознанной вкладки: ${el.id || el.className}`);
-                                el.style.display = 'block';
-                                el.style.visibility = 'visible';
+                                el.style.setProperty('display', 'block', 'important');
+                                el.style.setProperty('visibility', 'visible', 'important');
+                                el.style.setProperty('opacity', '1', 'important');
                             });
                             
                             // Если карта уже существует, просто показываем
@@ -2709,7 +2729,7 @@ jQuery(document).ready(function($) {
                             // Скрываем карту СДЭК для других неизвестных вкладок
                             console.log('👋 Скрываем карту СДЭК для других вкладок');
                             cdekElements.forEach(el => {
-                                el.style.display = 'none';
+                                el.style.setProperty('display', 'none', 'important');
                             });
                             
                             // Очищаем данные СДЭК для неизвестных вкладок

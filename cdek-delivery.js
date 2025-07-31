@@ -1868,6 +1868,21 @@ jQuery(document).ready(function($) {
         // Запоминаем выбранный ПВЗ чтобы избежать повторных поисков
         window.lastSelectedPointCode = point.code;
         
+        // Сохраняем информацию о выбранном ПВЗ для автозаполнения
+        window.selectedCdekPoint = {
+            code: point.code,
+            name: point.name,
+            address: point.location && point.location.address ? point.location.address : '',
+            city: point.location && point.location.city ? point.location.city : ''
+        };
+        
+        // Также сохраняем в localStorage для синхронизации
+        try {
+            localStorage.setItem('selectedCdekPoint', JSON.stringify(window.selectedCdekPoint));
+        } catch (e) {
+            console.log('Ошибка сохранения ПВЗ в localStorage:', e);
+        }
+        
         $('#cdek-point-info').html(formatPointInfo(point));
         $('#cdek-selected-point').show();
         

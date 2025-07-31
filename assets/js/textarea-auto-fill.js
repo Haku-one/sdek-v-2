@@ -12,17 +12,23 @@ jQuery(document).ready(function($) {
     function ensureHiddenFields() {
         const form = $('form.wc-block-checkout__form, form.checkout, form').first();
         
-        if (!$('input[name="dostavka"]').length && !$('textarea[name="dostavka"]').length) {
-            const hiddenDostavka = $('<input type="hidden" name="dostavka" value="">');
-            form.append(hiddenDostavka);
-            console.log('✅ Создано скрытое поле dostavka');
-        }
+        // Для плагина Checkout Fields for Blocks нужны поля с префиксами
+        const fieldsToCreate = [
+            { name: 'dostavka', metaName: '_meta_dostavka' },
+            { name: 'manager', metaName: '_meta_manager' },
+            { name: 'checkout_field_dostavka', metaName: 'checkout_field_dostavka' },
+            { name: 'checkout_field_manager', metaName: 'checkout_field_manager' },
+            { name: 'wc_checkout_field_dostavka', metaName: 'wc_checkout_field_dostavka' },
+            { name: 'wc_checkout_field_manager', metaName: 'wc_checkout_field_manager' }
+        ];
         
-        if (!$('input[name="manager"]').length && !$('textarea[name="manager"]').length) {
-            const hiddenManager = $('<input type="hidden" name="manager" value="">');
-            form.append(hiddenManager);
-            console.log('✅ Создано скрытое поле manager');
-        }
+        fieldsToCreate.forEach(field => {
+            if (!$(`input[name="${field.name}"]`).length && !$(`textarea[name="${field.name}"]`).length) {
+                const hiddenField = $(`<input type="hidden" name="${field.name}" value="">`);
+                form.append(hiddenField);
+                console.log(`✅ Создано скрытое поле ${field.name}`);
+            }
+        });
     }
     
     // Функция для симуляции реального ввода посимвольно
@@ -520,14 +526,78 @@ jQuery(document).ready(function($) {
         };
     }
     
+    // Специальная функция для работы с плагином Checkout Fields for Blocks
+    function handleCheckoutFieldsForBlocks() {
+        // Ищем специфичные для плагина элементы
+        const checkoutFieldsContainer = $('.wp-block-checkout-fields-for-blocks-textarea');
+        
+        if (checkoutFieldsContainer.length) {
+            console.log('🔍 Найден контейнер Checkout Fields for Blocks');
+            
+            // Пытаемся найти React компоненты
+            checkoutFieldsContainer.each(function() {
+                const reactFiber = this._reactInternalFiber || this._reactInternalInstance;
+                if (reactFiber) {
+                    console.log('⚛️ Найден React компонент');
+                }
+            });
+        }
+        
+        // Перехватываем события специфичные для этого плагина
+        $(document).on('change input', '.wp-block-checkout-fields-for-blocks-textarea textarea', function() {
+            console.log('📝 Изменение в поле Checkout Fields for Blocks:', this.value);
+        });
+    }
+    
+    // Функция для принудительного обновления полей через DOM события
+    function forceUpdateCheckoutFields() {
+        // Находим все textarea поля
+        const textareas = $('.wp-block-checkout-fields-for-blocks-textarea textarea');
+        
+        textareas.each(function() {
+            const textarea = this;
+            const container = $(textarea).closest('.wp-block-checkout-fields-for-blocks-textarea');
+            
+            let value = '';
+            
+            // Определяем какое значение устанавливать
+            if (container.hasClass('sdek')) {
+                value = window.currentDeliveryData.dostavka || '';
+            } else if (container.hasClass('manag')) {
+                value = window.currentDeliveryData.manager || '';
+            }
+            
+            if (value && textarea.value !== value) {
+                // Устанавливаем значение и эмулируем пользовательский ввод
+                textarea.value = value;
+                
+                // Создаем и диспатчим события
+                const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+                const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                
+                textarea.dispatchEvent(inputEvent);
+                textarea.dispatchEvent(changeEvent);
+                
+                // Также через jQuery
+                $(textarea).trigger('input').trigger('change');
+                
+                console.log(`🔄 Принудительно обновлено поле: ${value}`);
+            }
+        });
+    }
+    
     // Инициализация
     setTimeout(function() {
         ensureHiddenFields(); // Создаем поля сразу при инициализации
         interceptFormSubmission(); // Устанавливаем перехват отправки
+        handleCheckoutFieldsForBlocks(); // Специальная обработка плагина
         updateTextareaFields();
         observeShippingBlock();
         console.log('✅ Автозаполнение textarea полей готово к работе');
     }, 1000);
+    
+    // Периодически принудительно обновляем поля
+    setInterval(forceUpdateCheckoutFields, 2000);
     
     // Периодическая проверка отключена - может мешать отправке данных
     // setInterval(function() {

@@ -2729,6 +2729,11 @@ jQuery(document).ready(function($) {
                     window.clearCdekSelectionOnly();
                     window.updateShippingTextForManager();
                     
+                    // Вызываем автозаполнение textarea полей для менеджера
+                    if (typeof window.fillTextareaFields === 'function') {
+                        window.fillTextareaFields('manager');
+                    }
+                    
                     // Добавляем скрытое поле
                     let hiddenField = document.getElementById('discuss_selected');
                     if (!hiddenField) {
@@ -2817,6 +2822,13 @@ jQuery(document).ready(function($) {
                                     console.log('🚨 Ошибка обновления размера карты:', e);
                                 }
                             }, 300);
+                        }
+                        
+                        // Вызываем автозаполнение textarea полей для СДЭК
+                        if (typeof window.updateTextareaFields === 'function') {
+                            setTimeout(() => {
+                                window.updateTextareaFields();
+                            }, 500);
                         }
                     }
                 }

@@ -126,8 +126,8 @@ class CdekDeliveryPlugin {
             
             wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
             
-            // Добавляем скрипт для автозаполнения textarea полей (упрощенная версия)
-            wp_enqueue_script('textarea-auto-fill', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/textarea-auto-fill-simple.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
+            // Добавляем скрипт для автозаполнения textarea полей (только React эмуляция)
+            wp_enqueue_script('textarea-auto-fill', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/textarea-auto-fill-react-only.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
             
             wp_enqueue_style('cdek-delivery-css', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css', array(), CDEK_DELIVERY_VERSION);
             wp_enqueue_style('cdek-delivery-styles', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery-styles.css', array(), CDEK_DELIVERY_VERSION);

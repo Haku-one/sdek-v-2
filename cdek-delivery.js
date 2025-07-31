@@ -1,7 +1,10 @@
 /**
  * СДЭК Доставка - Исправленная версия
- * Исправлены: разделение коробок, CORS ошибки, производительность на мобильных
+ * Исправлены: разделение коробок, CORS ошибки, производительность на мобильных, дублирование карт
  */
+
+// Глобальная защита от создания нескольких карт
+window.cdekMapCreationLock = false;
 
 // ========== УТИЛИТЫ ДЛЯ ОПТИМИЗАЦИИ ==========
 
@@ -1199,14 +1202,17 @@ jQuery(document).ready(function($) {
     // ========== ОСТАЛЬНЫЕ ФУНКЦИИ (СОКРАЩЕННЫЕ) ==========
     
     function initYandexMap() {
-        // Проверяем, существует ли уже валидная карта или происходит ли инициализация
-        const mapExists = (window.cdekMap && window.cdekMap.container) || (cdekMap && cdekMap.container);
+        // СТРОГАЯ проверка существования карты
         const mapContainer = document.getElementById('cdek-map');
+        const mapExists = (window.cdekMap && window.cdekMap.container && typeof window.cdekMap.getCenter === 'function') || 
+                         (cdekMap && cdekMap.container && typeof cdekMap.getCenter === 'function');
         
-        // ВАЖНО: Проверяем что карта не только существует, но и видна
-        const isMapVisible = mapContainer && mapContainer.innerHTML && !mapContainer.innerHTML.includes('Карта временно недоступна');
+        // Проверяем что карта не только существует, но и видна и рабочая
+        const isMapVisible = mapContainer && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0;
+        const hasMapContent = mapContainer && mapContainer.children.length > 0;
         
-        if (!window.cdekNeedsReinit && mapExists && isMapVisible && !window.cdekMapInitializing) {
+        // Если карта уже существует и работает - НЕ создаем новую
+        if (!window.cdekNeedsReinit && mapExists && isMapVisible && hasMapContent && !window.cdekMapInitializing) {
             console.log('✅ Валидная карта уже существует, пропускаем инициализацию');
             
             // Показываем контейнеры карты  
@@ -1359,6 +1365,23 @@ jQuery(document).ready(function($) {
                 try {
                     ymaps.ready(function() {
                         try {
+                            // ДОПОЛНИТЕЛЬНАЯ проверка перед созданием карты
+                            if (window.cdekMap && typeof window.cdekMap.getCenter === 'function') {
+                                console.log('⚠️ Карта уже существует, пропускаем создание новой');
+                                window.cdekMapInitializing = false;
+                                return;
+                            }
+                            
+                            // Проверяем блокировку создания карты
+                            if (window.cdekMapCreationLock) {
+                                console.log('⚠️ Создание карты заблокировано, ждем завершения предыдущего создания');
+                                window.cdekMapInitializing = false;
+                                return;
+                            }
+                            
+                            // Устанавливаем блокировку
+                            window.cdekMapCreationLock = true;
+                            
                             console.log('🗺️ Создаем новую карту в контейнере:', mapContainer.id);
                             
                             cdekMap = new ymaps.Map(mapContainer, {
@@ -1372,8 +1395,9 @@ jQuery(document).ready(function($) {
                             // Также сохраняем в глобальной переменной для синхронизации
                             window.cdekMap = cdekMap;
                             
-                            // Очищаем флаг инициализации
+                            // Очищаем флаги инициализации
                             window.cdekMapInitializing = false;
+                            window.cdekMapCreationLock = false;
                             
                             // ПРИНУДИТЕЛЬНАЯ проверка что карта отображается
                             cdekMap.events.add('ready', function() {
@@ -1406,8 +1430,9 @@ jQuery(document).ready(function($) {
                             console.log('✅ Яндекс.Карты успешно инициализированы');
                         } catch (initError) {
                             console.error('❌ Ошибка создания карты:', initError);
-                            // Очищаем флаг инициализации при ошибке
+                            // Очищаем флаги инициализации при ошибке
                             window.cdekMapInitializing = false;
+                            window.cdekMapCreationLock = false;
                             throw initError;
                         }
                         
@@ -1420,8 +1445,9 @@ jQuery(document).ready(function($) {
                     });
                 } catch (error) {
                     console.error('СДЭК: Ошибка инициализации карты:', error);
-                    // Очищаем флаг инициализации при ошибке
+                    // Очищаем флаги инициализации при ошибке
                     window.cdekMapInitializing = false;
+                    window.cdekMapCreationLock = false;
                     showMapFallback();
                 }
             } else {
@@ -2401,7 +2427,18 @@ jQuery(document).ready(function($) {
         
         $('#cdek-map-container').show();
         
-        setTimeout(() => initYandexMap(), 100);
+        // Проверяем, нужна ли инициализация карты
+        if (!window.cdekMap || !window.cdekMap.container || typeof window.cdekMap.getCenter !== 'function') {
+            console.log('🗺️ Инициализируем карту при показе доставки');
+            setTimeout(() => initYandexMap(), 100);
+        } else {
+            console.log('✅ Карта уже существует, обновляем только размер');
+            setTimeout(() => {
+                if (window.cdekMap?.container) {
+                    window.cdekMap.container.fitToViewport();
+                }
+            }, 100);
+        }
         setTimeout(() => initAddressAutocomplete(), 200);
         
         var currentAddress = $('#shipping-address_1').val();

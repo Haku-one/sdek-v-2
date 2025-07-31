@@ -2535,12 +2535,22 @@ jQuery(document).ready(function($) {
                 const cdekElements = document.querySelectorAll('.wp-block-cdek-checkout-map-block, #cdek-map-container');
                 const isDiscussTab = clickedTab.id === 'discuss-tab';
                 const titleText = clickedTab.querySelector('.wc-block-checkout__shipping-method-option-title')?.textContent || '';
-                const isDeliveryTab = titleText.includes('Доставка') || titleText.includes('СДЭК') || titleText.toLowerCase().includes('delivery');
-                const isPickupTab = titleText.includes('Самовывоз') || titleText.includes('самовывоз') || titleText.toLowerCase().includes('pickup');
+                
+                // Более точное определение типа вкладки
+                const isDeliveryTab = titleText.includes('Доставка') || 
+                                    titleText.includes('СДЭК') || 
+                                    titleText.toLowerCase().includes('delivery') ||
+                                    titleText.includes('курьер') ||
+                                    clickedTab.id.includes('cdek') ||
+                                    clickedTab.className.includes('cdek');
+                                    
+                const isPickupTab = titleText.includes('Самовывоз') || 
+                                  titleText.includes('самовывоз') || 
+                                  titleText.toLowerCase().includes('pickup');
                 
                 console.log('🔍 Найдено СДЭК элементов:', cdekElements.length);
-                
                 console.log('📋 Тип вкладки - Обсуждение:', isDiscussTab, 'Доставка:', isDeliveryTab, 'Самовывоз:', isPickupTab, 'Текст:', titleText);
+                console.log('🔍 ID вкладки:', clickedTab.id, 'Класс:', clickedTab.className);
                 
                 if (isDiscussTab) {
                     // Скрываем карту СДЭК для обсуждения (БЕЗ уничтожения)
@@ -2626,24 +2636,85 @@ jQuery(document).ready(function($) {
                                 }
                             }, 100);
                         } else {
-                            console.log('✅ Карта уже существует, показываем через initYandexMap');
+                            console.log('✅ Карта уже существует, принудительно показываем');
                             
-                            // Вызываем initYandexMap для правильного показа карты
+                            // Принудительно показываем все элементы карты
+                            cdekElements.forEach((el, index) => {
+                                console.log(`🔧 Принудительно показываем элемент ${index + 1}: ${el.id || el.className}`);
+                                el.style.display = 'block !important';
+                                el.style.visibility = 'visible !important';
+                                el.style.opacity = '1';
+                            });
+                            
+                            // Дополнительно показываем внутренний контейнер карты
+                            const mapContainer = document.getElementById('cdek-map');
+                            if (mapContainer) {
+                                console.log('🔧 Принудительно показываем внутренний контейнер карты');
+                                mapContainer.style.display = 'block !important';
+                                mapContainer.style.visibility = 'visible !important';
+                                mapContainer.style.height = '450px';
+                                mapContainer.style.width = '100%';
+                            }
+                            
+                            // Обновляем размер карты
                             setTimeout(() => {
-                                if (typeof initYandexMap === 'function') {
-                                    initYandexMap();
+                                console.log('🔄 Обновляем размер карты после показа');
+                                if (window.cdekMap && window.cdekMap.container) {
+                                    try {
+                                        window.cdekMap.container.fitToViewport();
+                                        console.log('✅ Размер карты обновлен');
+                                    } catch (e) {
+                                        console.log('🚨 Ошибка обновления размера карты:', e);
+                                    }
                                 }
-                            }, 100);
+                            }, 300);
                         }
                     } else {
-                        // Скрываем карту СДЭК для других неизвестных вкладок
-                        console.log('👋 Скрываем карту СДЭК для других вкладок');
-                        cdekElements.forEach(el => {
-                            el.style.display = 'none';
-                        });
+                        // Проверяем, может ли это быть вкладка доставки (по умолчанию или неопознанная СДЭК)
+                        const mightBeDelivery = !isPickupTab && !isDiscussTab && 
+                                              (cdekElements.length > 0 || 
+                                               titleText.toLowerCase().includes('доставк') ||
+                                               clickedTab.getAttribute('value')?.includes('delivery'));
                         
-                        // Очищаем данные СДЭК для неизвестных вкладок
-                        clearCdekSelectionOnly();
+                        if (mightBeDelivery) {
+                            console.log('🤔 Неопознанная вкладка, но возможно доставка - показываем карту');
+                            
+                            // Показываем карту
+                            cdekElements.forEach((el, index) => {
+                                console.log(`🔧 Показываем элемент ${index + 1} для неопознанной вкладки: ${el.id || el.className}`);
+                                el.style.display = 'block';
+                                el.style.visibility = 'visible';
+                            });
+                            
+                            // Если карта уже существует, просто показываем
+                            if (window.cdekMap || cdekMap) {
+                                setTimeout(() => {
+                                    if (window.cdekMap && window.cdekMap.container) {
+                                        try {
+                                            window.cdekMap.container.fitToViewport();
+                                        } catch (e) {
+                                            console.log('🚨 Ошибка обновления размера карты:', e);
+                                        }
+                                    }
+                                }, 200);
+                            } else {
+                                // Инициализируем карту
+                                setTimeout(() => {
+                                    if (typeof initCdekDelivery === 'function') {
+                                        initCdekDelivery();
+                                    }
+                                }, 100);
+                            }
+                        } else {
+                            // Скрываем карту СДЭК для других неизвестных вкладок
+                            console.log('👋 Скрываем карту СДЭК для других вкладок');
+                            cdekElements.forEach(el => {
+                                el.style.display = 'none';
+                            });
+                            
+                            // Очищаем данные СДЭК для неизвестных вкладок
+                            clearCdekSelectionOnly();
+                        }
                     }
                 }
             };

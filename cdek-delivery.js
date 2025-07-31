@@ -1278,10 +1278,21 @@ jQuery(document).ready(function($) {
         
         console.log('🚀 Начинаем инициализацию Яндекс.Карт');
         
-        // Проверяем, произошла ли ошибка загрузки Яндекс.Карт
-        if (window.yandexMapsLoadError) {
-            console.warn('СДЭК: Яндекс.Карты не загрузились, используем fallback');
-            showMapFallback();
+        // Проверяем загрузку Яндекс.Карт
+        if (window.yandexMapsLoadError || typeof ymaps === 'undefined') {
+            console.warn('СДЭК: Яндекс.Карты не загрузились или недоступны');
+            
+            // Простой fallback - показываем текст вместо карты
+            const mapContainer = document.getElementById('cdek-map');
+            if (mapContainer) {
+                mapContainer.innerHTML = `
+                    <div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #f5f5f5; border-radius: 6px; flex-direction: column;">
+                        <div style="font-size: 18px; color: #666; margin-bottom: 10px;">📍 Карта временно недоступна</div>
+                        <div style="font-size: 14px; color: #999;">Введите адрес выше для поиска пунктов выдачи</div>
+                    </div>
+                `;
+                window.cdekMapInitializing = false;
+            }
             return;
         }
         
@@ -1291,14 +1302,27 @@ jQuery(document).ready(function($) {
         
         function checkYmaps() {
             attempts++;
+            console.log(`🔍 Проверка ymaps, попытка ${attempts}/${maxAttempts}, ymaps доступен:`, typeof ymaps !== 'undefined');
             
             if (typeof ymaps !== 'undefined' && ymaps.Map) {
                 initMapContainer();
             } else if (attempts < maxAttempts) {
                 setTimeout(checkYmaps, 200);
             } else {
-                console.warn('СДЭК: Яндекс.Карты не загрузились за 10 секунд, используем fallback');
-                showMapFallback();
+                console.warn('СДЭК: Яндекс.Карты не загрузились за 10 секунд');
+                
+                // Показываем fallback
+                const mapContainer = document.getElementById('cdek-map');
+                if (mapContainer) {
+                    mapContainer.innerHTML = `
+                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #f5f5f5; border-radius: 6px; flex-direction: column;">
+                            <div style="font-size: 18px; color: #666; margin-bottom: 10px;">⚠️ Не удалось загрузить карту</div>
+                            <div style="font-size: 14px; color: #999;">Попробуйте обновить страницу</div>
+                            <button onclick="location.reload()" style="margin-top: 10px; padding: 8px 16px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer;">Обновить</button>
+                        </div>
+                    `;
+                    window.cdekMapInitializing = false;
+                }
             }
         }
         
@@ -2695,11 +2719,26 @@ jQuery(document).ready(function($) {
                             window.cdekMap = null;
                             window.cdekMapInitializing = false;
                             
-                            setTimeout(() => {
-                                if (typeof window.initCdekDelivery === 'function') {
-                                    window.initCdekDelivery();
-                                }
-                            }, 100);
+                            // Принудительно загружаем Яндекс.Карты если их нет
+                            if (typeof ymaps === 'undefined') {
+                                console.log('🔄 Принудительная загрузка Яндекс.Карт');
+                                const script = document.createElement('script');
+                                script.src = 'https://api-maps.yandex.ru/2.1/?apikey=&lang=ru_RU';
+                                script.onload = () => {
+                                    setTimeout(() => {
+                                        if (typeof window.initCdekDelivery === 'function') {
+                                            window.initCdekDelivery();
+                                        }
+                                    }, 500);
+                                };
+                                document.head.appendChild(script);
+                            } else {
+                                setTimeout(() => {
+                                    if (typeof window.initCdekDelivery === 'function') {
+                                        window.initCdekDelivery();
+                                    }
+                                }, 100);
+                            }
                         } else if (!window.cdekMap && !window.cdekMapInitializing) {
                             console.log('🔄 Первичная инициализация СДЭК доставки');
                             setTimeout(() => {

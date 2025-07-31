@@ -760,8 +760,10 @@ jQuery(document).ready(function($) {
                 // Устанавливаем данные через API плагина
                 if (window.currentDeliveryData && window.currentDeliveryData.dostavka) {
                     try {
-                        checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_dostavka', window.currentDeliveryData.dostavka);
-                        console.log('🔄 API: Установлено _meta_dostavka =', window.currentDeliveryData.dostavka);
+                        // Убеждаемся что данные - строка
+                        const dostavkaValue = String(window.currentDeliveryData.dostavka);
+                        checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_dostavka', dostavkaValue);
+                        console.log('🔄 API: Установлено _meta_dostavka =', dostavkaValue);
                     } catch (e) {
                         console.log('⚠️ Ошибка установки _meta_dostavka:', e);
                     }
@@ -769,8 +771,10 @@ jQuery(document).ready(function($) {
                 
                 if (window.currentDeliveryData && window.currentDeliveryData.manager) {
                     try {
-                        checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_manager', window.currentDeliveryData.manager);
-                        console.log('🔄 API: Установлено _meta_manager =', window.currentDeliveryData.manager);
+                        // Убеждаемся что данные - строка
+                        const managerValue = String(window.currentDeliveryData.manager);
+                        checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_manager', managerValue);
+                        console.log('🔄 API: Установлено _meta_manager =', managerValue);
                     } catch (e) {
                         console.log('⚠️ Ошибка установки _meta_manager:', e);
                     }
@@ -785,8 +789,10 @@ jQuery(document).ready(function($) {
                 fieldMappings.forEach(field => {
                     if (field.value) {
                         try {
-                            checkoutStore.setExtensionData('checkout-fields-for-blocks', field.key, field.value);
-                            console.log(`🔄 API: Установлено ${field.key} =`, field.value);
+                            // Убеждаемся что данные - строка
+                            const fieldValue = String(field.value);
+                            checkoutStore.setExtensionData('checkout-fields-for-blocks', field.key, fieldValue);
+                            console.log(`🔄 API: Установлено ${field.key} =`, fieldValue);
                         } catch (e) {
                             console.log(`⚠️ Ошибка установки ${field.key}:`, e);
                         }

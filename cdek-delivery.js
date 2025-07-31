@@ -1200,7 +1200,7 @@ jQuery(document).ready(function($) {
     
     function initYandexMap() {
         // Проверяем, существует ли уже валидная карта или происходит ли инициализация
-        if ((window.cdekMap && window.cdekMap.container) || (cdekMap && cdekMap.container) || window.cdekMapInitializing) {
+        if (!window.cdekNeedsReinit && ((window.cdekMap && window.cdekMap.container) || (cdekMap && cdekMap.container) || window.cdekMapInitializing)) {
             console.log('✅ Валидная карта уже существует или инициализируется, пропускаем инициализацию');
             
             // Показываем контейнеры карты
@@ -2686,15 +2686,24 @@ jQuery(document).ready(function($) {
                             el.style.setProperty('opacity', '1', 'important');
                         });
                         
-                        // ОСНОВНОЕ ИСПРАВЛЕНИЕ - проверяем флаг переинициализации
-                        const needsInit = !window.cdekMap && !window.cdekMapInitializing && !document.getElementById('cdek-map-container');
-                        const needsReinit = window.cdekNeedsReinit;
-                        
-                        if (needsInit || needsReinit) {
-                            console.log('🔄 Инициализация СДЭК доставки (новая или после самовывоза)');
+                                                // ОСНОВНОЕ ИСПРАВЛЕНИЕ - проверяем флаг переинициализации
+                        if (window.cdekNeedsReinit) {
+                            console.log('🔄 Переинициализация карты после самовывоза');
                             window.cdekNeedsReinit = false;
+                            
+                            // Полностью пересоздаем карту
+                            window.cdekMap = null;
+                            window.cdekMapInitializing = false;
+                            
                             setTimeout(() => {
-                                if (typeof window.initCdekDelivery === 'function' && !window.cdekMapInitializing) {
+                                if (typeof window.initCdekDelivery === 'function') {
+                                    window.initCdekDelivery();
+                                }
+                            }, 100);
+                        } else if (!window.cdekMap && !window.cdekMapInitializing) {
+                            console.log('🔄 Первичная инициализация СДЭК доставки');
+                            setTimeout(() => {
+                                if (typeof window.initCdekDelivery === 'function') {
                                     window.initCdekDelivery();
                                 }
                             }, 100);

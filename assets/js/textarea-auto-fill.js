@@ -186,9 +186,13 @@ jQuery(document).ready(function($) {
         });
         
         if (deliveryType === 'manager') {
+            // Сохраняем значения в глобальную переменную
+            window.currentDeliveryData.dostavka = '';
+            window.currentDeliveryData.manager = 'Доставка менеджером';
+            
             // Очищаем поле доставки и заполняем поле менеджера
             fillField(sdekField, '');
-            fillField(managerField, 'Доставка менеджером', true); // Используем симуляцию набора
+            fillField(managerField, 'Доставка менеджером', true);
             
         } else if (deliveryType === 'cdek' && deliveryInfo) {
             // Формируем текст для поля СДЭК
@@ -215,9 +219,13 @@ jQuery(document).ready(function($) {
                 }
             }
             
+            // Сохраняем значения в глобальную переменную
+            window.currentDeliveryData.dostavka = cdekText;
+            window.currentDeliveryData.manager = '';
+            
             // Очищаем поле менеджера и заполняем поле доставки
             fillField(managerField, '');
-            fillField(sdekField, cdekText, true); // Используем симуляцию набора
+            fillField(sdekField, cdekText, true);
         } else {
             console.log('⚠️ Неизвестный тип доставки или нет данных, поля не изменяются');
         }
@@ -378,9 +386,110 @@ jQuery(document).ready(function($) {
         }
     });
     
+    // Глобальные переменные для хранения текущих значений
+    window.currentDeliveryData = {
+        dostavka: '',
+        manager: ''
+    };
+    
+    // Функция для перехвата отправки формы
+    function interceptFormSubmission() {
+        // Перехватываем все формы на странице
+        $(document).on('submit', 'form', function(e) {
+            console.log('📤 Перехват отправки формы');
+            
+            // Принудительно устанавливаем значения перед отправкой
+            const dostavkaField = $('textarea[name="dostavka"], input[name="dostavka"]');
+            const managerField = $('textarea[name="manager"], input[name="manager"]');
+            
+            if (window.currentDeliveryData.dostavka) {
+                dostavkaField.val(window.currentDeliveryData.dostavka);
+                console.log('📝 Установлено значение dostavka:', window.currentDeliveryData.dostavka);
+            }
+            
+            if (window.currentDeliveryData.manager) {
+                managerField.val(window.currentDeliveryData.manager);
+                console.log('📝 Установлено значение manager:', window.currentDeliveryData.manager);
+            }
+        });
+        
+        // Перехватываем AJAX отправки WooCommerce
+        $(document).ajaxSend(function(event, xhr, settings) {
+            if (settings.url && (settings.url.includes('wc-store/checkout') || settings.url.includes('checkout'))) {
+                console.log('📤 Перехват AJAX отправки чекаута');
+                
+                // Модифицируем данные перед отправкой
+                if (settings.data) {
+                    try {
+                        // Пробуем разные форматы данных
+                        if (typeof settings.data === 'string') {
+                            let formData = new URLSearchParams(settings.data);
+                            
+                            if (window.currentDeliveryData.dostavka) {
+                                formData.set('dostavka', window.currentDeliveryData.dostavka);
+                            }
+                            
+                            if (window.currentDeliveryData.manager) {
+                                formData.set('manager', window.currentDeliveryData.manager);
+                            }
+                            
+                            settings.data = formData.toString();
+                        } else if (typeof settings.data === 'object') {
+                            // Если данные в виде объекта
+                            if (window.currentDeliveryData.dostavka) {
+                                settings.data.dostavka = window.currentDeliveryData.dostavka;
+                            }
+                            
+                            if (window.currentDeliveryData.manager) {
+                                settings.data.manager = window.currentDeliveryData.manager;
+                            }
+                        }
+                        
+                        console.log('📝 Модифицированы AJAX данные:', settings.data);
+                    } catch (e) {
+                        console.log('⚠️ Ошибка модификации AJAX данных:', e);
+                    }
+                }
+            }
+        });
+        
+        // Перехватываем Fetch API (для современных запросов)
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            const [url, options] = args;
+            
+            if (url && (url.includes('wc-store/checkout') || url.includes('checkout'))) {
+                console.log('📤 Перехват Fetch отправки чекаута');
+                
+                if (options && options.body) {
+                    try {
+                        if (typeof options.body === 'string') {
+                            let formData = new URLSearchParams(options.body);
+                            
+                            if (window.currentDeliveryData.dostavka) {
+                                formData.set('dostavka', window.currentDeliveryData.dostavka);
+                            }
+                            
+                            if (window.currentDeliveryData.manager) {
+                                formData.set('manager', window.currentDeliveryData.manager);
+                            }
+                            
+                            options.body = formData.toString();
+                        }
+                    } catch (e) {
+                        console.log('⚠️ Ошибка модификации Fetch данных:', e);
+                    }
+                }
+            }
+            
+            return originalFetch.apply(this, args);
+        };
+    }
+    
     // Инициализация
     setTimeout(function() {
         ensureHiddenFields(); // Создаем поля сразу при инициализации
+        interceptFormSubmission(); // Устанавливаем перехват отправки
         updateTextareaFields();
         observeShippingBlock();
         console.log('✅ Автозаполнение textarea полей готово к работе');

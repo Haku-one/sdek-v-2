@@ -3,9 +3,10 @@
 .woocommerce-checkout input[name="delivery_manager"],
 .woocommerce-checkout input[name="cdek_delivery_manager"],
 .wp-block-woocommerce-checkout input[name*="delivery-manager"],
-.wp-block-woocommerce-checkout .hidden-delivery-field,
+.wp-block-woocommerce-checkout input[data-hidden="true"],
 .wp-block-woocommerce-checkout div[data-field-id*="delivery-manager"],
-.wp-block-woocommerce-checkout .wc-block-components-text-input[id*="delivery-manager"] {
+.wp-block-woocommerce-checkout .wc-block-components-text-input[id*="delivery-manager"],
+.wp-block-woocommerce-checkout .wc-block-components-text-input[data-hidden="true"] {
     display: none !important;
     visibility: hidden !important;
     position: absolute !important;
@@ -18,7 +19,16 @@
 /* Скрываем также label и wrapper */
 .wp-block-woocommerce-checkout label[for*="delivery-manager"],
 .wp-block-woocommerce-checkout .wc-block-components-text-input[id*="delivery-manager"] + label,
-.wp-block-woocommerce-checkout div[data-field-id*="delivery-manager"] label {
+.wp-block-woocommerce-checkout div[data-field-id*="delivery-manager"] label,
+.wp-block-woocommerce-checkout input[data-hidden="true"] + label,
+.wp-block-woocommerce-checkout .wc-block-components-text-input[data-hidden="true"] + label {
+    display: none !important;
+    visibility: hidden !important;
+}
+
+/* Скрываем родительские контейнеры */
+.wp-block-woocommerce-checkout div[data-field-id*="delivery-manager"],
+.wp-block-woocommerce-checkout .wc-block-checkout__order-information input[data-hidden="true"]:parent() {
     display: none !important;
     visibility: hidden !important;
 }

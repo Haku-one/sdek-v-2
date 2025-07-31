@@ -189,9 +189,8 @@ class CdekDeliveryPlugin {
                     'type'          => 'text',
                     'required'      => false,
                     'attributes'    => array(
-                        'style' => 'display: none !important; visibility: hidden !important; position: absolute; left: -9999px;',
-                        'class' => 'hidden-delivery-field',
-                        'readonly' => true
+                        'data-hidden' => 'true',
+                        'autocomplete' => 'off'
                     )
                 )
             );

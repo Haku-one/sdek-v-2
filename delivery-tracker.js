@@ -135,6 +135,7 @@ jQuery(document).ready(function($) {
         
         // Добавляем CSS для скрытия поля
         $('<style type="text/css">' +
+            '.wp-block-woocommerce-checkout input[data-hidden="true"],' +
             '.wp-block-woocommerce-checkout input[id*="delivery-manager"],' +
             '.wp-block-woocommerce-checkout div[data-field-id*="delivery-manager"],' +
             '.wp-block-woocommerce-checkout label[for*="delivery-manager"] {' +
@@ -144,13 +145,17 @@ jQuery(document).ready(function($) {
         
         // Принудительно скрываем поле через JavaScript
         function hideDeliveryField() {
-            $('input[id*="delivery-manager"], div[data-field-id*="delivery-manager"], label[for*="delivery-manager"]').each(function() {
+            $('input[data-hidden="true"], input[id*="delivery-manager"], div[data-field-id*="delivery-manager"], label[for*="delivery-manager"]').each(function() {
                 $(this).hide().css({
                     'display': 'none !important',
                     'visibility': 'hidden !important',
                     'position': 'absolute !important',
                     'left': '-9999px !important'
-                }).closest('.wc-block-components-text-input').hide();
+                }).closest('div').hide();
+                
+                // Также скрываем родительские контейнеры
+                $(this).parents('.wc-block-components-text-input').hide();
+                $(this).parents('[data-field-id*="delivery-manager"]').hide();
             });
         }
         

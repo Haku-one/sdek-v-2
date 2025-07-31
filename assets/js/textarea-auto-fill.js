@@ -7,6 +7,9 @@ jQuery(document).ready(function($) {
             dostavka: '',
             manager: ''
         };
+        console.log('✅ Инициализированы данные доставки');
+    } else {
+        console.log('ℹ️ Данные доставки уже существуют:', window.currentDeliveryData);
     }
     
     // Дебаунсинг для предотвращения частых вызовов
@@ -478,6 +481,8 @@ jQuery(document).ready(function($) {
                 // Модифицируем данные перед отправкой
                 if (settings.data) {
                     try {
+                        // Сохраняем оригинальные данные для восстановления в случае ошибки
+                        const originalData = settings.data;
                         let modifiedData = settings.data;
                         
                         if (typeof settings.data === 'string') {
@@ -558,6 +563,25 @@ jQuery(document).ready(function($) {
                     } catch (e) {
                         console.log('⚠️ Ошибка модификации AJAX данных:', e);
                         // В случае ошибки оставляем оригинальные данные
+                        console.log('🔄 Возвращаем оригинальные AJAX данные без изменений');
+                    }
+                    
+                    // Дополнительная проверка валидности данных перед отправкой
+                    if (settings.data && typeof settings.data === 'string') {
+                        try {
+                            // Если это JSON, проверяем что он валидный
+                            if (settings.data.trim().startsWith('{')) {
+                                JSON.parse(settings.data);
+                                console.log('✅ AJAX JSON данные валидны');
+                            }
+                        } catch (jsonError) {
+                            console.log('⚠️ Обнаружены невалидные AJAX JSON данные, исправляем...');
+                            // Пытаемся исправить или вернуть оригинальные данные
+                            if (originalData) {
+                                settings.data = originalData;
+                                console.log('🔄 Восстановлены оригинальные AJAX данные');
+                            }
+                        }
                     }
                 }
             }
@@ -576,6 +600,8 @@ jQuery(document).ready(function($) {
                 
                 if (options && options.body) {
                     try {
+                        // Сохраняем оригинальные данные для восстановления в случае ошибки
+                        const originalBody = options.body;
                         let modifiedBody = options.body;
                         
                         if (typeof options.body === 'string') {
@@ -663,6 +689,25 @@ jQuery(document).ready(function($) {
                     } catch (e) {
                         console.log('⚠️ Ошибка модификации Fetch данных:', e);
                         // В случае ошибки оставляем оригинальные данные
+                        console.log('🔄 Возвращаем оригинальные данные без изменений');
+                    }
+                    
+                    // Дополнительная проверка валидности данных перед отправкой
+                    if (options.body && typeof options.body === 'string') {
+                        try {
+                            // Если это JSON, проверяем что он валидный
+                            if (options.body.trim().startsWith('{')) {
+                                JSON.parse(options.body);
+                                console.log('✅ JSON данные валидны');
+                            }
+                        } catch (jsonError) {
+                            console.log('⚠️ Обнаружены невалидные JSON данные, исправляем...');
+                            // Пытаемся исправить или вернуть оригинальные данные
+                            if (originalBody) {
+                                options.body = originalBody;
+                                console.log('🔄 Восстановлены оригинальные данные');
+                            }
+                        }
                     }
                 }
             }
@@ -703,34 +748,75 @@ jQuery(document).ready(function($) {
         
         try {
             const checkoutStore = window.wp.data.dispatch('wc/store/checkout');
-            if (!checkoutStore || !checkoutStore.setExtensionData) {
-                console.log('⚠️ setExtensionData недоступен');
+            if (!checkoutStore) {
+                console.log('⚠️ Checkout store недоступен');
                 return;
             }
             
-            // Устанавливаем данные через API плагина
-            if (window.currentDeliveryData.dostavka) {
-                checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_dostavka', window.currentDeliveryData.dostavka);
-                console.log('🔄 API: Установлено _meta_dostavka =', window.currentDeliveryData.dostavka);
-            }
-            
-            if (window.currentDeliveryData.manager) {
-                checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_manager', window.currentDeliveryData.manager);
-                console.log('🔄 API: Установлено _meta_manager =', window.currentDeliveryData.manager);
-            }
-            
-            // Также пробуем другие возможные имена
-            const fieldMappings = [
-                { key: 'dostavka', value: window.currentDeliveryData.dostavka },
-                { key: 'manager', value: window.currentDeliveryData.manager }
-            ];
-            
-            fieldMappings.forEach(field => {
-                if (field.value) {
-                    checkoutStore.setExtensionData('checkout-fields-for-blocks', field.key, field.value);
-                    console.log(`🔄 API: Установлено ${field.key} =`, field.value);
+            // Проверяем доступность setExtensionData
+            if (typeof checkoutStore.setExtensionData === 'function') {
+                console.log('✅ setExtensionData доступен');
+                
+                // Устанавливаем данные через API плагина
+                if (window.currentDeliveryData && window.currentDeliveryData.dostavka) {
+                    try {
+                        checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_dostavka', window.currentDeliveryData.dostavka);
+                        console.log('🔄 API: Установлено _meta_dostavka =', window.currentDeliveryData.dostavka);
+                    } catch (e) {
+                        console.log('⚠️ Ошибка установки _meta_dostavka:', e);
+                    }
                 }
-            });
+                
+                if (window.currentDeliveryData && window.currentDeliveryData.manager) {
+                    try {
+                        checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_manager', window.currentDeliveryData.manager);
+                        console.log('🔄 API: Установлено _meta_manager =', window.currentDeliveryData.manager);
+                    } catch (e) {
+                        console.log('⚠️ Ошибка установки _meta_manager:', e);
+                    }
+                }
+                
+                // Также пробуем другие возможные имена
+                const fieldMappings = [
+                    { key: 'dostavka', value: window.currentDeliveryData?.dostavka },
+                    { key: 'manager', value: window.currentDeliveryData?.manager }
+                ];
+                
+                fieldMappings.forEach(field => {
+                    if (field.value) {
+                        try {
+                            checkoutStore.setExtensionData('checkout-fields-for-blocks', field.key, field.value);
+                            console.log(`🔄 API: Установлено ${field.key} =`, field.value);
+                        } catch (e) {
+                            console.log(`⚠️ Ошибка установки ${field.key}:`, e);
+                        }
+                    }
+                });
+            } else {
+                console.log('⚠️ setExtensionData недоступен, используем альтернативные методы');
+                
+                // Альтернативный способ - через DOM события
+                const textareas = $('.wp-block-checkout-fields-for-blocks-textarea textarea');
+                textareas.each(function() {
+                    const textarea = this;
+                    const container = $(textarea).closest('.wp-block-checkout-fields-for-blocks-textarea');
+                    
+                    let value = '';
+                    
+                    if (container.hasClass('sdek') && window.currentDeliveryData?.dostavka) {
+                        value = window.currentDeliveryData.dostavka;
+                    } else if (container.hasClass('manag') && window.currentDeliveryData?.manager) {
+                        value = window.currentDeliveryData.manager;
+                    }
+                    
+                    if (value && textarea.value !== value) {
+                        textarea.value = value;
+                        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                        console.log(`🔄 DOM: Установлено значение ${value}`);
+                    }
+                });
+            }
             
         } catch (e) {
             console.log('❌ Ошибка обновления через API:', e);

@@ -348,22 +348,26 @@ jQuery(document).ready(function($) {
             }
             
             // 4. Пытаемся получить из блока с информацией о выбранном ПВЗ в DOM
-            const pointInfoBlock = $('.wc-block-components-totals-item');
-            if (pointInfoBlock.length) {
+            const shippingBlock = $('.wc-block-components-totals-shipping .wc-block-components-totals-item');
+            if (shippingBlock.length) {
+                console.log('📦 Найдено блоков доставки в DOM:', shippingBlock.length);
                 let foundPoint = null;
-                pointInfoBlock.each(function() {
+                shippingBlock.each(function() {
                     const label = $(this).find('.wc-block-components-totals-item__label').text().trim();
                     const value = $(this).find('.wc-block-components-totals-item__value').text().trim();
                     const description = $(this).find('.wc-block-components-totals-item__description small').text().trim();
                     
-                    // Проверяем, что это информация о ПВЗ (содержит адрес или код города)
-                    if (description && (description.includes('Россия') || description.includes('183032') || description.includes('Мурманск'))) {
+                    console.log('📦 Проверяем блок:', { label, value, description });
+                    
+                    // Проверяем, что это информация о ПВЗ (содержит адрес с Россией)
+                    if (description && description.includes('Россия')) {
                         foundPoint = {
                             name: label,
                             price: value,
                             address: description,
                             code: 'from_dom'
                         };
+                        console.log('📦 Найден ПВЗ в DOM:', foundPoint);
                         return false; // break из each
                     }
                 });
@@ -510,16 +514,16 @@ jQuery(document).ready(function($) {
             const observer = new MutationObserver(function(mutationsList) {
                 for (let mutation of mutationsList) {
                     if (mutation.type === 'childList') {
-                        // Проверяем, добавился ли блок с информацией о ПВЗ
+                        // Проверяем, добавился ли блок с информацией о доставке/ПВЗ
                         const addedNodes = Array.from(mutation.addedNodes);
-                        const hasPointInfo = addedNodes.some(node => 
+                        const hasShippingInfo = addedNodes.some(node => 
                             node.nodeType === 1 && 
-                            (node.classList.contains('wc-block-components-totals-item') ||
-                             node.querySelector && node.querySelector('.wc-block-components-totals-item__description'))
+                            (node.classList && node.classList.contains('wc-block-components-totals-shipping') ||
+                             node.querySelector && node.querySelector('.wc-block-components-totals-shipping'))
                         );
                         
-                        if (hasPointInfo) {
-                            console.log('📦 Обнаружена информация о ПВЗ в блоке итогов');
+                        if (hasShippingInfo) {
+                            console.log('📦 Обнаружена информация о доставке/ПВЗ в блоке итогов');
                             debouncedUpdate();
                         }
                     }
@@ -573,6 +577,15 @@ jQuery(document).ready(function($) {
         console.log('- window.selectedCdekPoint:', window.selectedCdekPoint);
         console.log('- скрытое поле:', $('#cdek-selected-point-data').val());
         console.log('- блоки итогов:', $('.wc-block-components-totals-item').length);
+        console.log('- блоки доставки:', $('.wc-block-components-totals-shipping .wc-block-components-totals-item').length);
+        
+        // Проверяем, что есть в DOM
+        $('.wc-block-components-totals-shipping .wc-block-components-totals-item').each(function(index) {
+            const label = $(this).find('.wc-block-components-totals-item__label').text().trim();
+            const value = $(this).find('.wc-block-components-totals-item__value').text().trim();
+            const description = $(this).find('.wc-block-components-totals-item__description small').text().trim();
+            console.log(`📦 Блок ${index + 1}:`, { label, value, description });
+        });
         
         const point = getSelectedCdekPoint();
         console.log('- результат getSelectedCdekPoint():', point);

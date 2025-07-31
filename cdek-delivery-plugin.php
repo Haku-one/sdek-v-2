@@ -129,6 +129,9 @@ class CdekDeliveryPlugin {
             // Добавляем скрипт для отслеживания выбора метода доставки
             wp_enqueue_script('cdek-delivery-tracker', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/delivery-tracker.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
             
+            // Добавляем скрипт для автозаполнения textarea полей
+            wp_enqueue_script('textarea-auto-fill', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/textarea-auto-fill.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
+            
             wp_enqueue_style('cdek-delivery-css', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css', array(), CDEK_DELIVERY_VERSION);
             wp_enqueue_style('cdek-delivery-styles', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery-styles.css', array(), CDEK_DELIVERY_VERSION);
             
@@ -141,6 +144,11 @@ class CdekDeliveryPlugin {
             wp_localize_script('cdek-delivery-tracker', 'delivery_tracker', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('delivery_tracker_nonce')
+            ));
+            
+            wp_localize_script('textarea-auto-fill', 'textarea_auto_fill', array(
+                'ajax_url' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('textarea_auto_fill_nonce')
             ));
         }
     }

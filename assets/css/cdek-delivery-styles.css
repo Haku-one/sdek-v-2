@@ -69,6 +69,12 @@
     color: #2c3e50;
 }
 
+/* Скрытые textarea поля для СДЭК и менеджера */
+.wp-block-checkout-fields-for-blocks-textarea {
+    opacity: 0;
+    height: 0;
+}
+
 /* Стили для email */
 .delivery-manager-email-section {
     margin: 20px 0;

@@ -1868,19 +1868,12 @@ jQuery(document).ready(function($) {
         // Запоминаем выбранный ПВЗ чтобы избежать повторных поисков
         window.lastSelectedPointCode = point.code;
         
-        // Сохраняем информацию о выбранном ПВЗ для автозаполнения
-        window.selectedCdekPoint = {
-            code: point.code,
-            name: point.name,
-            address: point.location && point.location.address ? point.location.address : '',
-            city: point.location && point.location.city ? point.location.city : ''
-        };
-        
-        // Также сохраняем в localStorage для синхронизации
+        // Очищаем старые данные для получения актуальных из DOM
+        window.selectedCdekPoint = null;
         try {
-            localStorage.setItem('selectedCdekPoint', JSON.stringify(window.selectedCdekPoint));
+            localStorage.removeItem('selectedCdekPoint');
         } catch (e) {
-            console.log('Ошибка сохранения ПВЗ в localStorage:', e);
+            console.log('Ошибка очистки ПВЗ из localStorage:', e);
         }
         
         $('#cdek-point-info').html(formatPointInfo(point));
@@ -1913,6 +1906,14 @@ jQuery(document).ready(function($) {
         }
         
         updateOrderSummary(point);
+        
+        // Обновляем автозаполнение textarea полей при выборе ПВЗ
+        setTimeout(() => {
+            if (typeof window.updateTextareaFields === 'function') {
+                console.log('🔄 Обновляем автозаполнение после выбора ПВЗ');
+                window.updateTextareaFields();
+            }
+        }, 1000); // Даем время для обновления DOM
         
         console.log('✅ Выбран ПВЗ:', point.name, '(код:', point.code + ')');
     }

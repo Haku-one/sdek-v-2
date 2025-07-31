@@ -321,33 +321,7 @@ jQuery(document).ready(function($) {
     // Функция для получения информации о выбранном пункте СДЭК
     function getSelectedCdekPoint() {
         try {
-            // 1. Проверяем localStorage
-            const storedPoint = localStorage.getItem('selectedCdekPoint');
-            if (storedPoint) {
-                console.log('📦 Получен ПВЗ из localStorage:', JSON.parse(storedPoint));
-                return JSON.parse(storedPoint);
-            }
-            
-            // 2. Проверяем глобальную переменную
-            if (window.selectedCdekPoint) {
-                console.log('📦 Получен ПВЗ из window.selectedCdekPoint:', window.selectedCdekPoint);
-                return window.selectedCdekPoint;
-            }
-            
-            // 3. Пытаемся получить из скрытых полей формы
-            const pointDataField = $('#cdek-selected-point-data');
-            if (pointDataField.length && pointDataField.val()) {
-                const pointData = JSON.parse(pointDataField.val());
-                console.log('📦 Получен ПВЗ из скрытого поля:', pointData);
-                return {
-                    code: pointData.code,
-                    name: pointData.name,
-                    address: pointData.location && pointData.location.address ? pointData.location.address : '',
-                    city: pointData.location && pointData.location.city ? pointData.location.city : ''
-                };
-            }
-            
-            // 4. Пытаемся получить из блока с информацией о выбранном ПВЗ в DOM
+            // 1. ПРИОРИТЕТ: Пытаемся получить из блока с информацией о выбранном ПВЗ в DOM (самые актуальные данные)
             const shippingBlock = $('.wc-block-components-totals-shipping .wc-block-components-totals-item');
             if (shippingBlock.length) {
                 console.log('📦 Найдено блоков доставки в DOM:', shippingBlock.length);
@@ -374,6 +348,32 @@ jQuery(document).ready(function($) {
                 if (foundPoint) {
                     return foundPoint;
                 }
+            }
+            
+            // 2. Проверяем скрытые поля формы
+            const pointDataField = $('#cdek-selected-point-data');
+            if (pointDataField.length && pointDataField.val()) {
+                const pointData = JSON.parse(pointDataField.val());
+                console.log('📦 Получен ПВЗ из скрытого поля:', pointData);
+                return {
+                    code: pointData.code,
+                    name: pointData.name,
+                    address: pointData.location && pointData.location.address ? pointData.location.address : '',
+                    city: pointData.location && pointData.location.city ? pointData.location.city : ''
+                };
+            }
+            
+            // 3. Проверяем localStorage
+            const storedPoint = localStorage.getItem('selectedCdekPoint');
+            if (storedPoint) {
+                console.log('📦 Получен ПВЗ из localStorage:', JSON.parse(storedPoint));
+                return JSON.parse(storedPoint);
+            }
+            
+            // 4. Проверяем глобальную переменную
+            if (window.selectedCdekPoint) {
+                console.log('📦 Получен ПВЗ из window.selectedCdekPoint:', window.selectedCdekPoint);
+                return window.selectedCdekPoint;
             }
             
             return null;

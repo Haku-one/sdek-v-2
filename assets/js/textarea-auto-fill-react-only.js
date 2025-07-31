@@ -332,6 +332,10 @@ jQuery(document).ready(function($) {
                     const description = $(this).find('.wc-block-components-totals-item__description small').text().trim();
                     
                     console.log('📦 Проверяем блок:', { label, value, description });
+                    console.log('📦 Проверяем содержимое элементов:');
+                    console.log('  - label элемент:', $(this).find('.wc-block-components-totals-item__label'));
+                    console.log('  - value элемент:', $(this).find('.wc-block-components-totals-item__value'));
+                    console.log('  - description элемент:', $(this).find('.wc-block-components-totals-item__description small'));
                     
                     // Проверяем, что это информация о ПВЗ (содержит адрес с Россией)
                     if (description && description.includes('Россия')) {

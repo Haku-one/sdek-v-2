@@ -1200,11 +1200,16 @@ jQuery(document).ready(function($) {
     
     function initYandexMap() {
         // Проверяем, существует ли уже валидная карта или происходит ли инициализация
-        if (!window.cdekNeedsReinit && ((window.cdekMap && window.cdekMap.container) || (cdekMap && cdekMap.container) || window.cdekMapInitializing)) {
-            console.log('✅ Валидная карта уже существует или инициализируется, пропускаем инициализацию');
+        const mapExists = (window.cdekMap && window.cdekMap.container) || (cdekMap && cdekMap.container);
+        const mapContainer = document.getElementById('cdek-map');
+        
+        // ВАЖНО: Проверяем что карта не только существует, но и видна
+        const isMapVisible = mapContainer && mapContainer.innerHTML && !mapContainer.innerHTML.includes('Карта временно недоступна');
+        
+        if (!window.cdekNeedsReinit && mapExists && isMapVisible && !window.cdekMapInitializing) {
+            console.log('✅ Валидная карта уже существует, пропускаем инициализацию');
             
-            // Показываем контейнеры карты
-            const mapContainer = document.getElementById('cdek-map');
+            // Показываем контейнеры карты  
             const mapContainerParent = document.getElementById('cdek-map-container');
             
             if (mapContainer) {
@@ -1237,11 +1242,20 @@ jQuery(document).ready(function($) {
             return;
         }
         
+        // ПРИНУДИТЕЛЬНАЯ ПЕРЕИНИЦИАЛИЗАЦИЯ если карта серая
+        if (window.cdekNeedsReinit || (mapExists && mapContainer && mapContainer.innerHTML === '')) {
+            console.log('🔄 ПРИНУДИТЕЛЬНАЯ переинициализация серой карты');
+            window.cdekMap = null;
+            window.cdekMapInitializing = false;
+            window.cdekNeedsReinit = false;
+            mapContainer.innerHTML = '';
+        }
+        
         // Устанавливаем флаг инициализации
         window.cdekMapInitializing = true;
         
-        // Полностью очищаем контейнер карты для чистого старта
-        const mapContainer = document.getElementById('cdek-map');
+        // Полностью очищаем контейнер карты для чистого старта  
+        // mapContainer уже объявлен выше
         if (mapContainer) {
             console.log('🧹 Полностью очищаем контейнер карты перед созданием новой');
             
@@ -1351,6 +1365,8 @@ jQuery(document).ready(function($) {
                                 center: [55.753994, 37.622093],
                                 zoom: 10,
                                 controls: ['zoomControl', 'searchControl']
+                            }, {
+                                suppressMapOpenBlock: true
                             });
                             
                             // Также сохраняем в глобальной переменной для синхронизации
@@ -1358,6 +1374,16 @@ jQuery(document).ready(function($) {
                             
                             // Очищаем флаг инициализации
                             window.cdekMapInitializing = false;
+                            
+                            // ПРИНУДИТЕЛЬНАЯ проверка что карта отображается
+                            cdekMap.events.add('ready', function() {
+                                console.log('✅ Яндекс.Карта готова и видна');
+                                
+                                // Принудительный ресайз
+                                setTimeout(() => {
+                                    cdekMap.container.fitToViewport();
+                                }, 100);
+                            });
                             
                             // Принудительно обновляем размер карты
                             setTimeout(() => {

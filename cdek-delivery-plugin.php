@@ -159,13 +159,7 @@ class CdekDeliveryPlugin {
         $fields['shipping']['shipping_address_1']['placeholder'] = 'Например: Москва';
         $fields['shipping']['shipping_address_1']['required'] = true;
         
-        // Добавляем скрытое поле для сохранения информации о доставке
-        $fields['order']['delivery_manager'] = array(
-            'type'        => 'hidden',
-            'required'    => false,
-            'class'       => array('hidden-delivery-manager'),
-            'priority'    => 20,
-        );
+        // Удалено лишнее скрытое поле - используем textarea поля
         
         return $fields;
     }
@@ -218,6 +212,18 @@ class CdekDeliveryPlugin {
         if (!empty($_POST['cdek_delivery_manager'])) {
             $delivery_data = sanitize_text_field($_POST['cdek_delivery_manager']);
             update_post_meta($order_id, '_cdek_delivery_manager', $delivery_data);
+        }
+        
+        // Сохраняем данные из textarea полей
+        if (!empty($_POST['87421bf6-0900-47cb-8c83-228d9681b97c'])) {
+            // Это может быть поле СДЭК или менеджера, определяем по содержимому
+            $textarea_data = sanitize_textarea_field($_POST['87421bf6-0900-47cb-8c83-228d9681b97c']);
+            
+            if (stripos($textarea_data, 'менеджер') !== false) {
+                update_post_meta($order_id, '_delivery_manager_textarea', $textarea_data);
+            } else {
+                update_post_meta($order_id, '_cdek_delivery_textarea', $textarea_data);
+            }
         }
     }
     

@@ -57,15 +57,8 @@ jQuery(document).ready(function($) {
                 console.log('Hidden field updated:', fieldValue);
             }
             
-            // Способ 3: создаем скрытое поле если его нет
-            if (!hiddenField.length && !classicField.length) {
-                var form = $('.wp-block-woocommerce-checkout form, form.checkout').first();
-                if (form.length) {
-                    var newHiddenField = $('<input type="hidden" name="cdek_delivery_manager" value="' + fieldValue.replace(/"/g, '&quot;') + '">');
-                    form.append(newHiddenField);
-                    console.log('Created new hidden field:', fieldValue);
-                }
-            }
+            // Способ 3: используем существующие textarea поля вместо создания новых скрытых полей
+            // Удалено создание лишних полей - используем textarea поля
             
         } catch (error) {
             console.error('Error updating delivery field:', error);

@@ -1,6 +1,13 @@
 jQuery(document).ready(function($) {
     console.log('🔧 Автозаполнение textarea полей инициализировано');
     
+    // Дебаунсинг для предотвращения частых вызовов
+    let updateTimeout;
+    function debouncedUpdate() {
+        clearTimeout(updateTimeout);
+        updateTimeout = setTimeout(updateTextareaFields, 500);
+    }
+    
     // Функция для заполнения textarea полей
     function fillTextareaFields(deliveryType, deliveryInfo = null) {
         console.log('📝 Заполняем textarea поля для типа доставки:', deliveryType);
@@ -12,20 +19,24 @@ jQuery(document).ready(function($) {
         console.log('Найдено полей СДЭК:', sdekField.length);
         console.log('Найдено полей Менеджер:', managerField.length);
         
-        // Очищаем все поля сначала
-        sdekField.val('');
-        managerField.val('');
-        
         if (deliveryType === 'manager') {
-            // Заполняем поле менеджера
+            // Очищаем поле СДЭК и заполняем поле менеджера
+            sdekField.val('');
             const managerText = 'Доставка менеджером';
-            managerField.val(managerText);
-            managerField.trigger('change');
-            managerField.trigger('input');
-            console.log('✅ Заполнено поле менеджера:', managerText);
+            
+            // Проверяем, не заполнено ли поле уже
+            if (managerField.val() !== managerText) {
+                managerField.val(managerText);
+                managerField.trigger('change');
+                managerField.trigger('input');
+                console.log('✅ Заполнено поле менеджера:', managerText);
+            } else {
+                console.log('ℹ️ Поле менеджера уже заполнено корректно');
+            }
             
         } else if (deliveryType === 'cdek' && deliveryInfo) {
-            // Заполняем поле СДЭК информацией о выбранном варианте
+            // Очищаем поле менеджера и заполняем поле СДЭК
+            managerField.val('');
             let cdekText = '';
             
             if (deliveryInfo.label) {
@@ -49,10 +60,17 @@ jQuery(document).ready(function($) {
                 }
             }
             
-            sdekField.val(cdekText);
-            sdekField.trigger('change');
-            sdekField.trigger('input');
-            console.log('✅ Заполнено поле СДЭК:', cdekText);
+            // Проверяем, не заполнено ли поле уже тем же текстом
+            if (sdekField.val() !== cdekText) {
+                sdekField.val(cdekText);
+                sdekField.trigger('change');
+                sdekField.trigger('input');
+                console.log('✅ Заполнено поле СДЭК:', cdekText);
+            } else {
+                console.log('ℹ️ Поле СДЭК уже заполнено корректно');
+            }
+        } else {
+            console.log('⚠️ Неизвестный тип доставки или нет данных, поля не изменяются');
         }
     }
     
@@ -137,31 +155,33 @@ jQuery(document).ready(function($) {
         
         if (deliveryType) {
             fillTextareaFields(deliveryType, deliveryInfo);
+        } else {
+            console.log('⚠️ Тип доставки не определен, пропускаем обновление');
         }
     }
     
     // Слушаем изменения в методах доставки (блочный чекаут)
     $(document).on('change', 'input[name^="radio-control-wc-shipping-method"]', function() {
         console.log('📻 Изменен метод доставки (блочный чекаут)');
-        setTimeout(updateTextareaFields, 500);
+        debouncedUpdate();
     });
     
     // Слушаем клики по вкладкам доставки
     $(document).on('click', '.wc-block-checkout__shipping-method-option', function() {
         console.log('🖱️ Клик по вкладке доставки');
-        setTimeout(updateTextareaFields, 300);
+        debouncedUpdate();
     });
     
     // Слушаем изменения в классическом чекауте
     $(document).on('change', 'input[name^="shipping_method"]', function() {
         console.log('📻 Изменен метод доставки (классический чекаут)');
-        setTimeout(updateTextareaFields, 300);
+        debouncedUpdate();
     });
     
     // Слушаем события обновления чекаута
     $(document).on('updated_checkout checkout_updated', function() {
         console.log('🔄 Событие обновления чекаута');
-        setTimeout(updateTextareaFields, 500);
+        debouncedUpdate();
     });
     
     // Слушаем изменения в блоке доставки
@@ -182,7 +202,7 @@ jQuery(document).ready(function($) {
                 
                 if (shouldUpdate) {
                     console.log('👁️ Обнаружены изменения в блоке доставки');
-                    setTimeout(updateTextareaFields, 200);
+                    debouncedUpdate();
                 }
             });
             
@@ -205,7 +225,7 @@ jQuery(document).ready(function($) {
     window.addEventListener('storage', function(e) {
         if (e.key === 'selectedCdekPoint') {
             console.log('💾 Изменения в localStorage, обновляем поля');
-            setTimeout(updateTextareaFields, 100);
+            debouncedUpdate();
         }
     });
     
@@ -216,12 +236,12 @@ jQuery(document).ready(function($) {
         console.log('✅ Автозаполнение textarea полей готово к работе');
     }, 1000);
     
-    // Периодическая проверка (каждые 3 секунды)
-    setInterval(function() {
-        if ($('.wp-block-woocommerce-checkout').length) {
-            updateTextareaFields();
-        }
-    }, 3000);
+    // Периодическая проверка отключена - может мешать отправке данных
+    // setInterval(function() {
+    //     if ($('.wp-block-woocommerce-checkout').length) {
+    //         updateTextareaFields();
+    //     }
+    // }, 10000);
     
     // Делаем функции доступными глобально для отладки
     window.updateTextareaFields = updateTextareaFields;

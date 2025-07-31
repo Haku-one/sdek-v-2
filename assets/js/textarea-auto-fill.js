@@ -149,15 +149,24 @@ jQuery(document).ready(function($) {
                     this[reactProps].onChange({ target: { value: value } });
                 }
                 
-                // Для WooCommerce блоков
+                // Для WooCommerce блоков и плагина Checkout Fields for Blocks
                 if (window.wp && window.wp.data) {
                     try {
                         const checkoutStore = window.wp.data.dispatch('wc/store/checkout');
                         if (checkoutStore && checkoutStore.setExtensionData) {
-                            const fieldName = this.name || (this.className.includes('sdek') ? 'dostavka' : 'manager');
-                            checkoutStore.setExtensionData('checkout-fields', {
-                                [fieldName]: value
-                            });
+                            // Определяем metaName на основе поля
+                            let metaName = '';
+                            if (this.className.includes('sdek') || this.name === 'dostavka') {
+                                metaName = '_meta_dostavka';
+                            } else if (this.className.includes('manag') || this.name === 'manager') {
+                                metaName = '_meta_manager';
+                            }
+                            
+                            if (metaName) {
+                                // Устанавливаем данные для плагина Checkout Fields for Blocks
+                                checkoutStore.setExtensionData('checkout-fields-for-blocks', metaName, value);
+                                console.log(`✅ Установлено через setExtensionData: ${metaName} = ${value}`);
+                            }
                         }
                     } catch (e) {
                         console.log('Не удалось обновить WooCommerce store:', e);
@@ -196,6 +205,9 @@ jQuery(document).ready(function($) {
             window.currentDeliveryData.dostavka = '';
             window.currentDeliveryData.manager = 'Доставка менеджером';
             
+            // Обновляем через API плагина
+            updateCheckoutFieldsForBlocksAPI();
+            
             // Очищаем поле доставки и заполняем поле менеджера
             fillField(sdekField, '');
             fillField(managerField, 'Доставка менеджером', true);
@@ -228,6 +240,9 @@ jQuery(document).ready(function($) {
             // Сохраняем значения в глобальную переменную
             window.currentDeliveryData.dostavka = cdekText;
             window.currentDeliveryData.manager = '';
+            
+            // Обновляем через API плагина
+            updateCheckoutFieldsForBlocksAPI();
             
             // Очищаем поле менеджера и заполняем поле доставки
             fillField(managerField, '');
@@ -549,9 +564,55 @@ jQuery(document).ready(function($) {
         });
     }
     
+    // Функция для работы напрямую с API плагина Checkout Fields for Blocks
+    function updateCheckoutFieldsForBlocksAPI() {
+        if (!window.wp || !window.wp.data) {
+            console.log('⚠️ WP Data API недоступен');
+            return;
+        }
+        
+        try {
+            const checkoutStore = window.wp.data.dispatch('wc/store/checkout');
+            if (!checkoutStore || !checkoutStore.setExtensionData) {
+                console.log('⚠️ setExtensionData недоступен');
+                return;
+            }
+            
+            // Устанавливаем данные через API плагина
+            if (window.currentDeliveryData.dostavka) {
+                checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_dostavka', window.currentDeliveryData.dostavka);
+                console.log('🔄 API: Установлено _meta_dostavka =', window.currentDeliveryData.dostavka);
+            }
+            
+            if (window.currentDeliveryData.manager) {
+                checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_manager', window.currentDeliveryData.manager);
+                console.log('🔄 API: Установлено _meta_manager =', window.currentDeliveryData.manager);
+            }
+            
+            // Также пробуем другие возможные имена
+            const fieldMappings = [
+                { key: 'dostavka', value: window.currentDeliveryData.dostavka },
+                { key: 'manager', value: window.currentDeliveryData.manager }
+            ];
+            
+            fieldMappings.forEach(field => {
+                if (field.value) {
+                    checkoutStore.setExtensionData('checkout-fields-for-blocks', field.key, field.value);
+                    console.log(`🔄 API: Установлено ${field.key} =`, field.value);
+                }
+            });
+            
+        } catch (e) {
+            console.log('❌ Ошибка обновления через API:', e);
+        }
+    }
+    
     // Функция для принудительного обновления полей через DOM события
     function forceUpdateCheckoutFields() {
-        // Находим все textarea поля
+        // Сначала пробуем через API
+        updateCheckoutFieldsForBlocksAPI();
+        
+        // Затем через DOM
         const textareas = $('.wp-block-checkout-fields-for-blocks-textarea textarea');
         
         textareas.each(function() {
@@ -581,7 +642,7 @@ jQuery(document).ready(function($) {
                 // Также через jQuery
                 $(textarea).trigger('input').trigger('change');
                 
-                console.log(`🔄 Принудительно обновлено поле: ${value}`);
+                console.log(`🔄 DOM: Принудительно обновлено поле: ${value}`);
             }
         });
     }

@@ -41,6 +41,19 @@ class CdekDeliveryPlugin {
         add_action('woocommerce_shipping_init', array($this, 'init_cdek_shipping'));
         add_filter('woocommerce_shipping_methods', array($this, 'add_cdek_shipping_method'));
         
+        // Новое поле для выбора менеджера доставки (для блочного чекаута)
+        add_action('woocommerce_init', array($this, 'register_delivery_manager_field'));
+        
+        // Хуки для сохранения и отображения поля
+        add_action('woocommerce_checkout_update_order_meta', array($this, 'save_delivery_manager_field'));
+        add_action('woocommerce_admin_order_data_after_shipping_address', array($this, 'display_delivery_manager_in_admin'));
+        add_action('woocommerce_order_item_meta_end', array($this, 'display_delivery_manager_in_emails'), 10, 3);
+        add_action('woocommerce_email_order_meta', array($this, 'add_delivery_manager_to_emails'), 10, 3);
+        
+        // Валидация поля
+        add_action('woocommerce_checkout_process', array($this, 'validate_delivery_manager_field'));
+        add_action('woocommerce_validate_additional_field', array($this, 'validate_additional_delivery_manager_field'), 10, 3);
+        
         // AJAX обработчики
         add_action('wp_ajax_get_cdek_points', array($this, 'ajax_get_cdek_points'));
         add_action('wp_ajax_nopriv_get_cdek_points', array($this, 'ajax_get_cdek_points'));
@@ -132,6 +145,22 @@ class CdekDeliveryPlugin {
         $fields['shipping']['shipping_address_1']['placeholder'] = 'Например: Москва';
         $fields['shipping']['shipping_address_1']['required'] = true;
         
+        // Добавляем поле выбора менеджера доставки для классического чекаута
+        $fields['order']['delivery_manager'] = array(
+            'type'        => 'select',
+            'label'       => 'Выберите способ доставки',
+            'required'    => true,
+            'class'       => array('form-row-wide'),
+            'clear'       => true,
+            'options'     => array(
+                ''                    => 'Выберите способ доставки',
+                'manager'             => 'Менеджер (Бесплатно)',
+                'pickup_saratov'      => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
+                'spb_engels'          => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
+            ),
+            'priority'    => 20,
+        );
+        
         return $fields;
     }
     
@@ -142,6 +171,178 @@ class CdekDeliveryPlugin {
         $fields['address_1']['required'] = true;
         
         return $fields;
+    }
+    
+    /**
+     * Регистрация дополнительного поля для блочного чекаута
+     */
+    public function register_delivery_manager_field() {
+        // Проверяем, доступна ли функция (WooCommerce 8.6+)
+        if (function_exists('woocommerce_register_additional_checkout_field')) {
+            woocommerce_register_additional_checkout_field(
+                array(
+                    'id'            => 'cdek-delivery/delivery-manager',
+                    'label'         => 'Выберите способ доставки',
+                    'location'      => 'order',
+                    'type'          => 'select',
+                    'required'      => true,
+                    'options'       => array(
+                        array(
+                            'value' => 'manager',
+                            'label' => 'Менеджер (Бесплатно)'
+                        ),
+                        array(
+                            'value' => 'pickup_saratov',
+                            'label' => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно'
+                        ),
+                        array(
+                            'value' => 'spb_engels',
+                            'label' => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
+                        )
+                    ),
+                    'placeholder'   => 'Выберите способ доставки',
+                )
+            );
+        }
+    }
+    
+    /**
+     * Сохранение значения поля при оформлении заказа
+     */
+    public function save_delivery_manager_field($order_id) {
+        // Для блочного чекаута
+        if (function_exists('woocommerce_register_additional_checkout_field')) {
+            // Значение автоматически сохраняется новым API
+            return;
+        }
+        
+        // Для классического чекаута
+        if (!empty($_POST['delivery_manager'])) {
+            $delivery_manager = sanitize_text_field($_POST['delivery_manager']);
+            update_post_meta($order_id, '_delivery_manager', $delivery_manager);
+        }
+    }
+    
+    /**
+     * Отображение поля в админке заказа
+     */
+    public function display_delivery_manager_in_admin($order) {
+        $order_id = $order->get_id();
+        
+        // Получаем значение для блочного чекаута
+        $delivery_manager = $order->get_meta('_wc_other/cdek-delivery/delivery-manager');
+        
+        // Если не найдено, пробуем классический чекаут
+        if (empty($delivery_manager)) {
+            $delivery_manager = $order->get_meta('_delivery_manager');
+        }
+        
+        if (!empty($delivery_manager)) {
+            $delivery_options = array(
+                'manager'         => 'Менеджер (Бесплатно)',
+                'pickup_saratov'  => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
+                'spb_engels'      => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
+            );
+            
+            $label = isset($delivery_options[$delivery_manager]) ? $delivery_options[$delivery_manager] : $delivery_manager;
+            
+            echo '<div class="address">';
+            echo '<p><strong>' . __('Способ доставки:', 'cdek-delivery') . '</strong><br />' . esc_html($label) . '</p>';
+            echo '</div>';
+        }
+    }
+    
+    /**
+     * Отображение поля в email уведомлениях
+     */
+    public function display_delivery_manager_in_emails($item_id, $item, $order) {
+        // Получаем значение для блочного чекаута
+        $delivery_manager = $order->get_meta('_wc_other/cdek-delivery/delivery-manager');
+        
+        // Если не найдено, пробуем классический чекаут
+        if (empty($delivery_manager)) {
+            $delivery_manager = $order->get_meta('_delivery_manager');
+        }
+        
+        if (!empty($delivery_manager)) {
+            $delivery_options = array(
+                'manager'         => 'Менеджер (Бесплатно)',
+                'pickup_saratov'  => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
+                'spb_engels'      => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
+            );
+            
+            $label = isset($delivery_options[$delivery_manager]) ? $delivery_options[$delivery_manager] : $delivery_manager;
+            
+            echo '<div style="margin-top: 10px;">';
+            echo '<strong>' . __('Способ доставки:', 'cdek-delivery') . '</strong> ' . esc_html($label);
+            echo '</div>';
+        }
+    }
+    
+    /**
+     * Добавление информации о способе доставки в email
+     */
+    public function add_delivery_manager_to_emails($order, $sent_to_admin, $plain_text) {
+        // Получаем значение для блочного чекаута
+        $delivery_manager = $order->get_meta('_wc_other/cdek-delivery/delivery-manager');
+        
+        // Если не найдено, пробуем классический чекаут
+        if (empty($delivery_manager)) {
+            $delivery_manager = $order->get_meta('_delivery_manager');
+        }
+        
+        if (!empty($delivery_manager)) {
+            $delivery_options = array(
+                'manager'         => 'Менеджер (Бесплатно)',
+                'pickup_saratov'  => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
+                'spb_engels'      => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
+            );
+            
+            $label = isset($delivery_options[$delivery_manager]) ? $delivery_options[$delivery_manager] : $delivery_manager;
+            
+            if ($plain_text) {
+                echo "\n" . __('Способ доставки:', 'cdek-delivery') . ' ' . $label . "\n";
+            } else {
+                echo '<h2>' . __('Способ доставки', 'cdek-delivery') . '</h2>';
+                echo '<p><strong>' . esc_html($label) . '</strong></p>';
+                
+                // Добавляем дополнительную информацию в зависимости от выбранного способа
+                switch ($delivery_manager) {
+                    case 'pickup_saratov':
+                        echo '<p><em>Адрес: 194156, Россия, Саратов, ул. Осипова, д. 18а</em></p>';
+                        break;
+                    case 'spb_engels':
+                        echo '<p><em>Адрес: 194156, Россия, Санкт-Петербург, пр. Энгельса, 18</em></p>';
+                        break;
+                }
+            }
+        }
+    }
+    
+    /**
+     * Валидация поля для классического чекаута
+     */
+    public function validate_delivery_manager_field() {
+        if (empty($_POST['delivery_manager'])) {
+            wc_add_notice(__('Пожалуйста, выберите способ доставки.', 'cdek-delivery'), 'error');
+        } else {
+            $valid_options = array('manager', 'pickup_saratov', 'spb_engels');
+            if (!in_array($_POST['delivery_manager'], $valid_options)) {
+                wc_add_notice(__('Выбран недопустимый способ доставки.', 'cdek-delivery'), 'error');
+            }
+        }
+    }
+    
+    /**
+     * Валидация поля для блочного чекаута
+     */
+    public function validate_additional_delivery_manager_field($errors, $field_key, $field_value) {
+        if ('cdek-delivery/delivery-manager' === $field_key) {
+            $valid_options = array('manager', 'pickup_saratov', 'spb_engels');
+            if (!in_array($field_value, $valid_options)) {
+                $errors->add('invalid_delivery_manager', __('Выбран недопустимый способ доставки.', 'cdek-delivery'));
+            }
+        }
     }
     
     public function init_cdek_shipping() {

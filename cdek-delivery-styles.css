@@ -1,0 +1,78 @@
+/* Стили для поля выбора способа доставки */
+.woocommerce-checkout #delivery_manager_field {
+    margin-bottom: 20px;
+}
+
+.woocommerce-checkout #delivery_manager_field label {
+    font-weight: bold;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.woocommerce-checkout #delivery_manager_field select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+/* Стили для блочного чекаута */
+.wp-block-woocommerce-checkout .wc-block-components-additional-field-select {
+    margin-bottom: 20px;
+}
+
+.wp-block-woocommerce-checkout .wc-block-components-additional-field-select label {
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #2c3e50;
+}
+
+.wp-block-woocommerce-checkout .wc-block-components-additional-field-select select {
+    border: 2px solid #e9ecef;
+    border-radius: 6px;
+    padding: 12px;
+    transition: border-color 0.3s ease;
+}
+
+.wp-block-woocommerce-checkout .wc-block-components-additional-field-select select:focus {
+    border-color: #007cba;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(0, 124, 186, 0.1);
+}
+
+/* Стили для отображения в админке */
+.order_data_column .address .delivery-manager-info {
+    background: #f8f9fa;
+    padding: 10px;
+    border-left: 3px solid #007cba;
+    margin-top: 10px;
+}
+
+.order_data_column .address .delivery-manager-info strong {
+    color: #2c3e50;
+}
+
+/* Стили для email */
+.delivery-manager-email-section {
+    margin: 20px 0;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+}
+
+.delivery-manager-email-section h2 {
+    margin-top: 0;
+    color: #495057;
+    font-size: 18px;
+}
+
+.delivery-manager-email-section p {
+    margin: 5px 0;
+}
+
+.delivery-manager-email-section em {
+    color: #6c757d;
+    font-size: 14px;
+}

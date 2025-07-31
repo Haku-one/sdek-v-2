@@ -61,6 +61,69 @@ jQuery(document).ready(function($) {
         });
     }
     
+    // Функция для обновления React Hook состояния
+    function updateReactHookState(element, value) {
+        try {
+            // 1. Поиск onChange функции в React props
+            const reactPropsKey = Object.keys(element).find(key => 
+                key.startsWith('__reactProps') || 
+                key.startsWith('__reactEventHandlers') ||
+                key.startsWith('__reactInternalInstance')
+            );
+            
+            if (reactPropsKey && element[reactPropsKey] && element[reactPropsKey].onChange) {
+                // Симулируем событие изменения как от пользователя
+                element[reactPropsKey].onChange({
+                    target: { value: value },
+                    currentTarget: element,
+                    type: 'change'
+                });
+                console.log('🎯 Вызвана React onChange через props:', value);
+                return true;
+            }
+            
+            // 2. Современный способ для React 16.8+ с хуками через fiber
+            const reactInstance = element._reactInternalFiber || 
+                                element._reactInternalInstance ||
+                                element[Object.keys(element).find(key => key.startsWith('__reactFiber'))];
+            
+            if (reactInstance) {
+                // Ищем fiber с Hook состоянием
+                let fiber = reactInstance;
+                while (fiber) {
+                    if (fiber.memoizedState) {
+                        // Обновляем Hook состояние напрямую
+                        let hook = fiber.memoizedState;
+                        while (hook) {
+                            if (hook.memoizedState !== undefined && typeof hook.queue?.dispatch === 'function') {
+                                // Это useState hook, обновляем его
+                                hook.queue.dispatch(value);
+                                console.log('🎯 Обновлено React Hook через fiber:', value);
+                                return true;
+                            }
+                            hook = hook.next;
+                        }
+                    }
+                    fiber = fiber.return || fiber.child;
+                    if (!fiber) break;
+                }
+            }
+            
+            // 3. Альтернативный поиск onChange в event listeners
+            const events = element._events || element.__events;
+            if (events && events.change && typeof events.change === 'function') {
+                events.change({ target: { value: value } });
+                console.log('🔄 Вызван обработчик change события');
+                return true;
+            }
+            
+            return false;
+        } catch (e) {
+            console.log('Ошибка обновления React Hook состояния:', e);
+            return false;
+        }
+    }
+    
     // Универсальная функция для заполнения поля
     function fillField(field, value, useTypingSimulation = false) {
         if (!field.length) return;
@@ -88,10 +151,16 @@ jQuery(document).ready(function($) {
             // Сохраняем ссылку на элемент
             const element = this;
             
-            // Устанавливаем значение разными способами
-            element.value = value;
-            element.defaultValue = value;
-            $(element).val(value);
+            // Сначала пытаемся обновить React состояние
+            const reactUpdated = updateReactHookState(element, value);
+            
+            if (!reactUpdated) {
+                // Если React обновление не сработало, используем обычный способ
+                // Устанавливаем значение разными способами
+                element.value = value;
+                element.defaultValue = value;
+                $(element).val(value);
+            }
             
             // Отмечаем как измененное
             element.setAttribute('data-dirty', 'true');
@@ -172,6 +241,32 @@ jQuery(document).ready(function($) {
                         console.log('Не удалось обновить WooCommerce store:', e);
                     }
                 }
+                
+                // Попытка обновить React состояние компонента
+                try {
+                    // Ищем React fiber для обновления состояния компонента
+                    const reactFiber = this._reactInternalFiber || 
+                                     this._reactInternalInstance ||
+                                     Object.keys(this).find(key => key.startsWith('__reactInternalInstance')) && this[Object.keys(this).find(key => key.startsWith('__reactInternalInstance'))];
+                    
+                    if (reactFiber) {
+                        // Ищем компонент с состоянием
+                        let fiber = reactFiber;
+                        while (fiber) {
+                            if (fiber.stateNode && fiber.stateNode.setState) {
+                                // Это компонент с состоянием, пытаемся обновить
+                                if (fiber.stateNode.state && fiber.stateNode.state.hasOwnProperty('inputValue')) {
+                                    fiber.stateNode.setState({ inputValue: value });
+                                    console.log('🔄 Обновлено React состояние:', value);
+                                    break;
+                                }
+                            }
+                            fiber = fiber.return;
+                        }
+                    }
+                } catch (e) {
+                    console.log('Не удалось обновить React состояние:', e);
+                }
             });
         }, 100);
         
@@ -204,6 +299,20 @@ jQuery(document).ready(function($) {
             // Сохраняем значения в глобальную переменную
             window.currentDeliveryData.dostavka = '';
             window.currentDeliveryData.manager = 'Доставка менеджером';
+            
+            // Немедленно обновляем extensionData
+            if (window.wp && window.wp.data) {
+                try {
+                    const checkoutStore = window.wp.data.dispatch('wc/store/checkout');
+                    if (checkoutStore && checkoutStore.setExtensionData) {
+                        checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_dostavka', '');
+                        checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_manager', 'Доставка менеджером');
+                        console.log('✅ Немедленно установлены данные через setExtensionData для менеджера');
+                    }
+                } catch (e) {
+                    console.log('Ошибка установки extensionData для менеджера:', e);
+                }
+            }
             
             // Обновляем через API плагина
             updateCheckoutFieldsForBlocksAPI();
@@ -240,6 +349,20 @@ jQuery(document).ready(function($) {
             // Сохраняем значения в глобальную переменную
             window.currentDeliveryData.dostavka = cdekText;
             window.currentDeliveryData.manager = '';
+            
+            // Немедленно обновляем extensionData
+            if (window.wp && window.wp.data) {
+                try {
+                    const checkoutStore = window.wp.data.dispatch('wc/store/checkout');
+                    if (checkoutStore && checkoutStore.setExtensionData) {
+                        checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_dostavka', cdekText);
+                        checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_manager', '');
+                        console.log('✅ Немедленно установлены данные через setExtensionData для СДЭК');
+                    }
+                } catch (e) {
+                    console.log('Ошибка установки extensionData для СДЭК:', e);
+                }
+            }
             
             // Обновляем через API плагина
             updateCheckoutFieldsForBlocksAPI();
@@ -420,6 +543,24 @@ jQuery(document).ready(function($) {
             console.log('📤 Перехват отправки формы');
             console.log('🎯 Текущие данные доставки:', window.currentDeliveryData);
             
+            // Принудительно синхронизируем extensionData перед отправкой
+            if (window.wp && window.wp.data) {
+                try {
+                    const checkoutStore = window.wp.data.dispatch('wc/store/checkout');
+                    if (checkoutStore && checkoutStore.setExtensionData) {
+                        if (window.currentDeliveryData.dostavka !== undefined) {
+                            checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_dostavka', window.currentDeliveryData.dostavka);
+                        }
+                        if (window.currentDeliveryData.manager !== undefined) {
+                            checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_manager', window.currentDeliveryData.manager);
+                        }
+                        console.log('🔄 Синхронизированы extensionData перед отправкой формы');
+                    }
+                } catch (e) {
+                    console.log('Ошибка синхронизации extensionData:', e);
+                }
+            }
+            
             // Находим ВСЕ поля, которые могут быть связаны с доставкой
             const allFields = $('input, textarea, select').filter(function() {
                 const name = this.name || '';
@@ -466,6 +607,24 @@ jQuery(document).ready(function($) {
                 console.log('🌐 URL:', settings.url);
                 console.log('📦 Исходные данные:', settings.data);
                 console.log('🎯 Текущие данные доставки:', window.currentDeliveryData);
+                
+                // Принудительно синхронизируем extensionData перед AJAX запросом
+                if (window.wp && window.wp.data) {
+                    try {
+                        const checkoutStore = window.wp.data.dispatch('wc/store/checkout');
+                        if (checkoutStore && checkoutStore.setExtensionData) {
+                            if (window.currentDeliveryData.dostavka !== undefined) {
+                                checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_dostavka', window.currentDeliveryData.dostavka);
+                            }
+                            if (window.currentDeliveryData.manager !== undefined) {
+                                checkoutStore.setExtensionData('checkout-fields-for-blocks', '_meta_manager', window.currentDeliveryData.manager);
+                            }
+                            console.log('🔄 Синхронизированы extensionData перед AJAX запросом');
+                        }
+                    } catch (e) {
+                        console.log('Ошибка синхронизации extensionData для AJAX:', e);
+                    }
+                }
                 
                 // Модифицируем данные перед отправкой
                 if (settings.data) {
@@ -602,12 +761,17 @@ jQuery(document).ready(function($) {
                 }
             });
             
+            // Принудительно обновляем чекаут после установки данных
+            if (checkoutStore.__unstableInvalidateResolutionForStore) {
+                checkoutStore.__unstableInvalidateResolutionForStore();
+            }
+            
         } catch (e) {
             console.log('❌ Ошибка обновления через API:', e);
         }
-    }
-    
-    // Функция для принудительного обновления полей через DOM события
+          }
+      
+      // Функция для принудительного обновления полей через DOM события
     function forceUpdateCheckoutFields() {
         // Сначала пробуем через API
         updateCheckoutFieldsForBlocksAPI();
@@ -629,28 +793,62 @@ jQuery(document).ready(function($) {
             }
             
             if (value && textarea.value !== value) {
-                // Устанавливаем значение и эмулируем пользовательский ввод
-                textarea.value = value;
+                // Сначала пытаемся обновить React состояние
+                const reactUpdated = updateReactHookState(textarea, value);
                 
-                // Создаем и диспатчим события
-                const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-                const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-                
-                textarea.dispatchEvent(inputEvent);
-                textarea.dispatchEvent(changeEvent);
-                
-                // Также через jQuery
-                $(textarea).trigger('input').trigger('change');
-                
-                console.log(`🔄 DOM: Принудительно обновлено поле: ${value}`);
+                if (!reactUpdated) {
+                    // Если React обновление не сработало, используем DOM
+                    textarea.value = value;
+                    
+                    // Создаем и диспатчим события
+                    const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+                    const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                    
+                    textarea.dispatchEvent(inputEvent);
+                    textarea.dispatchEvent(changeEvent);
+                    
+                    // Также через jQuery
+                    $(textarea).trigger('input').trigger('change');
+                    
+                    console.log(`🔄 DOM: Принудительно обновлено поле: ${value}`);
+                }
             }
         });
     }
     
     // Инициализация
+    // Дополнительное отслеживание WooCommerce событий
+    function setupWooCommerceEventListeners() {
+        // Слушаем обновления чекаута
+        $(document.body).on('update_checkout', function() {
+            console.log('🔄 Событие update_checkout - синхронизируем данные');
+            updateCheckoutFieldsForBlocksAPI();
+        });
+        
+        // Слушаем изменения в методах доставки
+        $(document.body).on('updated_checkout', function() {
+            console.log('🔄 Событие updated_checkout - обновляем поля');
+            debouncedUpdate();
+        });
+        
+        // Слушаем события блочного чекаута
+        if (window.wp && window.wp.data) {
+            try {
+                const unsubscribe = window.wp.data.subscribe(() => {
+                    // Подписываемся на изменения в store чекаута
+                    updateCheckoutFieldsForBlocksAPI();
+                });
+                console.log('✅ Подписка на изменения WooCommerce store установлена');
+            } catch (e) {
+                console.log('Не удалось подписаться на изменения store:', e);
+            }
+        }
+    }
+
     setTimeout(function() {
         ensureHiddenFields(); // Создаем поля сразу при инициализации
         interceptFormSubmission(); // Устанавливаем перехват отправки
+        setupWooCommerceEventListeners(); // Настраиваем слушатели WooCommerce
         handleCheckoutFieldsForBlocks(); // Специальная обработка плагина
         updateTextareaFields();
         observeShippingBlock();

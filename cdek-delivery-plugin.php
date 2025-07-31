@@ -50,9 +50,8 @@ class CdekDeliveryPlugin {
         add_action('woocommerce_order_item_meta_end', array($this, 'display_delivery_manager_in_emails'), 10, 3);
         add_action('woocommerce_email_order_meta', array($this, 'add_delivery_manager_to_emails'), 10, 3);
         
-        // Валидация поля
-        add_action('woocommerce_checkout_process', array($this, 'validate_delivery_manager_field'));
-        add_action('woocommerce_validate_additional_field', array($this, 'validate_additional_delivery_manager_field'), 10, 3);
+        // Валидация поля (только для классического чекаута, если поле видимое)
+        // add_action('woocommerce_checkout_process', array($this, 'validate_delivery_manager_field'));
         
         // AJAX обработчики
         add_action('wp_ajax_get_cdek_points', array($this, 'ajax_get_cdek_points'));
@@ -201,16 +200,18 @@ class CdekDeliveryPlugin {
      * Сохранение значения поля при оформлении заказа
      */
     public function save_delivery_manager_field($order_id) {
-        // Для блочного чекаута
-        if (function_exists('woocommerce_register_additional_checkout_field')) {
-            // Значение автоматически сохраняется новым API
-            return;
-        }
+        // Для блочного чекаута значение автоматически сохраняется новым API
         
         // Для классического чекаута
         if (!empty($_POST['delivery_manager'])) {
             $delivery_manager = sanitize_text_field($_POST['delivery_manager']);
             update_post_meta($order_id, '_delivery_manager', $delivery_manager);
+        }
+        
+        // Проверяем также новое поле из JavaScript
+        if (!empty($_POST['cdek_delivery_manager'])) {
+            $delivery_data = sanitize_text_field($_POST['cdek_delivery_manager']);
+            update_post_meta($order_id, '_cdek_delivery_manager', $delivery_data);
         }
     }
     
@@ -223,22 +224,42 @@ class CdekDeliveryPlugin {
         // Получаем значение для блочного чекаута
         $delivery_manager = $order->get_meta('_wc_other/cdek-delivery/delivery-manager');
         
+        // Если не найдено, пробуем новое поле из JavaScript
+        if (empty($delivery_manager)) {
+            $delivery_manager = $order->get_meta('_cdek_delivery_manager');
+        }
+        
         // Если не найдено, пробуем классический чекаут
         if (empty($delivery_manager)) {
             $delivery_manager = $order->get_meta('_delivery_manager');
         }
         
         if (!empty($delivery_manager)) {
-            $delivery_options = array(
-                'manager'         => 'Менеджер (Бесплатно)',
-                'pickup_saratov'  => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
-                'spb_engels'      => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
-            );
+            echo '<div class="address delivery-manager-info">';
+            echo '<p><strong>' . __('Информация о доставке:', 'cdek-delivery') . '</strong></p>';
             
-            $label = isset($delivery_options[$delivery_manager]) ? $delivery_options[$delivery_manager] : $delivery_manager;
+            // Пытаемся распарсить JSON, если это объект
+            $delivery_data = json_decode($delivery_manager, true);
+            if (is_array($delivery_data)) {
+                echo '<p><strong>Способ:</strong> ' . esc_html($delivery_data['label']) . '</p>';
+                if (!empty($delivery_data['price'])) {
+                    echo '<p><strong>Стоимость:</strong> ' . esc_html($delivery_data['price']) . '</p>';
+                }
+                if (!empty($delivery_data['description'])) {
+                    echo '<p><strong>Адрес:</strong> ' . esc_html($delivery_data['description']) . '</p>';
+                }
+            } else {
+                // Старый формат или простой текст
+                $delivery_options = array(
+                    'manager'         => 'Менеджер (Бесплатно)',
+                    'pickup_saratov'  => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
+                    'spb_engels'      => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
+                );
+                
+                $label = isset($delivery_options[$delivery_manager]) ? $delivery_options[$delivery_manager] : $delivery_manager;
+                echo '<p>' . esc_html($label) . '</p>';
+            }
             
-            echo '<div class="address">';
-            echo '<p><strong>' . __('Способ доставки:', 'cdek-delivery') . '</strong><br />' . esc_html($label) . '</p>';
             echo '</div>';
         }
     }
@@ -277,35 +298,58 @@ class CdekDeliveryPlugin {
         // Получаем значение для блочного чекаута
         $delivery_manager = $order->get_meta('_wc_other/cdek-delivery/delivery-manager');
         
+        // Если не найдено, пробуем новое поле из JavaScript
+        if (empty($delivery_manager)) {
+            $delivery_manager = $order->get_meta('_cdek_delivery_manager');
+        }
+        
         // Если не найдено, пробуем классический чекаут
         if (empty($delivery_manager)) {
             $delivery_manager = $order->get_meta('_delivery_manager');
         }
         
         if (!empty($delivery_manager)) {
-            $delivery_options = array(
-                'manager'         => 'Менеджер (Бесплатно)',
-                'pickup_saratov'  => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
-                'spb_engels'      => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
-            );
-            
-            $label = isset($delivery_options[$delivery_manager]) ? $delivery_options[$delivery_manager] : $delivery_manager;
+            // Пытаемся распарсить JSON
+            $delivery_data = json_decode($delivery_manager, true);
             
             if ($plain_text) {
-                echo "\n" . __('Способ доставки:', 'cdek-delivery') . ' ' . $label . "\n";
-            } else {
-                echo '<h2>' . __('Способ доставки', 'cdek-delivery') . '</h2>';
-                echo '<p><strong>' . esc_html($label) . '</strong></p>';
-                
-                // Добавляем дополнительную информацию в зависимости от выбранного способа
-                switch ($delivery_manager) {
-                    case 'pickup_saratov':
-                        echo '<p><em>Адрес: 194156, Россия, Саратов, ул. Осипова, д. 18а</em></p>';
-                        break;
-                    case 'spb_engels':
-                        echo '<p><em>Адрес: 194156, Россия, Санкт-Петербург, пр. Энгельса, 18</em></p>';
-                        break;
+                echo "\n" . __('Информация о доставке:', 'cdek-delivery') . "\n";
+                if (is_array($delivery_data)) {
+                    echo __('Способ:', 'cdek-delivery') . ' ' . $delivery_data['label'] . "\n";
+                    if (!empty($delivery_data['price'])) {
+                        echo __('Стоимость:', 'cdek-delivery') . ' ' . $delivery_data['price'] . "\n";
+                    }
+                    if (!empty($delivery_data['description'])) {
+                        echo __('Адрес:', 'cdek-delivery') . ' ' . $delivery_data['description'] . "\n";
+                    }
+                } else {
+                    echo $delivery_manager . "\n";
                 }
+            } else {
+                echo '<div class="delivery-manager-email-section">';
+                echo '<h2>' . __('Информация о доставке', 'cdek-delivery') . '</h2>';
+                
+                if (is_array($delivery_data)) {
+                    echo '<p><strong>' . __('Способ:', 'cdek-delivery') . '</strong> ' . esc_html($delivery_data['label']) . '</p>';
+                    if (!empty($delivery_data['price'])) {
+                        echo '<p><strong>' . __('Стоимость:', 'cdek-delivery') . '</strong> ' . esc_html($delivery_data['price']) . '</p>';
+                    }
+                    if (!empty($delivery_data['description'])) {
+                        echo '<p><em>' . esc_html($delivery_data['description']) . '</em></p>';
+                    }
+                } else {
+                    // Старый формат
+                    $delivery_options = array(
+                        'manager'         => 'Менеджер (Бесплатно)',
+                        'pickup_saratov'  => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
+                        'spb_engels'      => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
+                    );
+                    
+                    $label = isset($delivery_options[$delivery_manager]) ? $delivery_options[$delivery_manager] : $delivery_manager;
+                    echo '<p><strong>' . esc_html($label) . '</strong></p>';
+                }
+                
+                echo '</div>';
             }
         }
     }

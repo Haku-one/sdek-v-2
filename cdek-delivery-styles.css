@@ -1,20 +1,10 @@
-/* Стили для поля выбора способа доставки */
-.woocommerce-checkout #delivery_manager_field {
-    margin-bottom: 20px;
-}
-
-.woocommerce-checkout #delivery_manager_field label {
-    font-weight: bold;
-    margin-bottom: 8px;
-    display: block;
-}
-
-.woocommerce-checkout #delivery_manager_field select {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
+/* Скрытое поле для сохранения информации о доставке */
+.woocommerce-checkout #delivery_manager_field,
+.woocommerce-checkout input[name="delivery_manager"],
+.woocommerce-checkout input[name="cdek_delivery_manager"],
+.wp-block-woocommerce-checkout input[name*="delivery-manager"] {
+    display: none !important;
+    visibility: hidden !important;
 }
 
 /* Стили для блочного чекаута */

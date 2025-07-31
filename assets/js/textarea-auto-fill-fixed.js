@@ -70,6 +70,37 @@ jQuery(document).ready(function($) {
         }
     }
     
+    // Функция принудительного обновления всех полей
+    function forceUpdateAllFields() {
+        console.log('🚀 Принудительное обновление всех полей');
+        fillTextareaFields();
+        updateCheckoutFieldsForBlocksAPI();
+        
+        // Дополнительно проверяем все textarea на странице
+        $('textarea').each(function() {
+            const textarea = this;
+            const container = $(textarea).closest('.wp-block-checkout-fields-for-blocks-textarea');
+            
+            if (container.length) {
+                let value = '';
+                
+                if (container.hasClass('sdek') && window.currentDeliveryData.dostavka) {
+                    value = String(window.currentDeliveryData.dostavka);
+                } else if (container.hasClass('manag') && window.currentDeliveryData.manager) {
+                    value = String(window.currentDeliveryData.manager);
+                }
+                
+                if (value) {
+                    textarea.value = value;
+                    $(textarea).val(value);
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                    console.log(`🚀 Принудительно обновлено: ${value}`);
+                }
+            }
+        });
+    }
+    
     // Перехват отправки форм
     function interceptFormSubmission() {
         // Принудительно заполняем поля перед отправкой
@@ -87,7 +118,7 @@ jQuery(document).ready(function($) {
                 console.log('📤 Перехват Fetch отправки чекаута');
                 
                 // Принудительно заполняем поля перед отправкой
-                fillTextareaFields();
+                forceUpdateAllFields();
                 
                 if (options?.body) {
                     try {
@@ -155,7 +186,7 @@ jQuery(document).ready(function($) {
                 console.log('📤 Перехват AJAX отправки чекаута');
                 
                 // Принудительно заполняем поля перед отправкой
-                fillTextareaFields();
+                forceUpdateAllFields();
                 
                 if (settings.data) {
                     try {
@@ -214,8 +245,7 @@ jQuery(document).ready(function($) {
     setTimeout(function() {
         try {
             interceptFormSubmission();
-            fillTextareaFields();
-            updateCheckoutFieldsForBlocksAPI();
+            forceUpdateAllFields();
             console.log('✅ Автозаполнение готово к работе');
         } catch (error) {
             console.error('❌ Ошибка инициализации:', error);
@@ -224,40 +254,8 @@ jQuery(document).ready(function($) {
     
     // Периодическое обновление
     setInterval(function() {
-        fillTextareaFields();
-        updateCheckoutFieldsForBlocksAPI();
+        forceUpdateAllFields();
     }, 1000); // Увеличили частоту до 1 секунды
-    
-    // Функция принудительного обновления всех полей
-    function forceUpdateAllFields() {
-        console.log('🚀 Принудительное обновление всех полей');
-        fillTextareaFields();
-        updateCheckoutFieldsForBlocksAPI();
-        
-        // Дополнительно проверяем все textarea на странице
-        $('textarea').each(function() {
-            const textarea = this;
-            const container = $(textarea).closest('.wp-block-checkout-fields-for-blocks-textarea');
-            
-            if (container.length) {
-                let value = '';
-                
-                if (container.hasClass('sdek') && window.currentDeliveryData.dostavka) {
-                    value = String(window.currentDeliveryData.dostavka);
-                } else if (container.hasClass('manag') && window.currentDeliveryData.manager) {
-                    value = String(window.currentDeliveryData.manager);
-                }
-                
-                if (value) {
-                    textarea.value = value;
-                    $(textarea).val(value);
-                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-                    textarea.dispatchEvent(new Event('change', { bubbles: true }));
-                    console.log(`🚀 Принудительно обновлено: ${value}`);
-                }
-            }
-        });
-    }
     
     // Глобальные функции для отладки
     window.updateTextareaFields = fillTextareaFields;

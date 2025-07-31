@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Textarea Auto-fill Fix</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <h1>Test Textarea Auto-fill Fix</h1>
+    
+    <div>
+        <h2>Test Form</h2>
+        <form id="testForm">
+            <div>
+                <label for="dostavka">Доставка:</label>
+                <textarea name="dostavka" id="dostavka"></textarea>
+            </div>
+            <div>
+                <label for="manager">Менеджер:</label>
+                <textarea name="manager" id="manager"></textarea>
+            </div>
+            <button type="submit">Submit</button>
+        </form>
+    </div>
+    
+    <div>
+        <h2>Test Controls</h2>
+        <button onclick="setDeliveryData()">Set Delivery Data</button>
+        <button onclick="testFetch()">Test Fetch Request</button>
+        <button onclick="clearData()">Clear Data</button>
+    </div>
+    
+    <div>
+        <h2>Console Output</h2>
+        <div id="console" style="background: #f0f0f0; padding: 10px; height: 200px; overflow-y: scroll; font-family: monospace;"></div>
+    </div>
+
+    <script>
+        // Override console.log to show in the page
+        const originalLog = console.log;
+        const originalError = console.error;
+        const consoleDiv = document.getElementById('console');
+        
+        function addToConsole(type, ...args) {
+            const line = document.createElement('div');
+            line.style.color = type === 'error' ? 'red' : 'black';
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${args.join(' ')}`;
+            consoleDiv.appendChild(line);
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addToConsole('log', ...args);
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addToConsole('error', ...args);
+        };
+        
+        // Test functions
+        function setDeliveryData() {
+            window.currentDeliveryData = {
+                dostavka: 'Доставка СДЭК: Москва, ул. Примерная, 123',
+                manager: 'Доставка менеджером: Иван Иванов'
+            };
+            console.log('✅ Delivery data set:', window.currentDeliveryData);
+        }
+        
+        function testFetch() {
+            const testData = {
+                billing: { first_name: 'Test' },
+                shipping: { first_name: 'Test' }
+            };
+            
+            // Simulate the problematic fetch request
+            fetch('/wp-json/wc/store/v1/checkout?_locale=site', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(testData)
+            }).catch(error => {
+                console.log('Expected error (no server):', error.message);
+            });
+        }
+        
+        function clearData() {
+            window.currentDeliveryData = { dostavka: '', manager: '' };
+            console.log('✅ Data cleared');
+        }
+        
+        // Initialize
+        setDeliveryData();
+    </script>
+    
+    <!-- Load the fixed script -->
+    <script src="assets/js/textarea-auto-fill.js"></script>
+</body>
+</html>

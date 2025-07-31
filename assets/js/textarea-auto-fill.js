@@ -1,6 +1,14 @@
 jQuery(document).ready(function($) {
     console.log('🔧 Автозаполнение textarea полей инициализировано');
     
+    // Инициализируем глобальные данные доставки если их нет
+    if (!window.currentDeliveryData) {
+        window.currentDeliveryData = {
+            dostavka: '',
+            manager: ''
+        };
+    }
+    
     // Дебаунсинг для предотвращения частых вызовов
     let updateTimeout;
     function debouncedUpdate() {
@@ -470,39 +478,86 @@ jQuery(document).ready(function($) {
                 // Модифицируем данные перед отправкой
                 if (settings.data) {
                     try {
-                        // Пробуем разные форматы данных
-                                                 if (typeof settings.data === 'string') {
-                             let formData = new URLSearchParams(settings.data);
-                             
-                             if (window.currentDeliveryData.dostavka) {
-                                 formData.set('dostavka', window.currentDeliveryData.dostavka);
-                                 // Пробуем разные возможные имена полей
-                                 formData.set('_meta_dostavka', window.currentDeliveryData.dostavka);
-                                 formData.set('meta_dostavka', window.currentDeliveryData.dostavka);
-                             }
-                             
-                             if (window.currentDeliveryData.manager) {
-                                 formData.set('manager', window.currentDeliveryData.manager);
-                                 // Пробуем разные возможные имена полей
-                                 formData.set('_meta_manager', window.currentDeliveryData.manager);
-                                 formData.set('meta_manager', window.currentDeliveryData.manager);
-                             }
-                             
-                             settings.data = formData.toString();
+                        let modifiedData = settings.data;
+                        
+                        if (typeof settings.data === 'string') {
+                            // Проверяем, является ли это JSON
+                            if (settings.data.trim().startsWith('{')) {
+                                try {
+                                    const jsonData = JSON.parse(settings.data);
+                                    
+                                    // Добавляем данные доставки в JSON
+                                    if (window.currentDeliveryData.dostavka) {
+                                        jsonData.dostavka = window.currentDeliveryData.dostavka;
+                                        jsonData._meta_dostavka = window.currentDeliveryData.dostavka;
+                                        jsonData.meta_dostavka = window.currentDeliveryData.dostavka;
+                                    }
+                                    
+                                    if (window.currentDeliveryData.manager) {
+                                        jsonData.manager = window.currentDeliveryData.manager;
+                                        jsonData._meta_manager = window.currentDeliveryData.manager;
+                                        jsonData.meta_manager = window.currentDeliveryData.manager;
+                                    }
+                                    
+                                    modifiedData = JSON.stringify(jsonData);
+                                    console.log('📝 Модифицирован JSON:', modifiedData);
+                                } catch (jsonError) {
+                                    console.log('⚠️ Не удалось распарсить JSON, пробуем как form data');
+                                }
+                            }
+                            
+                            // Если это не JSON, пробуем как form data
+                            if (modifiedData === settings.data) {
+                                try {
+                                    const formData = new URLSearchParams(settings.data);
+                                    
+                                    if (window.currentDeliveryData.dostavka) {
+                                        formData.set('dostavka', window.currentDeliveryData.dostavka);
+                                        formData.set('_meta_dostavka', window.currentDeliveryData.dostavka);
+                                        formData.set('meta_dostavka', window.currentDeliveryData.dostavka);
+                                    }
+                                    
+                                    if (window.currentDeliveryData.manager) {
+                                        formData.set('manager', window.currentDeliveryData.manager);
+                                        formData.set('_meta_manager', window.currentDeliveryData.manager);
+                                        formData.set('meta_manager', window.currentDeliveryData.manager);
+                                    }
+                                    
+                                    modifiedData = formData.toString();
+                                    console.log('📝 Модифицирован form data:', modifiedData);
+                                } catch (formError) {
+                                    console.log('⚠️ Не удалось обработать как form data, оставляем как есть');
+                                    modifiedData = settings.data;
+                                }
+                            }
                         } else if (typeof settings.data === 'object') {
                             // Если данные в виде объекта
+                            modifiedData = { ...settings.data };
+                            
                             if (window.currentDeliveryData.dostavka) {
-                                settings.data.dostavka = window.currentDeliveryData.dostavka;
+                                modifiedData.dostavka = window.currentDeliveryData.dostavka;
+                                modifiedData._meta_dostavka = window.currentDeliveryData.dostavka;
+                                modifiedData.meta_dostavka = window.currentDeliveryData.dostavka;
                             }
                             
                             if (window.currentDeliveryData.manager) {
-                                settings.data.manager = window.currentDeliveryData.manager;
+                                modifiedData.manager = window.currentDeliveryData.manager;
+                                modifiedData._meta_manager = window.currentDeliveryData.manager;
+                                modifiedData.meta_manager = window.currentDeliveryData.manager;
                             }
+                            
+                            console.log('📝 Модифицирован объект:', modifiedData);
                         }
                         
-                        console.log('📝 Модифицированы AJAX данные:', settings.data);
+                        // Обновляем данные только если они действительно изменились
+                        if (modifiedData !== settings.data) {
+                            settings.data = modifiedData;
+                            console.log('✅ AJAX данные успешно модифицированы');
+                        }
+                        
                     } catch (e) {
                         console.log('⚠️ Ошибка модификации AJAX данных:', e);
+                        // В случае ошибки оставляем оригинальные данные
                     }
                 }
             }
@@ -515,24 +570,99 @@ jQuery(document).ready(function($) {
             
             if (url && (url.includes('wc-store/checkout') || url.includes('checkout'))) {
                 console.log('📤 Перехват Fetch отправки чекаута');
+                console.log('🌐 URL:', url);
+                console.log('📦 Исходные данные:', options?.body);
+                console.log('🎯 Текущие данные доставки:', window.currentDeliveryData);
                 
                 if (options && options.body) {
                     try {
+                        let modifiedBody = options.body;
+                        
                         if (typeof options.body === 'string') {
-                            let formData = new URLSearchParams(options.body);
+                            // Проверяем, является ли это JSON
+                            if (options.body.trim().startsWith('{')) {
+                                try {
+                                    const jsonData = JSON.parse(options.body);
+                                    
+                                    // Добавляем данные доставки в JSON
+                                    if (window.currentDeliveryData.dostavka) {
+                                        jsonData.dostavka = window.currentDeliveryData.dostavka;
+                                        jsonData._meta_dostavka = window.currentDeliveryData.dostavka;
+                                        jsonData.meta_dostavka = window.currentDeliveryData.dostavka;
+                                    }
+                                    
+                                    if (window.currentDeliveryData.manager) {
+                                        jsonData.manager = window.currentDeliveryData.manager;
+                                        jsonData._meta_manager = window.currentDeliveryData.manager;
+                                        jsonData.meta_manager = window.currentDeliveryData.manager;
+                                    }
+                                    
+                                    modifiedBody = JSON.stringify(jsonData);
+                                    console.log('📝 Модифицирован JSON:', modifiedBody);
+                                } catch (jsonError) {
+                                    console.log('⚠️ Не удалось распарсить JSON, пробуем как form data');
+                                }
+                            }
                             
+                            // Если это не JSON, пробуем как form data
+                            if (modifiedBody === options.body) {
+                                try {
+                                    const formData = new URLSearchParams(options.body);
+                                    
+                                    if (window.currentDeliveryData.dostavka) {
+                                        formData.set('dostavka', window.currentDeliveryData.dostavka);
+                                        formData.set('_meta_dostavka', window.currentDeliveryData.dostavka);
+                                        formData.set('meta_dostavka', window.currentDeliveryData.dostavka);
+                                    }
+                                    
+                                    if (window.currentDeliveryData.manager) {
+                                        formData.set('manager', window.currentDeliveryData.manager);
+                                        formData.set('_meta_manager', window.currentDeliveryData.manager);
+                                        formData.set('meta_manager', window.currentDeliveryData.manager);
+                                    }
+                                    
+                                    modifiedBody = formData.toString();
+                                    console.log('📝 Модифицирован form data:', modifiedBody);
+                                } catch (formError) {
+                                    console.log('⚠️ Не удалось обработать как form data, оставляем как есть');
+                                    modifiedBody = options.body;
+                                }
+                            }
+                        } else if (options.body instanceof FormData) {
+                            // Если это FormData
+                            const formData = new FormData();
+                            
+                            // Копируем все существующие данные
+                            for (let [key, value] of options.body.entries()) {
+                                formData.append(key, value);
+                            }
+                            
+                            // Добавляем данные доставки
                             if (window.currentDeliveryData.dostavka) {
-                                formData.set('dostavka', window.currentDeliveryData.dostavka);
+                                formData.append('dostavka', window.currentDeliveryData.dostavka);
+                                formData.append('_meta_dostavka', window.currentDeliveryData.dostavka);
+                                formData.append('meta_dostavka', window.currentDeliveryData.dostavka);
                             }
                             
                             if (window.currentDeliveryData.manager) {
-                                formData.set('manager', window.currentDeliveryData.manager);
+                                formData.append('manager', window.currentDeliveryData.manager);
+                                formData.append('_meta_manager', window.currentDeliveryData.manager);
+                                formData.append('meta_manager', window.currentDeliveryData.manager);
                             }
                             
-                            options.body = formData.toString();
+                            modifiedBody = formData;
+                            console.log('📝 Модифицирован FormData');
                         }
+                        
+                        // Обновляем body только если он действительно изменился
+                        if (modifiedBody !== options.body) {
+                            options.body = modifiedBody;
+                            console.log('✅ Fetch данные успешно модифицированы');
+                        }
+                        
                     } catch (e) {
                         console.log('⚠️ Ошибка модификации Fetch данных:', e);
+                        // В случае ошибки оставляем оригинальные данные
                     }
                 }
             }
@@ -649,12 +779,16 @@ jQuery(document).ready(function($) {
     
     // Инициализация
     setTimeout(function() {
-        ensureHiddenFields(); // Создаем поля сразу при инициализации
-        interceptFormSubmission(); // Устанавливаем перехват отправки
-        handleCheckoutFieldsForBlocks(); // Специальная обработка плагина
-        updateTextareaFields();
-        observeShippingBlock();
-        console.log('✅ Автозаполнение textarea полей готово к работе');
+        try {
+            ensureHiddenFields(); // Создаем поля сразу при инициализации
+            interceptFormSubmission(); // Устанавливаем перехват отправки
+            handleCheckoutFieldsForBlocks(); // Специальная обработка плагина
+            updateTextareaFields();
+            observeShippingBlock();
+            console.log('✅ Автозаполнение textarea полей готово к работе');
+        } catch (error) {
+            console.error('❌ Ошибка инициализации автозаполнения:', error);
+        }
     }, 1000);
     
     // Периодически принудительно обновляем поля

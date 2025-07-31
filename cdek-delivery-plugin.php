@@ -127,14 +127,24 @@ class CdekDeliveryPlugin {
             
             wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
             
-            
+            // Добавляем скрипт для отслеживания выбора метода доставки
+            wp_enqueue_script('cdek-delivery-tracker', plugin_dir_url(__FILE__) . 'delivery-tracker.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
             
             wp_enqueue_style('cdek-delivery-css', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css', array(), CDEK_DELIVERY_VERSION);
+            wp_enqueue_style('cdek-delivery-styles', plugin_dir_url(__FILE__) . 'cdek-delivery-styles.css', array(), CDEK_DELIVERY_VERSION);
+            
+            // Добавляем скрипт для отслеживания выбора метода доставки
+            wp_enqueue_script('cdek-delivery-tracker', plugin_dir_url(__FILE__) . 'delivery-tracker.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
             
             wp_localize_script('cdek-delivery-js', 'cdek_ajax', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('cdek_nonce'),
                 'yandex_api_key' => $yandex_api_key
+            ));
+            
+            wp_localize_script('cdek-delivery-tracker', 'delivery_tracker', array(
+                'ajax_url' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('delivery_tracker_nonce')
             ));
         }
     }
@@ -145,19 +155,11 @@ class CdekDeliveryPlugin {
         $fields['shipping']['shipping_address_1']['placeholder'] = 'Например: Москва';
         $fields['shipping']['shipping_address_1']['required'] = true;
         
-        // Добавляем поле выбора менеджера доставки для классического чекаута
+        // Добавляем скрытое поле для сохранения информации о доставке
         $fields['order']['delivery_manager'] = array(
-            'type'        => 'select',
-            'label'       => 'Выберите способ доставки',
-            'required'    => true,
-            'class'       => array('form-row-wide'),
-            'clear'       => true,
-            'options'     => array(
-                ''                    => 'Выберите способ доставки',
-                'manager'             => 'Менеджер (Бесплатно)',
-                'pickup_saratov'      => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
-                'spb_engels'          => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
-            ),
+            'type'        => 'hidden',
+            'required'    => false,
+            'class'       => array('hidden-delivery-manager'),
             'priority'    => 20,
         );
         
@@ -174,7 +176,7 @@ class CdekDeliveryPlugin {
     }
     
     /**
-     * Регистрация дополнительного поля для блочного чекаута
+     * Регистрация скрытого поля для блочного чекаута
      */
     public function register_delivery_manager_field() {
         // Проверяем, доступна ли функция (WooCommerce 8.6+)
@@ -182,25 +184,14 @@ class CdekDeliveryPlugin {
             woocommerce_register_additional_checkout_field(
                 array(
                     'id'            => 'cdek-delivery/delivery-manager',
-                    'label'         => 'Выберите способ доставки',
+                    'label'         => '',
                     'location'      => 'order',
-                    'type'          => 'select',
-                    'required'      => true,
-                    'options'       => array(
-                        array(
-                            'value' => 'manager',
-                            'label' => 'Менеджер (Бесплатно)'
-                        ),
-                        array(
-                            'value' => 'pickup_saratov',
-                            'label' => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно'
-                        ),
-                        array(
-                            'value' => 'spb_engels',
-                            'label' => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
-                        )
-                    ),
-                    'placeholder'   => 'Выберите способ доставки',
+                    'type'          => 'text',
+                    'required'      => false,
+                    'hidden'        => true,
+                    'attributes'    => array(
+                        'style' => 'display: none;'
+                    )
                 )
             );
         }

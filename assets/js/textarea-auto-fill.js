@@ -397,8 +397,25 @@ jQuery(document).ready(function($) {
         // Перехватываем все формы на странице
         $(document).on('submit', 'form', function(e) {
             console.log('📤 Перехват отправки формы');
+            console.log('🎯 Текущие данные доставки:', window.currentDeliveryData);
             
-            // Принудительно устанавливаем значения перед отправкой
+            // Находим ВСЕ поля, которые могут быть связаны с доставкой
+            const allFields = $('input, textarea, select').filter(function() {
+                const name = this.name || '';
+                const id = this.id || '';
+                const className = this.className || '';
+                
+                return name.includes('dostavka') || name.includes('manager') || 
+                       id.includes('dostavka') || id.includes('manager') ||
+                       className.includes('sdek') || className.includes('manag');
+            });
+            
+            console.log('🔍 Найдено всех связанных полей:', allFields.length);
+            allFields.each(function(i) {
+                console.log(`Поле ${i}:`, this.name, this.id, this.value, this.className);
+            });
+            
+            // Принудительно устанавливаем значения
             const dostavkaField = $('textarea[name="dostavka"], input[name="dostavka"]');
             const managerField = $('textarea[name="manager"], input[name="manager"]');
             
@@ -411,29 +428,46 @@ jQuery(document).ready(function($) {
                 managerField.val(window.currentDeliveryData.manager);
                 console.log('📝 Установлено значение manager:', window.currentDeliveryData.manager);
             }
+            
+            // Проверяем итоговые значения всех полей
+            console.log('📋 Итоговые значения полей:');
+            allFields.each(function() {
+                if (this.value) {
+                    console.log(`${this.name || this.id}: ${this.value}`);
+                }
+            });
         });
         
         // Перехватываем AJAX отправки WooCommerce
         $(document).ajaxSend(function(event, xhr, settings) {
             if (settings.url && (settings.url.includes('wc-store/checkout') || settings.url.includes('checkout'))) {
                 console.log('📤 Перехват AJAX отправки чекаута');
+                console.log('🌐 URL:', settings.url);
+                console.log('📦 Исходные данные:', settings.data);
+                console.log('🎯 Текущие данные доставки:', window.currentDeliveryData);
                 
                 // Модифицируем данные перед отправкой
                 if (settings.data) {
                     try {
                         // Пробуем разные форматы данных
-                        if (typeof settings.data === 'string') {
-                            let formData = new URLSearchParams(settings.data);
-                            
-                            if (window.currentDeliveryData.dostavka) {
-                                formData.set('dostavka', window.currentDeliveryData.dostavka);
-                            }
-                            
-                            if (window.currentDeliveryData.manager) {
-                                formData.set('manager', window.currentDeliveryData.manager);
-                            }
-                            
-                            settings.data = formData.toString();
+                                                 if (typeof settings.data === 'string') {
+                             let formData = new URLSearchParams(settings.data);
+                             
+                             if (window.currentDeliveryData.dostavka) {
+                                 formData.set('dostavka', window.currentDeliveryData.dostavka);
+                                 // Пробуем разные возможные имена полей
+                                 formData.set('_meta_dostavka', window.currentDeliveryData.dostavka);
+                                 formData.set('meta_dostavka', window.currentDeliveryData.dostavka);
+                             }
+                             
+                             if (window.currentDeliveryData.manager) {
+                                 formData.set('manager', window.currentDeliveryData.manager);
+                                 // Пробуем разные возможные имена полей
+                                 formData.set('_meta_manager', window.currentDeliveryData.manager);
+                                 formData.set('meta_manager', window.currentDeliveryData.manager);
+                             }
+                             
+                             settings.data = formData.toString();
                         } else if (typeof settings.data === 'object') {
                             // Если данные в виде объекта
                             if (window.currentDeliveryData.dostavka) {

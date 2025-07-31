@@ -1921,6 +1921,14 @@ jQuery(document).ready(function($) {
         selectedPoint = null;
         window.lastSelectedPointCode = null;
         
+        // Очищаем также информацию для автозаполнения
+        window.selectedCdekPoint = null;
+        try {
+            localStorage.removeItem('selectedCdekPoint');
+        } catch (e) {
+            console.log('Ошибка удаления ПВЗ из localStorage:', e);
+        }
+        
         $('#cdek-selected-point').hide();
         $('#cdek-point-info').html('');
         

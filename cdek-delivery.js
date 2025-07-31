@@ -1157,12 +1157,33 @@ jQuery(document).ready(function($) {
         if (window.cdekMap || cdekMap) {
             console.log('✅ Карта уже существует, пропускаем инициализацию');
             
-            // Просто показываем контейнер карты
+            // Показываем контейнеры карты
             const mapContainer = document.getElementById('cdek-map');
+            const mapContainerParent = document.getElementById('cdek-map-container');
+            
             if (mapContainer) {
                 mapContainer.style.display = 'block';
                 mapContainer.style.visibility = 'visible';
             }
+            
+            if (mapContainerParent) {
+                mapContainerParent.style.display = 'block';
+                mapContainerParent.style.visibility = 'visible';
+            }
+            
+            // Обновляем размер карты
+            setTimeout(() => {
+                if ((window.cdekMap || cdekMap) && (window.cdekMap?.container || cdekMap?.container)) {
+                    try {
+                        const map = window.cdekMap || cdekMap;
+                        map.container.fitToViewport();
+                        console.log('✅ Размер карты обновлен в initYandexMap');
+                    } catch (e) {
+                        console.log('🚨 Ошибка обновления размера карты в initYandexMap:', e);
+                    }
+                }
+            }, 200);
+            
             return;
         }
         
@@ -2169,12 +2190,28 @@ jQuery(document).ready(function($) {
     }
     
     function initCdekDelivery() {
-        // Добавляем принудительную переинициализацию при переключении вкладок
-        const forceReinit = window.isInitialized === false;
+        // Проверяем состояние карты и контейнера
         const mapContainerExists = !!document.getElementById('cdek-map-container');
+        const mapExists = !!(window.cdekMap || cdekMap);
         
-        if (isInitialized && !forceReinit && mapContainerExists) {
-            console.log('⏭️ СДЭК уже инициализирован, пропускаем');
+        if (isInitialized && mapExists && mapContainerExists) {
+            console.log('⏭️ СДЭК уже инициализирован, показываем существующую карту');
+            
+            // Показываем контейнер карты
+            $('#cdek-map-container').show();
+            
+            // Обновляем размер карты
+            setTimeout(() => {
+                if (window.cdekMap && window.cdekMap.container) {
+                    try {
+                        window.cdekMap.container.fitToViewport();
+                        console.log('✅ Размер карты обновлен');
+                    } catch (e) {
+                        console.log('🚨 Ошибка обновления размера карты:', e);
+                    }
+                }
+            }, 300);
+            
             return;
         }
         
@@ -2501,6 +2538,8 @@ jQuery(document).ready(function($) {
                 const isDeliveryTab = titleText.includes('Доставка') || titleText.includes('СДЭК') || titleText.toLowerCase().includes('delivery');
                 const isPickupTab = titleText.includes('Самовывоз') || titleText.includes('самовывоз') || titleText.toLowerCase().includes('pickup');
                 
+                console.log('🔍 Найдено СДЭК элементов:', cdekElements.length);
+                
                 console.log('📋 Тип вкладки - Обсуждение:', isDiscussTab, 'Доставка:', isDeliveryTab, 'Самовывоз:', isPickupTab, 'Текст:', titleText);
                 
                 if (isDiscussTab) {
@@ -2572,12 +2611,13 @@ jQuery(document).ready(function($) {
                     } else if (isDeliveryTab) {
                         // Показываем карту СДЭК для доставки
                         console.log('🗺️ Активируем вкладку доставки СДЭК');
-                        cdekElements.forEach(el => {
+                        cdekElements.forEach((el, index) => {
+                            console.log(`🔍 Показываем элемент ${index + 1}: ${el.id || el.className}`);
                             el.style.display = 'block';
                             el.style.visibility = 'visible';
                         });
                         
-                        // Инициализируем карту только если она еще не создана
+                        // Проверяем состояние карты и инициализируем при необходимости
                         if (!window.cdekMap && !cdekMap) {
                             console.log('🔄 Инициализация СДЭК доставки (карта не существует)');
                             setTimeout(() => {
@@ -2586,7 +2626,14 @@ jQuery(document).ready(function($) {
                                 }
                             }, 100);
                         } else {
-                            console.log('✅ Карта уже существует, просто показываем');
+                            console.log('✅ Карта уже существует, показываем через initYandexMap');
+                            
+                            // Вызываем initYandexMap для правильного показа карты
+                            setTimeout(() => {
+                                if (typeof initYandexMap === 'function') {
+                                    initYandexMap();
+                                }
+                            }, 100);
                         }
                     } else {
                         // Скрываем карту СДЭК для других неизвестных вкладок

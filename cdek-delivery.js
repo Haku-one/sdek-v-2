@@ -1153,9 +1153,9 @@ jQuery(document).ready(function($) {
     // ========== ОСТАЛЬНЫЕ ФУНКЦИИ (СОКРАЩЕННЫЕ) ==========
     
     function initYandexMap() {
-        // Проверяем, существует ли уже карта или происходит ли инициализация
-        if (window.cdekMap || cdekMap || window.cdekMapInitializing) {
-            console.log('✅ Карта уже существует или инициализируется, пропускаем инициализацию');
+        // Проверяем, существует ли уже валидная карта или происходит ли инициализация
+        if ((window.cdekMap && window.cdekMap.container) || (cdekMap && cdekMap.container) || window.cdekMapInitializing) {
+            console.log('✅ Валидная карта уже существует или инициализируется, пропускаем инициализацию');
             
             // Показываем контейнеры карты
             const mapContainer = document.getElementById('cdek-map');
@@ -1198,10 +1198,34 @@ jQuery(document).ready(function($) {
         const mapContainer = document.getElementById('cdek-map');
         if (mapContainer) {
             console.log('🧹 Полностью очищаем контейнер карты перед созданием новой');
+            
+            // Пытаемся правильно уничтожить старую карту, если она существует
+            if (window.cdekMap && typeof window.cdekMap.destroy === 'function') {
+                try {
+                    console.log('🗑️ Уничтожаем старую карту через API');
+                    window.cdekMap.destroy();
+                } catch (e) {
+                    console.log('⚠️ Ошибка при уничтожении карты:', e);
+                }
+                window.cdekMap = null;
+            }
+            
+            if (cdekMap && typeof cdekMap.destroy === 'function') {
+                try {
+                    console.log('🗑️ Уничтожаем старую локальную карту через API');
+                    cdekMap.destroy();
+                } catch (e) {
+                    console.log('⚠️ Ошибка при уничтожении локальной карты:', e);
+                }
+                cdekMap = null;
+            }
+            
             // Уничтожаем все дочерние элементы Yandex Maps
             const ymapsElements = mapContainer.querySelectorAll('ymaps');
             ymapsElements.forEach(el => el.remove());
             mapContainer.innerHTML = '';
+            
+            console.log('✅ Контейнер карты полностью очищен');
         }
         
         console.log('🚀 Первичная инициализация Яндекс.Карт');
@@ -2653,9 +2677,9 @@ jQuery(document).ready(function($) {
                             el.style.setProperty('opacity', '1', 'important');
                         });
                         
-                        // Проверяем состояние карты и инициализируем при необходимости
-                        if (!window.cdekMap && !cdekMap && !window.cdekMapInitializing) {
-                            console.log('🔄 Инициализация СДЭК доставки (карта не существует)');
+                        // Проверяем состояние карты и инициализируем только при необходимости
+                        if (!window.cdekMap && !cdekMap && !window.cdekMapInitializing && !document.getElementById('cdek-map-container')) {
+                            console.log('🔄 Первичная инициализация СДЭК доставки (карта и контейнер не существуют)');
                             setTimeout(() => {
                                 if (typeof initCdekDelivery === 'function' && !window.cdekMapInitializing) {
                                     initCdekDelivery();
@@ -2735,8 +2759,8 @@ jQuery(document).ready(function($) {
                                         }
                                     }
                                 }, 200);
-                            } else if (!window.cdekMapInitializing) {
-                                // Инициализируем карту если не происходит инициализация
+                            } else if (!window.cdekMapInitializing && !document.getElementById('cdek-map-container')) {
+                                // Инициализируем карту только если контейнер не существует
                                 setTimeout(() => {
                                     if (typeof initCdekDelivery === 'function' && !window.cdekMapInitializing) {
                                         initCdekDelivery();

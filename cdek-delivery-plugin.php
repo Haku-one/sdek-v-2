@@ -176,102 +176,28 @@ class CdekDeliveryPlugin {
      * Сохранение значения поля при оформлении заказа
      */
     public function save_delivery_manager_field($order_id) {
-        // Сохраняем данные из textarea полей
-        // Проверяем все возможные поля textarea
-        foreach ($_POST as $key => $value) {
-            // Ищем поля textarea по содержимому
-            if (!empty($value) && is_string($value)) {
-                $textarea_data = sanitize_textarea_field($value);
-                
-                if (stripos($textarea_data, 'менеджер') !== false || stripos($textarea_data, 'Доставка менеджером') !== false) {
-                    update_post_meta($order_id, '_delivery_manager_textarea', $textarea_data);
-                    error_log('Сохранено поле менеджера: ' . $textarea_data);
-                } elseif (stripos($textarea_data, 'СДЭК') !== false || stripos($textarea_data, 'Пункт выдачи') !== false) {
-                    update_post_meta($order_id, '_cdek_delivery_textarea', $textarea_data);
-                    error_log('Сохранено поле СДЭК: ' . $textarea_data);
-                }
-            }
-        }
+        // Убрано сохранение - данные из textarea полей сохраняются автоматически плагином
     }
     
     /**
      * Отображение поля в админке заказа
      */
     public function display_delivery_manager_in_admin($order) {
-        $order_id = $order->get_id();
-        
-        // Получаем данные из textarea полей
-        $manager_data = $order->get_meta('_delivery_manager_textarea');
-        $cdek_data = $order->get_meta('_cdek_delivery_textarea');
-        
-        $delivery_manager = '';
-        
-        // Определяем какие данные показывать
-        if (!empty($manager_data)) {
-            $delivery_manager = $manager_data;
-        } elseif (!empty($cdek_data)) {
-            $delivery_manager = $cdek_data;
-        }
-        
-        if (!empty($delivery_manager)) {
-            echo '<div class="address delivery-manager-info">';
-            echo '<p><strong>' . __('Информация о доставке:', 'cdek-delivery') . '</strong></p>';
-            
-            // Отображаем данные из textarea (с поддержкой переносов строк)
-            echo '<p>' . nl2br(esc_html($delivery_manager)) . '</p>';
-            
-            echo '</div>';
-        }
+        // Убрано отображение - данные отображаются плагином автоматически
     }
     
     /**
      * Отображение поля в email уведомлениях
      */
     public function display_delivery_manager_in_emails($item_id, $item, $order) {
-        // Получаем данные из textarea полей
-        $manager_data = $order->get_meta('_delivery_manager_textarea');
-        $cdek_data = $order->get_meta('_cdek_delivery_textarea');
-        
-        $delivery_manager = '';
-        if (!empty($manager_data)) {
-            $delivery_manager = $manager_data;
-        } elseif (!empty($cdek_data)) {
-            $delivery_manager = $cdek_data;
-        }
-        
-        if (!empty($delivery_manager)) {
-            echo '<div style="margin-top: 10px;">';
-            echo '<strong>' . __('Способ доставки:', 'cdek-delivery') . '</strong><br>' . nl2br(esc_html($delivery_manager));
-            echo '</div>';
-        }
+        // Убрано отображение - данные отображаются плагином автоматически
     }
     
     /**
      * Добавление информации о способе доставки в email
      */
     public function add_delivery_manager_to_emails($order, $sent_to_admin, $plain_text) {
-        // Получаем данные из textarea полей
-        $manager_data = $order->get_meta('_delivery_manager_textarea');
-        $cdek_data = $order->get_meta('_cdek_delivery_textarea');
-        
-        $delivery_manager = '';
-        if (!empty($manager_data)) {
-            $delivery_manager = $manager_data;
-        } elseif (!empty($cdek_data)) {
-            $delivery_manager = $cdek_data;
-        }
-        
-        if (!empty($delivery_manager)) {
-            if ($plain_text) {
-                echo "\n" . __('Информация о доставке:', 'cdek-delivery') . "\n";
-                echo $delivery_manager . "\n";
-            } else {
-                echo '<div class="delivery-manager-email-section">';
-                echo '<h2>' . __('Информация о доставке', 'cdek-delivery') . '</h2>';
-                echo '<p>' . nl2br(esc_html($delivery_manager)) . '</p>';
-                echo '</div>';
-            }
-        }
+        // Убрано отображение - данные отображаются плагином автоматически
     }
     
     /**

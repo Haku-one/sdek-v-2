@@ -65,17 +65,9 @@ jQuery(document).ready(function($) {
                 return JSON.parse(storedPoint);
             }
             
-            // Проверяем скрытые поля
-            const pointCode = $('input[name="cdek_selected_point_code"]').val();
-            const pointName = $('input[name="cdek_selected_point_name"]').val();
-            const pointAddress = $('input[name="cdek_selected_point_address"]').val();
-            
-            if (pointCode || pointName) {
-                return {
-                    code: pointCode,
-                    name: pointName,
-                    address: pointAddress
-                };
+            // Проверяем глобальные переменные из основного скрипта
+            if (window.selectedCdekPoint) {
+                return window.selectedCdekPoint;
             }
             
             return null;
@@ -211,7 +203,7 @@ jQuery(document).ready(function($) {
     
     // Слушаем изменения в localStorage (для синхронизации с другими скриптами)
     window.addEventListener('storage', function(e) {
-        if (e.key === 'selectedCdekPoint' || e.key === 'cdek_delivery_manager') {
+        if (e.key === 'selectedCdekPoint') {
             console.log('💾 Изменения в localStorage, обновляем поля');
             setTimeout(updateTextareaFields, 100);
         }

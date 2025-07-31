@@ -1251,6 +1251,9 @@ jQuery(document).ready(function($) {
                                 controls: ['zoomControl', 'searchControl']
                             });
                             
+                            // Также сохраняем в глобальной переменной для синхронизации
+                            window.cdekMap = cdekMap;
+                            
                             // Принудительно обновляем размер карты
                             setTimeout(() => {
                                 if (cdekMap && cdekMap.container) {

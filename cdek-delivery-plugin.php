@@ -126,9 +126,6 @@ class CdekDeliveryPlugin {
             
             wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
             
-            // Добавляем скрипт для отслеживания выбора метода доставки
-            wp_enqueue_script('cdek-delivery-tracker', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/delivery-tracker.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
-            
             // Добавляем скрипт для автозаполнения textarea полей
             wp_enqueue_script('textarea-auto-fill', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/textarea-auto-fill.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
             
@@ -139,11 +136,6 @@ class CdekDeliveryPlugin {
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('cdek_nonce'),
                 'yandex_api_key' => $yandex_api_key
-            ));
-            
-            wp_localize_script('cdek-delivery-tracker', 'delivery_tracker', array(
-                'ajax_url' => admin_url('admin-ajax.php'),
-                'nonce' => wp_create_nonce('delivery_tracker_nonce')
             ));
             
             wp_localize_script('textarea-auto-fill', 'textarea_auto_fill', array(
@@ -174,55 +166,30 @@ class CdekDeliveryPlugin {
     }
     
     /**
-     * Регистрация скрытого поля для блочного чекаута
+     * Регистрация поля для блочного чекаута - удалено, используем textarea поля
      */
     public function register_delivery_manager_field() {
-        // Проверяем, доступна ли функция (WooCommerce 8.6+)
-        if (function_exists('woocommerce_register_additional_checkout_field')) {
-            woocommerce_register_additional_checkout_field(
-                array(
-                    'id'            => 'cdek-delivery/delivery-manager',
-                    'label'         => 'Delivery Information',
-                    'optionalLabel' => '',
-                    'location'      => 'order',
-                    'type'          => 'text',
-                    'required'      => false,
-                    'attributes'    => array(
-                        'data-hidden' => 'true',
-                        'autocomplete' => 'off'
-                    )
-                )
-            );
-        }
+        // Удалено - используем существующие textarea поля
     }
     
     /**
      * Сохранение значения поля при оформлении заказа
      */
     public function save_delivery_manager_field($order_id) {
-        // Для блочного чекаута значение автоматически сохраняется новым API
-        
-        // Для классического чекаута
-        if (!empty($_POST['delivery_manager'])) {
-            $delivery_manager = sanitize_text_field($_POST['delivery_manager']);
-            update_post_meta($order_id, '_delivery_manager', $delivery_manager);
-        }
-        
-        // Проверяем также новое поле из JavaScript
-        if (!empty($_POST['cdek_delivery_manager'])) {
-            $delivery_data = sanitize_text_field($_POST['cdek_delivery_manager']);
-            update_post_meta($order_id, '_cdek_delivery_manager', $delivery_data);
-        }
-        
         // Сохраняем данные из textarea полей
-        if (!empty($_POST['87421bf6-0900-47cb-8c83-228d9681b97c'])) {
-            // Это может быть поле СДЭК или менеджера, определяем по содержимому
-            $textarea_data = sanitize_textarea_field($_POST['87421bf6-0900-47cb-8c83-228d9681b97c']);
-            
-            if (stripos($textarea_data, 'менеджер') !== false) {
-                update_post_meta($order_id, '_delivery_manager_textarea', $textarea_data);
-            } else {
-                update_post_meta($order_id, '_cdek_delivery_textarea', $textarea_data);
+        // Проверяем все возможные поля textarea
+        foreach ($_POST as $key => $value) {
+            // Ищем поля textarea по содержимому
+            if (!empty($value) && is_string($value)) {
+                $textarea_data = sanitize_textarea_field($value);
+                
+                if (stripos($textarea_data, 'менеджер') !== false || stripos($textarea_data, 'Доставка менеджером') !== false) {
+                    update_post_meta($order_id, '_delivery_manager_textarea', $textarea_data);
+                    error_log('Сохранено поле менеджера: ' . $textarea_data);
+                } elseif (stripos($textarea_data, 'СДЭК') !== false || stripos($textarea_data, 'Пункт выдачи') !== false) {
+                    update_post_meta($order_id, '_cdek_delivery_textarea', $textarea_data);
+                    error_log('Сохранено поле СДЭК: ' . $textarea_data);
+                }
             }
         }
     }
@@ -233,44 +200,25 @@ class CdekDeliveryPlugin {
     public function display_delivery_manager_in_admin($order) {
         $order_id = $order->get_id();
         
-        // Получаем значение для блочного чекаута
-        $delivery_manager = $order->get_meta('_wc_other/cdek-delivery/delivery-manager');
+        // Получаем данные из textarea полей
+        $manager_data = $order->get_meta('_delivery_manager_textarea');
+        $cdek_data = $order->get_meta('_cdek_delivery_textarea');
         
-        // Если не найдено, пробуем новое поле из JavaScript
-        if (empty($delivery_manager)) {
-            $delivery_manager = $order->get_meta('_cdek_delivery_manager');
-        }
+        $delivery_manager = '';
         
-        // Если не найдено, пробуем классический чекаут
-        if (empty($delivery_manager)) {
-            $delivery_manager = $order->get_meta('_delivery_manager');
+        // Определяем какие данные показывать
+        if (!empty($manager_data)) {
+            $delivery_manager = $manager_data;
+        } elseif (!empty($cdek_data)) {
+            $delivery_manager = $cdek_data;
         }
         
         if (!empty($delivery_manager)) {
             echo '<div class="address delivery-manager-info">';
             echo '<p><strong>' . __('Информация о доставке:', 'cdek-delivery') . '</strong></p>';
             
-            // Пытаемся распарсить JSON, если это объект
-            $delivery_data = json_decode($delivery_manager, true);
-            if (is_array($delivery_data)) {
-                echo '<p><strong>Способ:</strong> ' . esc_html($delivery_data['label']) . '</p>';
-                if (!empty($delivery_data['price'])) {
-                    echo '<p><strong>Стоимость:</strong> ' . esc_html($delivery_data['price']) . '</p>';
-                }
-                if (!empty($delivery_data['description'])) {
-                    echo '<p><strong>Адрес:</strong> ' . esc_html($delivery_data['description']) . '</p>';
-                }
-            } else {
-                // Старый формат или простой текст
-                $delivery_options = array(
-                    'manager'         => 'Менеджер (Бесплатно)',
-                    'pickup_saratov'  => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
-                    'spb_engels'      => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
-                );
-                
-                $label = isset($delivery_options[$delivery_manager]) ? $delivery_options[$delivery_manager] : $delivery_manager;
-                echo '<p>' . esc_html($label) . '</p>';
-            }
+            // Отображаем данные из textarea (с поддержкой переносов строк)
+            echo '<p>' . nl2br(esc_html($delivery_manager)) . '</p>';
             
             echo '</div>';
         }
@@ -280,25 +228,20 @@ class CdekDeliveryPlugin {
      * Отображение поля в email уведомлениях
      */
     public function display_delivery_manager_in_emails($item_id, $item, $order) {
-        // Получаем значение для блочного чекаута
-        $delivery_manager = $order->get_meta('_wc_other/cdek-delivery/delivery-manager');
+        // Получаем данные из textarea полей
+        $manager_data = $order->get_meta('_delivery_manager_textarea');
+        $cdek_data = $order->get_meta('_cdek_delivery_textarea');
         
-        // Если не найдено, пробуем классический чекаут
-        if (empty($delivery_manager)) {
-            $delivery_manager = $order->get_meta('_delivery_manager');
+        $delivery_manager = '';
+        if (!empty($manager_data)) {
+            $delivery_manager = $manager_data;
+        } elseif (!empty($cdek_data)) {
+            $delivery_manager = $cdek_data;
         }
         
         if (!empty($delivery_manager)) {
-            $delivery_options = array(
-                'manager'         => 'Менеджер (Бесплатно)',
-                'pickup_saratov'  => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
-                'spb_engels'      => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
-            );
-            
-            $label = isset($delivery_options[$delivery_manager]) ? $delivery_options[$delivery_manager] : $delivery_manager;
-            
             echo '<div style="margin-top: 10px;">';
-            echo '<strong>' . __('Способ доставки:', 'cdek-delivery') . '</strong> ' . esc_html($label);
+            echo '<strong>' . __('Способ доставки:', 'cdek-delivery') . '</strong><br>' . nl2br(esc_html($delivery_manager));
             echo '</div>';
         }
     }
@@ -307,90 +250,33 @@ class CdekDeliveryPlugin {
      * Добавление информации о способе доставки в email
      */
     public function add_delivery_manager_to_emails($order, $sent_to_admin, $plain_text) {
-        // Получаем значение для блочного чекаута
-        $delivery_manager = $order->get_meta('_wc_other/cdek-delivery/delivery-manager');
+        // Получаем данные из textarea полей
+        $manager_data = $order->get_meta('_delivery_manager_textarea');
+        $cdek_data = $order->get_meta('_cdek_delivery_textarea');
         
-        // Если не найдено, пробуем новое поле из JavaScript
-        if (empty($delivery_manager)) {
-            $delivery_manager = $order->get_meta('_cdek_delivery_manager');
-        }
-        
-        // Если не найдено, пробуем классический чекаут
-        if (empty($delivery_manager)) {
-            $delivery_manager = $order->get_meta('_delivery_manager');
+        $delivery_manager = '';
+        if (!empty($manager_data)) {
+            $delivery_manager = $manager_data;
+        } elseif (!empty($cdek_data)) {
+            $delivery_manager = $cdek_data;
         }
         
         if (!empty($delivery_manager)) {
-            // Пытаемся распарсить JSON
-            $delivery_data = json_decode($delivery_manager, true);
-            
             if ($plain_text) {
                 echo "\n" . __('Информация о доставке:', 'cdek-delivery') . "\n";
-                if (is_array($delivery_data)) {
-                    echo __('Способ:', 'cdek-delivery') . ' ' . $delivery_data['label'] . "\n";
-                    if (!empty($delivery_data['price'])) {
-                        echo __('Стоимость:', 'cdek-delivery') . ' ' . $delivery_data['price'] . "\n";
-                    }
-                    if (!empty($delivery_data['description'])) {
-                        echo __('Адрес:', 'cdek-delivery') . ' ' . $delivery_data['description'] . "\n";
-                    }
-                } else {
-                    echo $delivery_manager . "\n";
-                }
+                echo $delivery_manager . "\n";
             } else {
                 echo '<div class="delivery-manager-email-section">';
                 echo '<h2>' . __('Информация о доставке', 'cdek-delivery') . '</h2>';
-                
-                if (is_array($delivery_data)) {
-                    echo '<p><strong>' . __('Способ:', 'cdek-delivery') . '</strong> ' . esc_html($delivery_data['label']) . '</p>';
-                    if (!empty($delivery_data['price'])) {
-                        echo '<p><strong>' . __('Стоимость:', 'cdek-delivery') . '</strong> ' . esc_html($delivery_data['price']) . '</p>';
-                    }
-                    if (!empty($delivery_data['description'])) {
-                        echo '<p><em>' . esc_html($delivery_data['description']) . '</em></p>';
-                    }
-                } else {
-                    // Старый формат
-                    $delivery_options = array(
-                        'manager'         => 'Менеджер (Бесплатно)',
-                        'pickup_saratov'  => 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно',
-                        'spb_engels'      => 'Санкт-Петербург, пр. Энгельса - 295 руб.'
-                    );
-                    
-                    $label = isset($delivery_options[$delivery_manager]) ? $delivery_options[$delivery_manager] : $delivery_manager;
-                    echo '<p><strong>' . esc_html($label) . '</strong></p>';
-                }
-                
+                echo '<p>' . nl2br(esc_html($delivery_manager)) . '</p>';
                 echo '</div>';
             }
         }
     }
     
     /**
-     * Валидация поля для классического чекаута
+     * Валидация полей - удалено, используем textarea поля
      */
-    public function validate_delivery_manager_field() {
-        if (empty($_POST['delivery_manager'])) {
-            wc_add_notice(__('Пожалуйста, выберите способ доставки.', 'cdek-delivery'), 'error');
-        } else {
-            $valid_options = array('manager', 'pickup_saratov', 'spb_engels');
-            if (!in_array($_POST['delivery_manager'], $valid_options)) {
-                wc_add_notice(__('Выбран недопустимый способ доставки.', 'cdek-delivery'), 'error');
-            }
-        }
-    }
-    
-    /**
-     * Валидация поля для блочного чекаута
-     */
-    public function validate_additional_delivery_manager_field($errors, $field_key, $field_value) {
-        if ('cdek-delivery/delivery-manager' === $field_key) {
-            $valid_options = array('manager', 'pickup_saratov', 'spb_engels');
-            if (!in_array($field_value, $valid_options)) {
-                $errors->add('invalid_delivery_manager', __('Выбран недопустимый способ доставки.', 'cdek-delivery'));
-            }
-        }
-    }
     
     public function init_cdek_shipping() {
         if (!class_exists('WC_Cdek_Shipping_Method')) {

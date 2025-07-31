@@ -5,7 +5,7 @@ jQuery(document).ready(function($) {
     function fillTextareaFields(deliveryType, deliveryInfo = null) {
         console.log('📝 Заполняем textarea поля для типа доставки:', deliveryType);
         
-        // Находим поля СДЭК и Менеджер
+        // Находим поля СДЭК и Менеджер по классам
         const sdekField = $('.wp-block-checkout-fields-for-blocks-textarea.sdek textarea');
         const managerField = $('.wp-block-checkout-fields-for-blocks-textarea.manag textarea');
         

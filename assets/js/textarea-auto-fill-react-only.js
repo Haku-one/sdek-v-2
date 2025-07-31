@@ -256,25 +256,56 @@ jQuery(document).ready(function($) {
             simulateUserInput(sdekField, '');
             simulateUserInput(managerField, 'Доставка менеджером');
             
-        } else if (deliveryType === 'cdek' && deliveryInfo) {
+        } else if (deliveryType === 'cdek') {
             let cdekText = '';
             
-            if (deliveryInfo.label) {
-                cdekText += deliveryInfo.label;
-            }
-            
-            if (deliveryInfo.price) {
-                cdekText += ' - ' + deliveryInfo.price;
-            }
-            
-            // Добавляем информацию о пункте СДЭК если есть
+            // Получаем информацию о выбранном пункте СДЭК
             const selectedPoint = getSelectedCdekPoint();
-            if (selectedPoint) {
-                cdekText += '\nПункт выдачи: ' + selectedPoint.name;
+            
+            // Если получили информацию из DOM (блока итогов)
+            if (selectedPoint && selectedPoint.code === 'from_dom') {
+                cdekText = selectedPoint.name;
+                if (selectedPoint.price) {
+                    cdekText += ' - ' + selectedPoint.price;
+                }
                 if (selectedPoint.address) {
                     cdekText += '\nАдрес: ' + selectedPoint.address;
                 }
+            } else {
+                // Стандартная логика для deliveryInfo
+                if (deliveryInfo && deliveryInfo.label) {
+                    cdekText += deliveryInfo.label;
+                }
+                
+                if (deliveryInfo && deliveryInfo.price) {
+                    cdekText += ' - ' + deliveryInfo.price;
+                }
+                
+                // Добавляем информацию о пункте СДЭК если есть
+                if (selectedPoint) {
+                    cdekText += '\nПункт выдачи: ' + selectedPoint.name;
+                    if (selectedPoint.address) {
+                        cdekText += '\nАдрес: ' + selectedPoint.address;
+                    }
+                }
             }
+            
+            // Если текст пустой, пытаемся получить базовую информацию
+            if (!cdekText.trim()) {
+                cdekText = 'Доставка СДЭК';
+                
+                // Пытаемся найти цену доставки в DOM
+                const deliveryCostElement = $('.wc-block-components-totals-item__value');
+                deliveryCostElement.each(function() {
+                    const costText = $(this).text().trim();
+                    if (costText.includes('руб') && $(this).closest('.wc-block-components-totals-item').find('.wc-block-components-totals-item__description').length) {
+                        cdekText += ' - ' + costText;
+                        return false; // break
+                    }
+                });
+            }
+            
+            console.log('📦 Заполняем СДЭК поле текстом:', cdekText);
             
             window.currentDeliveryData.dostavka = cdekText;
             window.currentDeliveryData.manager = '';
@@ -290,12 +321,62 @@ jQuery(document).ready(function($) {
     // Функция для получения информации о выбранном пункте СДЭК
     function getSelectedCdekPoint() {
         try {
+            // 1. ПРИОРИТЕТ: Пытаемся получить из блока с информацией о выбранном ПВЗ в DOM (самые актуальные данные)
+            const shippingBlock = $('.wc-block-components-totals-shipping .wc-block-components-totals-item');
+            if (shippingBlock.length) {
+                console.log('📦 Найдено блоков доставки в DOM:', shippingBlock.length);
+                let foundPoint = null;
+                shippingBlock.each(function() {
+                    const label = $(this).find('.wc-block-components-totals-item__label').text().trim();
+                    const value = $(this).find('.wc-block-components-totals-item__value').text().trim();
+                    const description = $(this).find('.wc-block-components-totals-item__description small').text().trim();
+                    
+                    console.log('📦 Проверяем блок:', { label, value, description });
+                    console.log('📦 Проверяем содержимое элементов:');
+                    console.log('  - label элемент:', $(this).find('.wc-block-components-totals-item__label'));
+                    console.log('  - value элемент:', $(this).find('.wc-block-components-totals-item__value'));
+                    console.log('  - description элемент:', $(this).find('.wc-block-components-totals-item__description small'));
+                    
+                    // Проверяем, что это информация о ПВЗ (содержит адрес с Россией)
+                    if (description && description.includes('Россия')) {
+                        foundPoint = {
+                            name: label,
+                            price: value,
+                            address: description,
+                            code: 'from_dom'
+                        };
+                        console.log('📦 Найден ПВЗ в DOM:', foundPoint);
+                        return false; // break из each
+                    }
+                });
+                if (foundPoint) {
+                    return foundPoint;
+                }
+            }
+            
+            // 2. Проверяем скрытые поля формы
+            const pointDataField = $('#cdek-selected-point-data');
+            if (pointDataField.length && pointDataField.val()) {
+                const pointData = JSON.parse(pointDataField.val());
+                console.log('📦 Получен ПВЗ из скрытого поля:', pointData);
+                return {
+                    code: pointData.code,
+                    name: pointData.name,
+                    address: pointData.location && pointData.location.address ? pointData.location.address : '',
+                    city: pointData.location && pointData.location.city ? pointData.location.city : ''
+                };
+            }
+            
+            // 3. Проверяем localStorage
             const storedPoint = localStorage.getItem('selectedCdekPoint');
             if (storedPoint) {
+                console.log('📦 Получен ПВЗ из localStorage:', JSON.parse(storedPoint));
                 return JSON.parse(storedPoint);
             }
             
+            // 4. Проверяем глобальную переменную
             if (window.selectedCdekPoint) {
+                console.log('📦 Получен ПВЗ из window.selectedCdekPoint:', window.selectedCdekPoint);
                 return window.selectedCdekPoint;
             }
             
@@ -422,10 +503,89 @@ jQuery(document).ready(function($) {
         debouncedUpdate();
     });
     
+    // Слушаем изменения в скрытых полях СДЭК
+    $(document).on('DOMNodeInserted', function(e) {
+        if (e.target.id === 'cdek-selected-point-data' || e.target.id === 'cdek-selected-point-code') {
+            console.log('📦 Обнаружены изменения в данных ПВЗ СДЭК');
+            debouncedUpdate();
+        }
+    });
+    
+    // Наблюдаем за изменениями в блоке итогов заказа (где отображается информация о ПВЗ)
+    function observeTotalsBlock() {
+        const totalsBlock = document.querySelector('.wc-block-components-totals-wrapper, .wc-block-checkout__totals-wrapper');
+        if (totalsBlock) {
+            const observer = new MutationObserver(function(mutationsList) {
+                for (let mutation of mutationsList) {
+                    // Отслеживаем изменения содержимого и добавление новых элементов
+                    if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                        // Проверяем, есть ли изменения в блоке доставки
+                        const target = mutation.target;
+                        const isShippingRelated = target.closest && target.closest('.wc-block-components-totals-shipping') ||
+                                                 target.classList && target.classList.contains('wc-block-components-totals-shipping') ||
+                                                 target.querySelector && target.querySelector('.wc-block-components-totals-shipping');
+                        
+                        if (isShippingRelated) {
+                            console.log('📦 Обнаружены изменения в блоке доставки');
+                            debouncedUpdate();
+                            continue;
+                        }
+                        
+                        // Проверяем добавленные узлы
+                        if (mutation.addedNodes) {
+                            const addedNodes = Array.from(mutation.addedNodes);
+                            const hasShippingInfo = addedNodes.some(node => 
+                                node.nodeType === 1 && 
+                                (node.classList && node.classList.contains('wc-block-components-totals-shipping') ||
+                                 node.querySelector && node.querySelector('.wc-block-components-totals-shipping'))
+                            );
+                            
+                            if (hasShippingInfo) {
+                                console.log('📦 Обнаружена информация о доставке/ПВЗ в блоке итогов');
+                                debouncedUpdate();
+                            }
+                        }
+                    }
+                }
+            });
+            
+            observer.observe(totalsBlock, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+                characterDataOldValue: true
+            });
+            
+            console.log('👁️ Наблюдатель за блоком итогов установлен');
+        }
+        
+        // Дополнительный наблюдатель конкретно за блоком доставки
+        const shippingBlock = document.querySelector('.wc-block-components-totals-shipping');
+        if (shippingBlock) {
+            const shippingObserver = new MutationObserver(function(mutationsList) {
+                for (let mutation of mutationsList) {
+                    console.log('📦 Изменение в блоке доставки, тип:', mutation.type);
+                    debouncedUpdate();
+                    break; // Достаточно одного срабатывания
+                }
+            });
+            
+            shippingObserver.observe(shippingBlock, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+                attributes: true
+            });
+            
+            console.log('👁️ Прямой наблюдатель за блоком доставки установлен');
+        }
+    }
+    
     // Инициализация
     setTimeout(function() {
         updateTextareaFields();
         observeShippingBlock();
+        observeTotalsBlock();
         console.log('✅ Автозаполнение готово (только React эмуляция)');
     }, 1000);
     
@@ -444,6 +604,36 @@ jQuery(document).ready(function($) {
         } else {
             console.log('Поле менеджера не найдено');
         }
+    };
+    
+    // Функция для принудительного обновления (для отладки)
+    window.forceUpdateTextarea = function() {
+        console.log('🔄 Принудительное обновление автозаполнения...');
+        updateTextareaFields();
+    };
+    
+    // Функция для отладки получения данных ПВЗ
+    window.debugCdekPoint = function() {
+        console.log('🔍 Отладка получения данных ПВЗ:');
+        console.log('- localStorage:', localStorage.getItem('selectedCdekPoint'));
+        console.log('- window.selectedCdekPoint:', window.selectedCdekPoint);
+        console.log('- скрытое поле:', $('#cdek-selected-point-data').val());
+        console.log('- блоки итогов:', $('.wc-block-components-totals-item').length);
+        console.log('- блоки доставки:', $('.wc-block-components-totals-shipping .wc-block-components-totals-item').length);
+        
+        // Проверяем, что есть в DOM
+        $('.wc-block-components-totals-shipping .wc-block-components-totals-item').each(function(index) {
+            const label = $(this).find('.wc-block-components-totals-item__label').text().trim();
+            const value = $(this).find('.wc-block-components-totals-item__value').text().trim();
+            const description = $(this).find('.wc-block-components-totals-item__description small').text().trim();
+            console.log(`📦 Блок ${index + 1}:`, { label, value, description });
+        });
+        
+        const point = getSelectedCdekPoint();
+        console.log('- результат getSelectedCdekPoint():', point);
+        
+        const deliveryType = getCurrentDeliveryType();
+        console.log('- текущий тип доставки:', deliveryType);
     };
     
     console.log('🎯 Автозаполнение - только эмуляция пользовательского ввода');

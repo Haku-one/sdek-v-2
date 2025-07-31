@@ -25,8 +25,38 @@ jQuery(document).ready(function($) {
         }
     }
     
+    // Функция для симуляции реального ввода посимвольно
+    function simulateTyping(element, text) {
+        return new Promise((resolve) => {
+            // Очищаем поле
+            element.value = '';
+            element.focus();
+            
+            let index = 0;
+            const typeChar = () => {
+                if (index < text.length) {
+                    element.value += text[index];
+                    
+                    // Эмулируем события для каждого символа
+                    element.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: text[index] }));
+                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: text[index] }));
+                    
+                    index++;
+                    setTimeout(typeChar, 10); // Небольшая задержка между символами
+                } else {
+                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                    element.blur();
+                    resolve();
+                }
+            };
+            
+            setTimeout(typeChar, 50);
+        });
+    }
+    
     // Универсальная функция для заполнения поля
-    function fillField(field, value) {
+    function fillField(field, value, useTypingSimulation = false) {
         if (!field.length) return;
         
         const currentValue = field.val();
@@ -35,26 +65,100 @@ jQuery(document).ready(function($) {
             return;
         }
         
+        // Если включена симуляция набора и это не пустое значение
+        if (useTypingSimulation && value) {
+            console.log('🎯 Используем симуляцию набора для:', value);
+            field.each(async function() {
+                await simulateTyping(this, value);
+            });
+            return;
+        }
+        
         // Заполняем поле
         field.val(value);
         
         // Эмулируем пользовательский ввод для каждого элемента
         field.each(function() {
-            this.value = value;
-            this.setAttribute('data-dirty', 'true');
-            this.setAttribute('data-filled', 'true');
+            // Сохраняем ссылку на элемент
+            const element = this;
             
-            // Создаем события с правильными параметрами
-            const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-            const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+            // Устанавливаем значение разными способами
+            element.value = value;
+            element.defaultValue = value;
+            $(element).val(value);
             
-            // Диспатчим события
-            this.dispatchEvent(inputEvent);
-            this.dispatchEvent(changeEvent);
+            // Отмечаем как измененное
+            element.setAttribute('data-dirty', 'true');
+            element.setAttribute('data-filled', 'true');
+            element.setAttribute('aria-invalid', 'false');
+            
+            // Меняем placeholder если он "Не выбрано"
+            if (element.placeholder === 'Не выбрано') {
+                element.placeholder = '';
+            }
+            
+            // Убираем класс ошибок если есть
+            $(element).removeClass('has-error wc-invalid');
+            
+            // Принудительно отмечаем поле как "touched" для React форм
+            if (element._valueTracker) {
+                element._valueTracker.setValue('');
+            }
+            
+            // Эмулируем полную последовательность событий как при реальном вводе
+            const events = [
+                new Event('focus', { bubbles: true, cancelable: true }),
+                new Event('focusin', { bubbles: true, cancelable: true }),
+                new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'a' }),
+                new Event('input', { bubbles: true, cancelable: true }),
+                new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: 'a' }),
+                new Event('change', { bubbles: true, cancelable: true }),
+                new Event('blur', { bubbles: true, cancelable: true }),
+                new Event('focusout', { bubbles: true, cancelable: true })
+            ];
+            
+            // Диспатчим события с небольшими задержками
+            events.forEach((event, index) => {
+                setTimeout(() => {
+                    element.dispatchEvent(event);
+                }, index * 10);
+            });
         });
         
-        // Дополнительные jQuery события
-        field.trigger('input').trigger('change');
+        // Дополнительные jQuery события с задержкой
+        setTimeout(() => {
+            field.trigger('focus').trigger('input').trigger('change').trigger('blur');
+            
+            // Уведомляем форму
+            const form = field.closest('form');
+            if (form.length) {
+                form.trigger('change');
+            }
+            
+            // Пытаемся уведомить React/WooCommerce о изменениях
+            field.each(function() {
+                // Для React компонентов
+                const reactProps = Object.keys(this).find(key => key.startsWith('__reactProps'));
+                if (reactProps && this[reactProps] && this[reactProps].onChange) {
+                    this[reactProps].onChange({ target: { value: value } });
+                }
+                
+                // Для WooCommerce блоков
+                if (window.wp && window.wp.data) {
+                    try {
+                        const checkoutStore = window.wp.data.dispatch('wc/store/checkout');
+                        if (checkoutStore && checkoutStore.setExtensionData) {
+                            const fieldName = this.name || (this.className.includes('sdek') ? 'dostavka' : 'manager');
+                            checkoutStore.setExtensionData('checkout-fields', {
+                                [fieldName]: value
+                            });
+                        }
+                    } catch (e) {
+                        console.log('Не удалось обновить WooCommerce store:', e);
+                    }
+                }
+            });
+        }, 100);
         
         console.log('✅ Заполнено поле значением:', value);
     }
@@ -84,7 +188,7 @@ jQuery(document).ready(function($) {
         if (deliveryType === 'manager') {
             // Очищаем поле доставки и заполняем поле менеджера
             fillField(sdekField, '');
-            fillField(managerField, 'Доставка менеджером');
+            fillField(managerField, 'Доставка менеджером', true); // Используем симуляцию набора
             
         } else if (deliveryType === 'cdek' && deliveryInfo) {
             // Формируем текст для поля СДЭК
@@ -113,7 +217,7 @@ jQuery(document).ready(function($) {
             
             // Очищаем поле менеджера и заполняем поле доставки
             fillField(managerField, '');
-            fillField(sdekField, cdekText);
+            fillField(sdekField, cdekText, true); // Используем симуляцию набора
         } else {
             console.log('⚠️ Неизвестный тип доставки или нет данных, поля не изменяются');
         }

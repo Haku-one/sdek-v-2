@@ -2215,7 +2215,7 @@ jQuery(document).ready(function($) {
             return;
         }
         
-        console.log('🚀 Инициализация СДЭК доставки (карта:', !!window.cdekMap, 'флаг:', isInitialized, 'форс:', forceReinit, 'контейнер:', mapContainerExists, ')');
+        console.log('🚀 Инициализация СДЭК доставки (карта:', !!window.cdekMap, 'флаг:', isInitialized, 'контейнер:', mapContainerExists, ')');
         removeDuplicateTotalElements();
         hideCdekShippingBlock();
         
@@ -2280,7 +2280,7 @@ jQuery(document).ready(function($) {
             fixExistingDuplicatedPrices();
         }, 500);
         
-        console.log('✅ СДЭК доставка инициализирована' + (forceReinit ? ' (переинициализирована)' : ''));
+        console.log('✅ СДЭК доставка инициализирована');
     }
     
     function hideUnnecessaryFields() {

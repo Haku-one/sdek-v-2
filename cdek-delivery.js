@@ -7,162 +7,7 @@
 
 // Убрано кеширование для ускорения работы
 
-// Менеджер вкладок доставки
-class TabManager {
-    constructor() {
-        this.currentTab = null;
-        this.tabs = {
-            DELIVERY: 'delivery',
-            PICKUP: 'pickup', 
-            MANAGER: 'manager'
-        };
-    }
-    
-    detectTabType(clickedTab) {
-        const titleText = clickedTab.querySelector('.wc-block-checkout__shipping-method-option-title')?.textContent || '';
-        
-        if (clickedTab.id === 'discuss-tab') return this.tabs.MANAGER;
-        
-        if (titleText.includes('Самовывоз') || titleText.includes('самовывоз') || titleText.toLowerCase().includes('pickup')) {
-            return this.tabs.PICKUP;
-        }
-        
-        if (titleText.includes('Доставка') || titleText.includes('СДЭК') || titleText.toLowerCase().includes('delivery') ||
-            titleText.includes('курьер') || clickedTab.id.includes('cdek') || clickedTab.className.includes('cdek')) {
-            return this.tabs.DELIVERY;
-        }
-        
-        return null;
-    }
-    
-    switchTab(clickedTab) {
-        const newTabType = this.detectTabType(clickedTab);
-        Utils.log('🔄 Переключение вкладки:', `${this.currentTab} -> ${newTabType}`);
-        
-        this.updateTabVisualState(clickedTab);
-        this.handleTabContent(newTabType);
-        this.currentTab = newTabType;
-    }
-    
-    updateTabVisualState(clickedTab) {
-        const container = Utils.select('.wc-block-checkout__shipping-methods');
-        if (!container) return;
-        
-        // Убираем выделение со всех вкладок
-        Utils.select('.wc-block-checkout__shipping-method-option', true).forEach(option => {
-            option.setAttribute('aria-checked', 'false');
-            option.classList.remove('wc-block-checkout__shipping-method-option--selected');
-        });
-        
-        // Выделяем кликнутую вкладку
-        clickedTab.setAttribute('aria-checked', 'true');
-        clickedTab.classList.add('wc-block-checkout__shipping-method-option--selected');
-    }
-    
-    handleTabContent(tabType) {
-        const cdekElements = Utils.select('.wp-block-cdek-checkout-map-block, #cdek-map-container', true);
-        
-        switch(tabType) {
-            case this.tabs.MANAGER:
-                this.handleManagerTab(cdekElements);
-                break;
-            case this.tabs.PICKUP:
-                this.handlePickupTab(cdekElements);
-                break;
-            case this.tabs.DELIVERY:
-                this.handleDeliveryTab(cdekElements);
-                break;
-            default:
-                this.handleUnknownTab(cdekElements);
-        }
-    }
-    
-    handleManagerTab(cdekElements) {
-        Utils.hide(cdekElements);
-        window.clearCdekSelectionOnly();
-        window.updateShippingTextForManager();
-        this.addManagerField();
-        this.removeManagerField(false);
-        window.fillAllFields();
-    }
-    
-    handlePickupTab(cdekElements) {
-        Utils.hide(cdekElements);
-        window.clearCdekSelectionOnly();
-        window.cdekNeedsReinit = true;
-        window.updateShippingTextForPickup();
-        this.removeManagerField(true);
-    }
-    
-    handleDeliveryTab(cdekElements) {
-        this.removeManagerField(true);
-        this.showCdekElements(cdekElements);
-        this.initializeMapIfNeeded();
-    }
-    
-    handleUnknownTab(cdekElements) {
-        if (cdekElements.length > 0) {
-            this.showCdekElements(cdekElements);
-            this.initializeMapIfNeeded();
-        } else {
-            Utils.hide(cdekElements);
-            window.clearCdekSelectionOnly();
-        }
-    }
-    
-    showCdekElements(cdekElements) {
-        Utils.show(cdekElements);
-        
-        const mapContainer = Utils.select('#cdek-map');
-        if (mapContainer) {
-            Utils.show([mapContainer]);
-            mapContainer.style.setProperty('height', '450px', 'important');
-            mapContainer.style.setProperty('width', '100%', 'important');
-        }
-    }
-    
-    initializeMapIfNeeded() {
-        const needsInit = !window.cdekMap && !cdekMap && !window.cdekMapInitializing && !Utils.select('#cdek-map-container');
-        const needsReinit = window.cdekNeedsReinit || (!window.cdekMap && !cdekMap);
-        
-        if (needsInit || needsReinit) {
-            Utils.log('🔄 Инициализация СДЭК доставки');
-            window.cdekNeedsReinit = false;
-            Utils.delay(() => {
-                if (typeof window.initCdekDelivery === 'function' && !window.cdekMapInitializing) {
-                    window.initCdekDelivery();
-                }
-            });
-        } else if (window.cdekMap?.container) {
-            Utils.delay(Utils.mapResize, 300);
-        }
-    }
-    
-    addManagerField() {
-        let hiddenField = Utils.select('#discuss_selected');
-        if (!hiddenField) {
-            hiddenField = document.createElement('input');
-            Object.assign(hiddenField, {
-                type: 'hidden',
-                id: 'discuss_selected', 
-                name: 'discuss_delivery_selected',
-                value: '1'
-            });
-            
-            const form = Utils.select('form.woocommerce-checkout, form.checkout, form[name="checkout"], .wc-block-checkout__form') || document.body;
-            form.appendChild(hiddenField);
-        }
-    }
-    
-    removeManagerField(shouldRemove) {
-        if (shouldRemove) {
-            Utils.select('#discuss_selected')?.remove();
-        }
-    }
-}
-
-// Глобальный экземпляр менеджера вкладок
-window.tabManager = new TabManager();
+// Простое решение для переинициализации карты
 
 // Утилиты для сокращения кода
 const Utils = {
@@ -2757,9 +2602,113 @@ jQuery(document).ready(function($) {
                 </span>
             `;
             
-            // Упрощенный обработчик переключения вкладок
+            // Обработчик для всех вкладок доставки
             const handleShippingMethodClick = function(clickedTab) {
-                window.tabManager.switchTab(clickedTab);
+                console.log('🔄 Переключение вкладки доставки:', clickedTab.querySelector('.wc-block-checkout__shipping-method-option-title')?.textContent);
+                
+                // Убираем выделение со всех вкладок
+                container.querySelectorAll('.wc-block-checkout__shipping-method-option').forEach(option => {
+                    option.setAttribute('aria-checked', 'false');
+                    option.classList.remove('wc-block-checkout__shipping-method-option--selected');
+                });
+                
+                // Выделяем кликнутую вкладку
+                clickedTab.setAttribute('aria-checked', 'true');
+                clickedTab.classList.add('wc-block-checkout__shipping-method-option--selected');
+                
+                // Управляем видимостью карты СДЭК
+                const cdekElements = document.querySelectorAll('.wp-block-cdek-checkout-map-block, #cdek-map-container');
+                const isDiscussTab = clickedTab.id === 'discuss-tab';
+                const titleText = clickedTab.querySelector('.wc-block-checkout__shipping-method-option-title')?.textContent || '';
+                
+                // Определение типа вкладки
+                const isDeliveryTab = titleText.includes('Доставка') || 
+                                    titleText.includes('СДЭК') || 
+                                    titleText.toLowerCase().includes('delivery') ||
+                                    titleText.includes('курьер') ||
+                                    clickedTab.id.includes('cdek') ||
+                                    clickedTab.className.includes('cdek');
+                                    
+                const isPickupTab = titleText.includes('Самовывоз') || 
+                                  titleText.includes('самовывоз') || 
+                                  titleText.toLowerCase().includes('pickup');
+                
+                if (isDiscussTab) {
+                    // Скрываем карту для менеджера
+                    cdekElements.forEach(el => {
+                        el.style.setProperty('display', 'none', 'important');
+                    });
+                    
+                    window.clearCdekSelectionOnly();
+                    window.updateShippingTextForManager();
+                    
+                    // Добавляем скрытое поле
+                    let hiddenField = document.getElementById('discuss_selected');
+                    if (!hiddenField) {
+                        hiddenField = document.createElement('input');
+                        hiddenField.type = 'hidden';
+                        hiddenField.id = 'discuss_selected';
+                        hiddenField.name = 'discuss_delivery_selected';
+                        hiddenField.value = '1';
+                        
+                        const checkoutForm = document.querySelector('form.woocommerce-checkout, form.checkout, form[name="checkout"], .wc-block-checkout__form') || document.body;
+                        checkoutForm.appendChild(hiddenField);
+                    }
+                    
+                    window.fillAllFields();
+                } else {
+                    // Убираем скрытое поле для обсуждения доставки
+                    const hiddenField = document.getElementById('discuss_selected');
+                    if (hiddenField) {
+                        hiddenField.remove();
+                    }
+                    
+                    if (isPickupTab) {
+                        // САМОВЫВОЗ - скрываем карту и помечаем для переинициализации
+                        cdekElements.forEach(el => {
+                            el.style.setProperty('display', 'none', 'important');
+                        });
+                        
+                        window.clearCdekSelectionOnly();
+                        
+                        // ОСНОВНОЕ ИСПРАВЛЕНИЕ - помечаем что нужна переинициализация
+                        window.cdekNeedsReinit = true;
+                        
+                        window.updateShippingTextForPickup();
+                    } else if (isDeliveryTab) {
+                        // ДОСТАВКА - показываем карту и инициализируем при необходимости
+                        cdekElements.forEach(el => {
+                            el.style.removeProperty('display');
+                            el.style.removeProperty('visibility');
+                            el.style.removeProperty('opacity');
+                            el.style.setProperty('display', 'block', 'important');
+                            el.style.setProperty('visibility', 'visible', 'important');
+                            el.style.setProperty('opacity', '1', 'important');
+                        });
+                        
+                        // ОСНОВНОЕ ИСПРАВЛЕНИЕ - проверяем флаг переинициализации
+                        const needsInit = !window.cdekMap && !window.cdekMapInitializing && !document.getElementById('cdek-map-container');
+                        const needsReinit = window.cdekNeedsReinit;
+                        
+                        if (needsInit || needsReinit) {
+                            console.log('🔄 Инициализация СДЭК доставки (новая или после самовывоза)');
+                            window.cdekNeedsReinit = false;
+                            setTimeout(() => {
+                                if (typeof window.initCdekDelivery === 'function' && !window.cdekMapInitializing) {
+                                    window.initCdekDelivery();
+                                }
+                            }, 100);
+                        } else if (window.cdekMap?.container) {
+                            setTimeout(() => {
+                                try {
+                                    window.cdekMap.container.fitToViewport();
+                                } catch (e) {
+                                    console.log('🚨 Ошибка обновления размера карты:', e);
+                                }
+                            }, 300);
+                        }
+                    }
+                }
             };
             
             // Добавляем обработчики для существующих вкладок

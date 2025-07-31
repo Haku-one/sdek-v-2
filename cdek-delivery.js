@@ -209,7 +209,7 @@ class SmartAddressSearch {
                         // НЕ используем внешние API - избегаем CORS ошибок
                         this.setDefaultLocation();
                     },
-                    { timeout: 5000, maximumAge: 300000 }
+                    { timeout: 5000, maximumAge: 30000 }
                 );
             } else {
                 this.setDefaultLocation();
@@ -1153,38 +1153,126 @@ jQuery(document).ready(function($) {
     // ========== ОСТАЛЬНЫЕ ФУНКЦИИ (СОКРАЩЕННЫЕ) ==========
     
     function initYandexMap() {
-        if (cdekMap) return;
+        // Принудительно уничтожаем старую карту перед созданием новой
+        if (window.cdekMap || cdekMap) {
+            console.log('🗑️ Уничтожаем существующую карту перед созданием новой');
+            try {
+                if (window.cdekMap && window.cdekMap.destroy) {
+                    window.cdekMap.destroy();
+                }
+                if (cdekMap && cdekMap.destroy) {
+                    cdekMap.destroy();
+                }
+            } catch (e) {
+                console.log('🚨 Ошибка при уничтожении карты:', e);
+            }
+            window.cdekMap = null;
+            cdekMap = null;
+        }
         
-        if (typeof ymaps === 'undefined') {
-            setTimeout(initYandexMap, 200);
+        // Очищаем контейнер карты для чистого старта
+        const mapContainer = document.getElementById('cdek-map');
+        if (mapContainer) {
+            console.log('🧹 Очищаем контейнер карты перед созданием новой');
+            mapContainer.innerHTML = '';
+        }
+        
+        if (window.isInitialized === false) {
+            console.log('🚀 Принудительная инициализация Яндекс.Карт (флаги сброшены)');
+        } else if (window.cdekMap || cdekMap) {
+            console.log('🗺️ Карта уже существует, пропускаем инициализацию');
+            return;
+        } else {
+            console.log('🚀 Первичная инициализация Яндекс.Карт');
+        }
+        
+        console.log('🚀 Начинаем инициализацию Яндекс.Карт');
+        
+        // Проверяем, произошла ли ошибка загрузки Яндекс.Карт
+        if (window.yandexMapsLoadError) {
+            console.warn('СДЭК: Яндекс.Карты не загрузились, используем fallback');
+            showMapFallback();
             return;
         }
         
+        // Проверяем доступность ymaps с таймаутом
+        var maxAttempts = 50; // 10 секунд максимум
+        var attempts = 0;
+        
+        function checkYmaps() {
+            attempts++;
+            
+            if (typeof ymaps !== 'undefined' && ymaps.Map) {
+                initMapContainer();
+            } else if (attempts < maxAttempts) {
+                setTimeout(checkYmaps, 200);
+            } else {
+                console.warn('СДЭК: Яндекс.Карты не загрузились за 10 секунд, используем fallback');
+                showMapFallback();
+            }
+        }
+        
+        checkYmaps();
+    }
+    
+    function initMapContainer() {
         var mapContainer = document.getElementById('cdek-map');
         if (!mapContainer) {
+            console.log('❌ Контейнер карты не найден, повторяем через 500ms');
             setTimeout(initYandexMap, 500);
             return;
         }
         
+        console.log('📦 Настраиваем контейнер карты:', mapContainer.id);
         mapContainer.style.cssText = 'display: block !important; width: 100% !important; height: 450px !important; visibility: visible !important; position: relative !important;';
         
         var checkContainer = function() {
             if (mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0) {
                 try {
-                    cdekMap = new ymaps.Map(mapContainer, {
-                        center: [55.753994, 37.622093],
-                        zoom: 10,
-                        controls: ['zoomControl', 'searchControl']
+                    ymaps.ready(function() {
+                        try {
+                            console.log('🗺️ Создаем новую карту в контейнере:', mapContainer.id);
+                            
+                            cdekMap = new ymaps.Map(mapContainer, {
+                                center: [55.753994, 37.622093],
+                                zoom: 10,
+                                controls: ['zoomControl', 'searchControl']
+                            });
+                            
+                            // Принудительно обновляем размер карты
+                            setTimeout(() => {
+                                if (cdekMap && cdekMap.container) {
+                                    console.log('🔄 Обновляем размер карты');
+                                    cdekMap.container.fitToViewport();
+                                }
+                            }, 100);
+                            
+                            // Проверяем, что карта действительно загрузилась
+                            setTimeout(() => {
+                                if (cdekMap && cdekMap.getCenter) {
+                                    var center = cdekMap.getCenter();
+                                    console.log('✅ Карта успешно загружена, центр:', center);
+                                } else {
+                                    console.error('❌ Карта не загрузилась правильно');
+                                }
+                            }, 500);
+                            
+                            console.log('✅ Яндекс.Карты успешно инициализированы');
+                        } catch (initError) {
+                            console.error('❌ Ошибка создания карты:', initError);
+                            throw initError;
+                        }
+                        
+                        if (cdekPoints && cdekPoints.length > 0) {
+                            console.log('🏪 Отображаем сохраненные точки СДЭК:', cdekPoints.length);
+                            displayCdekPoints(cdekPoints);
+                        } else {
+                            console.log('ℹ️ Точки СДЭК не загружены. Введите город в поле адреса для поиска пунктов выдачи.');
+                        }
                     });
-                
-                    if (cdekPoints && cdekPoints.length > 0) {
-                        displayCdekPoints(cdekPoints);
-                    }
                 } catch (error) {
-                    setTimeout(function() {
-                        cdekMap = null;
-                        initYandexMap();
-                    }, 1000);
+                    console.error('СДЭК: Ошибка инициализации карты:', error);
+                    showMapFallback();
                 }
             } else {
                 setTimeout(checkContainer, 300);
@@ -1193,6 +1281,98 @@ jQuery(document).ready(function($) {
         
         setTimeout(checkContainer, 200);
     }
+    
+    function showMapFallback() {
+        var mapContainer = document.getElementById('cdek-map');
+        if (!mapContainer) return;
+        
+        mapContainer.innerHTML = `
+            <div style="
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 450px;
+                background: #f8f9fa;
+                border: 2px dashed #dee2e6;
+                border-radius: 8px;
+                color: #6c757d;
+                text-align: center;
+                padding: 20px;
+            ">
+                <div style="font-size: 48px; margin-bottom: 20px;">🗺️</div>
+                <h4 style="margin: 0 0 10px 0; color: #495057;">Карта временно недоступна</h4>
+                <p style="margin: 0 0 15px 0; font-size: 14px;">Яндекс.Карты не загрузились, но вы можете выбрать пункт выдачи из списка ниже</p>
+                <div id="fallback-points-list" style="
+                    max-width: 600px;
+                    max-height: 300px;
+                    overflow-y: auto;
+                    background: white;
+                    border: 1px solid #dee2e6;
+                    border-radius: 4px;
+                    padding: 15px;
+                    text-align: left;
+                    width: 100%;
+                "></div>
+            </div>
+        `;
+        
+        // Если есть пункты выдачи, показываем их списком
+        if (cdekPoints && cdekPoints.length > 0) {
+            displayPointsAsList();
+        }
+    }
+    
+    function displayPointsAsList() {
+        var listContainer = document.getElementById('fallback-points-list');
+        if (!listContainer || !cdekPoints) return;
+        
+        var html = '<h5 style="margin: 0 0 15px 0;">Доступные пункты выдачи:</h5>';
+        
+        cdekPoints.slice(0, 10).forEach(function(point, index) {
+            var pointName = point.name || 'Пункт выдачи';
+            var address = '';
+            
+            if (point.location && point.location.address_full) {
+                address = point.location.address_full;
+            } else if (point.location && point.location.address) {
+                address = point.location.address;
+            }
+            
+            html += `
+                <div class="fallback-point-item" style="
+                    padding: 10px;
+                    margin-bottom: 10px;
+                    border: 1px solid #e9ecef;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                " data-point-index="${index}" onclick="selectPointFromList(${index})">
+                    <div style="font-weight: bold; margin-bottom: 5px;">${pointName}</div>
+                    <div style="font-size: 12px; color: #6c757d;">${address}</div>
+                    <div style="font-size: 12px; color: #007cba;">Код: ${point.code}</div>
+                </div>
+            `;
+        });
+        
+        listContainer.innerHTML = html;
+        
+        // Добавляем стили при наведении
+        $(document).on('mouseenter', '.fallback-point-item', function() {
+            $(this).css('background-color', '#f8f9fa');
+        }).on('mouseleave', '.fallback-point-item', function() {
+            $(this).css('background-color', 'transparent');
+        });
+    }
+    
+    function selectPointFromList(index) {
+        if (cdekPoints && cdekPoints[index]) {
+            selectCdekPoint(cdekPoints[index]);
+        }
+    }
+    
+    // Делаем функцию глобальной для использования в onclick
+    window.selectPointFromList = selectPointFromList;
     
     function geocodeAddress(address, callback) {
         if (typeof ymaps !== 'undefined') {
@@ -1555,6 +1735,7 @@ jQuery(document).ready(function($) {
         
         $('#cdek-selected-point-code').remove();
         $('#cdek-selected-point-data').remove();
+        $('#cdek-delivery-cost').remove();
         
         resetCdekShippingToDefault();
         
@@ -1689,6 +1870,20 @@ jQuery(document).ready(function($) {
         });
         
         window.currentDeliveryCost = deliveryCost;
+        
+        // Сохраняем стоимость доставки в скрытое поле для отправки на сервер
+        if ($('#cdek-delivery-cost').length === 0) {
+            $('<input>').attr({
+                type: 'hidden',
+                id: 'cdek-delivery-cost',
+                name: 'cdek_delivery_cost',
+                value: deliveryCost
+            }).appendTo('form.checkout, form.woocommerce-checkout');
+        } else {
+            $('#cdek-delivery-cost').val(deliveryCost);
+        }
+        
+        console.log('💰 Стоимость доставки сохранена для заказа:', deliveryCost, 'руб.');
         
         $(document.body).trigger('updated_checkout');
         $(document.body).trigger('updated_cart_totals');
@@ -1890,9 +2085,65 @@ jQuery(document).ready(function($) {
         updateOrderTotal(0);
     }
     
-    function initCdekDelivery() {
-        if (isInitialized) return;
+    function clearCdekSelection() {
+        console.log('🧹 Очищаем выбранную точку СДЭК и стоимость доставки');
         
+        // Сбрасываем стоимость доставки
+        window.currentDeliveryCost = 0;
+        updateOrderTotal(0);
+        
+        // Очищаем скрытые поля с данными СДЭК
+        $('#cdek-delivery-cost').remove();
+        $('input[name="cdek_point_code"]').remove();
+        $('input[name="cdek_point_data"]').remove();
+        $('input[name="cdek_delivery_cost"]').remove();
+        
+        // Очищаем выбранную точку на карте
+        if (window.cdekMap && typeof ymaps !== 'undefined') {
+            try {
+                window.cdekMap.geoObjects.removeAll();
+            } catch (e) {
+                console.log('Ошибка очистки точек на карте:', e);
+            }
+        }
+        
+        // Очищаем информацию о выбранной точке
+        $('#cdek-selected-point').hide();
+        $('#cdek-point-info').empty();
+        
+        // Очищаем список точек
+        $('#cdek-points-count').text('Введите город в поле адреса выше для поиска пунктов выдачи');
+        
+        console.log('✅ Данные СДЭК очищены');
+    }
+    
+    function clearCdekSelectionOnly() {
+        console.log('🧹 Очищаем только данные СДЭК (без переинициализации)');
+        
+        // Сбрасываем стоимость доставки
+        window.currentDeliveryCost = 0;
+        updateOrderTotal(0);
+        
+        // Очищаем скрытые поля с данными СДЭК
+        $('#cdek-delivery-cost').remove();
+        $('input[name="cdek_point_code"]').remove();
+        $('input[name="cdek_point_data"]').remove();
+        $('input[name="cdek_delivery_cost"]').remove();
+        
+        console.log('✅ Данные СДЭК очищены (карта НЕ переинициализируется)');
+    }
+    
+    function initCdekDelivery() {
+        // Добавляем принудительную переинициализацию при переключении вкладок
+        const forceReinit = window.isInitialized === false;
+        const mapContainerExists = !!document.getElementById('cdek-map-container');
+        
+        if (isInitialized && !forceReinit && mapContainerExists) {
+            console.log('⏭️ СДЭК уже инициализирован, пропускаем');
+            return;
+        }
+        
+        console.log('🚀 Инициализация СДЭК доставки (карта:', !!window.cdekMap, 'флаг:', isInitialized, 'форс:', forceReinit, 'контейнер:', mapContainerExists, ')');
         removeDuplicateTotalElements();
         hideCdekShippingBlock();
         
@@ -1950,13 +2201,14 @@ jQuery(document).ready(function($) {
         }
         
         isInitialized = true;
+        window.isInitialized = true; // Синхронизируем глобальный флаг
         
         setTimeout(() => {
             removeDuplicateTotalElements();
             fixExistingDuplicatedPrices();
         }, 500);
         
-        console.log('✅ СДЭК доставка инициализирована');
+        console.log('✅ СДЭК доставка инициализирована' + (forceReinit ? ' (переинициализирована)' : ''));
     }
     
     function hideUnnecessaryFields() {
@@ -2109,4 +2361,281 @@ jQuery(document).ready(function($) {
     console.log('🔍 Предотвращение повторных поисков');
     console.log('🏙️ Поддержка 1000+ городов России');
     console.log('📱 Оптимизировано для мобильных устройств');
+    
+    // Инициализируем функционал "Обсудить доставку с менеджером"
+    initDiscussDeliveryTab();
+    
+    /**
+     * Функционал "Обсудить доставку с менеджером"
+     */
+    function initDiscussDeliveryTab() {
+        console.log('🗣️ Инициализация функционала "Обсудить доставку с менеджером"');
+        
+        // Функция заполнения всех полей
+        function fillAllFields() {
+        const fieldMappings = [
+            {
+                ids: ['billing_first_name', 'billing-first_name'],
+                value: ''
+            },
+            {
+                ids: ['billing_last_name', 'billing-last_name'], 
+                value: ''
+            },
+            {
+                ids: ['billing_phone', 'billing-phone'],
+                value: ''
+            },
+            {
+                ids: ['billing_email', 'billing-email'],
+                value: ''
+            }
+        ];
+        
+        fieldMappings.forEach(mapping => {
+            mapping.ids.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && mapping.value) {
+                    el.value = mapping.value;
+                    el.setAttribute('value', mapping.value);
+                    el.defaultValue = mapping.value;
+                    el.removeAttribute('required');
+                    el.setAttribute('aria-invalid', 'false');
+                    el.classList.remove('wc-invalid', 'has-error');
+                    
+                    const parent = el.closest('.wc-block-components-text-input');
+                    if (parent) {
+                        parent.classList.remove('has-error');
+                    }
+                    
+                    ['input', 'change', 'blur'].forEach(eventType => {
+                        el.dispatchEvent(new Event(eventType, {bubbles: true}));
+                    });
+                }
+            });
+        });
+        
+        // Убираем ошибки валидации
+        document.querySelectorAll('.wc-block-components-validation-error').forEach(error => {
+            error.style.display = 'none';
+        });
+        
+        document.querySelectorAll('.has-error').forEach(el => {
+            el.classList.remove('has-error');
+        });
+    }
+    
+            // Функция добавления вкладки "Обсудить доставку"
+        function addDiscussTab() {
+            const container = document.querySelector('.wc-block-checkout__shipping-method-container');
+        if (container && !document.getElementById('discuss-tab')) {
+            console.log('➕ Добавляем вкладку "Обсудить доставку с менеджером"');
+            
+            // Создаем вкладку
+            const tab = document.createElement('div');
+            tab.id = 'discuss-tab';
+            tab.setAttribute('role', 'radio');
+            tab.setAttribute('aria-checked', 'false');
+            tab.setAttribute('tabindex', '0');
+            tab.className = 'wc-block-checkout__shipping-method-option';
+            
+            tab.innerHTML = `
+                <span class="wc-block-checkout__shipping-method-option-title-wrapper">
+                    <span class="wc-block-checkout__shipping-method-option-title">Обсудить доставку с менеджером</span>
+                </span>
+            `;
+            
+            // Обработчик для всех вкладок доставки
+            const handleShippingMethodClick = function(clickedTab) {
+                console.log('🔄 Переключение вкладки доставки:', clickedTab.querySelector('.wc-block-checkout__shipping-method-option-title')?.textContent);
+                
+                // Убираем выделение со всех вкладок
+                container.querySelectorAll('.wc-block-checkout__shipping-method-option').forEach(option => {
+                    option.setAttribute('aria-checked', 'false');
+                    option.classList.remove('wc-block-checkout__shipping-method-option--selected');
+                });
+                
+                // Выделяем кликнутую вкладку
+                clickedTab.setAttribute('aria-checked', 'true');
+                clickedTab.classList.add('wc-block-checkout__shipping-method-option--selected');
+                
+                // Управляем видимостью карты СДЭК
+                const cdekElements = document.querySelectorAll('.wp-block-cdek-checkout-map-block, #cdek-map-container');
+                const isDiscussTab = clickedTab.id === 'discuss-tab';
+                const titleText = clickedTab.querySelector('.wc-block-checkout__shipping-method-option-title')?.textContent || '';
+                const isDeliveryTab = titleText.includes('Доставка') || titleText.includes('СДЭК') || titleText.toLowerCase().includes('delivery');
+                const isPickupTab = titleText.includes('Самовывоз') || titleText.includes('самовывоз') || titleText.toLowerCase().includes('pickup');
+                
+                console.log('📋 Тип вкладки - Обсуждение:', isDiscussTab, 'Доставка:', isDeliveryTab, 'Самовывоз:', isPickupTab, 'Текст:', titleText);
+                
+                if (isDiscussTab) {
+                    // Скрываем карту СДЭК для обсуждения
+                    cdekElements.forEach(el => {
+                        el.style.display = 'none';
+                    });
+                    
+                    // Принудительно уничтожаем карту при переходе на "Обсудить с менеджером"
+                    console.log('🗑️ Уничтожаем карту при переходе на "Обсудить с менеджером"');
+                    if (window.cdekMap && window.cdekMap.destroy) {
+                        try {
+                            window.cdekMap.destroy();
+                        } catch (e) {
+                            console.log('🚨 Ошибка при уничтожении карты:', e);
+                        }
+                    }
+                    if (cdekMap && cdekMap.destroy) {
+                        try {
+                            cdekMap.destroy();
+                        } catch (e) {
+                            console.log('🚨 Ошибка при уничтожении карты:', e);
+                        }
+                    }
+                    window.cdekMap = null;
+                    cdekMap = null;
+                    window.isInitialized = false;
+                    isInitialized = false;
+                    
+                    // Добавляем скрытое поле для обсуждения доставки
+                    let hiddenField = document.getElementById('discuss_selected');
+                    if (!hiddenField) {
+                        hiddenField = document.createElement('input');
+                        hiddenField.type = 'hidden';
+                        hiddenField.id = 'discuss_selected';
+                        hiddenField.name = 'discuss_delivery_selected';
+                        hiddenField.value = '1';
+                        
+                        // Ищем форму оформления заказа
+                        const checkoutForm = document.querySelector('form.woocommerce-checkout, form.checkout') || 
+                                           document.querySelector('form[name="checkout"]') ||
+                                           document.querySelector('.wc-block-checkout__form') ||
+                                           document.body;
+                        
+                        checkoutForm.appendChild(hiddenField);
+                        console.log('✅ Добавлено скрытое поле discuss_delivery_selected в форму:', checkoutForm.tagName, 'со значением:', hiddenField.value);
+                        
+                        // Проверяем, что поле действительно в DOM
+                        setTimeout(() => {
+                            const checkField = document.getElementById('discuss_selected');
+                            if (checkField) {
+                                console.log('🔍 Проверка: скрытое поле найдено в DOM, name:', checkField.name, 'value:', checkField.value);
+                                console.log('🔍 Проверка: поле находится в:', checkField.closest('form')?.tagName || 'не в форме');
+                            } else {
+                                console.error('❌ Ошибка: скрытое поле не найдено в DOM!');
+                            }
+                        }, 100);
+                    }
+                    
+                    fillAllFields();
+                } else {
+                    // Убираем скрытое поле для обсуждения доставки
+                    const hiddenField = document.getElementById('discuss_selected');
+                    if (hiddenField) {
+                        hiddenField.remove();
+                        console.log('❌ Удалено скрытое поле discuss_delivery_selected');
+                    }
+                    
+                    // Проверяем тип вкладки для правильной обработки
+                    if (isPickupTab) {
+                        // САМОВЫВОЗ - скрываем карту и очищаем данные
+                        console.log('👋 Переход на самовывоз - скрываем карту');
+                        cdekElements.forEach(el => {
+                            el.style.display = 'none';
+                        });
+                        
+                        console.log('🧹 Переход на самовывоз - очищаем данные СДЭК');
+                        window.cdekMap = null;
+                        cdekMap = null;
+                        window.isInitialized = false;
+                        isInitialized = false;
+                        
+                        // Очищаем выбранную точку и цену доставки (БЕЗ переинициализации)
+                        clearCdekSelectionOnly();
+                    } else if (isDeliveryTab) {
+                        // Показываем карту СДЭК для доставки
+                        console.log('🗺️ Активируем вкладку доставки СДЭК');
+                        cdekElements.forEach(el => {
+                            el.style.display = 'block';
+                            el.style.visibility = 'visible';
+                        });
+                        
+                        // Принудительно сбрасываем все флаги для переинициализации
+                        console.log('🔄 Сброс флагов для переинициализации карты');
+                        window.isInitialized = false;
+                        isInitialized = false;
+                        window.cdekMap = null;
+                        cdekMap = null;
+                        
+                        // Переинициализируем карту
+                        setTimeout(() => {
+                            console.log('🔄 Принудительная переинициализация СДЭК доставки');
+                            if (typeof initCdekDelivery === 'function') {
+                                initCdekDelivery();
+                            }
+                        }, 100);
+                        
+                        // Убираем дополнительную проверку initYandexMap - она вызывается из initCdekDelivery
+                        // Дополнительная проверка НЕ НУЖНА - может создать вторую карту
+                        console.log('ℹ️ Дополнительная проверка initYandexMap отключена для предотвращения дублирования карт');
+                    } else {
+                        // Скрываем карту СДЭК для других неизвестных вкладок
+                        console.log('👋 Скрываем карту СДЭК для других вкладок');
+                        cdekElements.forEach(el => {
+                            el.style.display = 'none';
+                        });
+                    }
+                }
+            };
+            
+            // Добавляем обработчики для существующих вкладок
+            container.querySelectorAll('.wc-block-checkout__shipping-method-option').forEach(option => {
+                if (option.id !== 'discuss-tab') {
+                    // Убираем старые обработчики
+                    option.removeEventListener('click', option._cdekClickHandler);
+                    
+                    // Добавляем новый обработчик
+                    option._cdekClickHandler = function() {
+                        handleShippingMethodClick(this);
+                    };
+                    option.addEventListener('click', option._cdekClickHandler);
+                }
+            });
+            
+            // Добавляем обработчик для новой вкладки
+            tab.addEventListener('click', function() {
+                handleShippingMethodClick(this);
+            });
+            
+            // Добавляем вкладку в контейнер
+            container.appendChild(tab);
+            
+            console.log('✅ Вкладка "Обсудить доставку с менеджером" добавлена');
+        }
+    }
+    
+            // Инициализация
+        setTimeout(() => {
+            fillAllFields();
+            addDiscussTab();
+        }, 500);
+        
+        // Наблюдатель за изменениями DOM
+        if (!window.discussDeliveryObserver) {
+            window.discussDeliveryObserver = new MutationObserver(function() {
+                addDiscussTab();
+            });
+            
+            window.discussDeliveryObserver.observe(document.body, {
+                childList: true, 
+                subtree: true
+            });
+            
+            console.log('👁️ Наблюдатель за DOM для обсуждения доставки активирован');
+        }
+        
+        // Периодическая проверка
+        setInterval(() => {
+            addDiscussTab();
+            fillAllFields();
+        }, 2000);
+    }
 });

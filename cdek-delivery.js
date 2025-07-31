@@ -1153,9 +1153,9 @@ jQuery(document).ready(function($) {
     // ========== ОСТАЛЬНЫЕ ФУНКЦИИ (СОКРАЩЕННЫЕ) ==========
     
     function initYandexMap() {
-        // Проверяем, существует ли уже карта
-        if (window.cdekMap || cdekMap) {
-            console.log('✅ Карта уже существует, пропускаем инициализацию');
+        // Проверяем, существует ли уже карта или происходит ли инициализация
+        if (window.cdekMap || cdekMap || window.cdekMapInitializing) {
+            console.log('✅ Карта уже существует или инициализируется, пропускаем инициализацию');
             
             // Показываем контейнеры карты
             const mapContainer = document.getElementById('cdek-map');
@@ -1173,26 +1173,34 @@ jQuery(document).ready(function($) {
                 mapContainerParent.style.setProperty('opacity', '1', 'important');
             }
             
-            // Обновляем размер карты
-            setTimeout(() => {
-                if ((window.cdekMap || cdekMap) && (window.cdekMap?.container || cdekMap?.container)) {
-                    try {
-                        const map = window.cdekMap || cdekMap;
-                        map.container.fitToViewport();
-                        console.log('✅ Размер карты обновлен в initYandexMap');
-                    } catch (e) {
-                        console.log('🚨 Ошибка обновления размера карты в initYandexMap:', e);
+            // Обновляем размер карты только если карта уже создана
+            if ((window.cdekMap || cdekMap) && !window.cdekMapInitializing) {
+                setTimeout(() => {
+                    if ((window.cdekMap || cdekMap) && (window.cdekMap?.container || cdekMap?.container)) {
+                        try {
+                            const map = window.cdekMap || cdekMap;
+                            map.container.fitToViewport();
+                            console.log('✅ Размер карты обновлен в initYandexMap');
+                        } catch (e) {
+                            console.log('🚨 Ошибка обновления размера карты в initYandexMap:', e);
+                        }
                     }
-                }
-            }, 200);
+                }, 200);
+            }
             
             return;
         }
         
-        // Очищаем контейнер карты для чистого старта
+        // Устанавливаем флаг инициализации
+        window.cdekMapInitializing = true;
+        
+        // Полностью очищаем контейнер карты для чистого старта
         const mapContainer = document.getElementById('cdek-map');
         if (mapContainer) {
-            console.log('🧹 Очищаем контейнер карты перед созданием новой');
+            console.log('🧹 Полностью очищаем контейнер карты перед созданием новой');
+            // Уничтожаем все дочерние элементы Yandex Maps
+            const ymapsElements = mapContainer.querySelectorAll('ymaps');
+            ymapsElements.forEach(el => el.remove());
             mapContainer.innerHTML = '';
         }
         
@@ -1254,6 +1262,9 @@ jQuery(document).ready(function($) {
                             // Также сохраняем в глобальной переменной для синхронизации
                             window.cdekMap = cdekMap;
                             
+                            // Очищаем флаг инициализации
+                            window.cdekMapInitializing = false;
+                            
                             // Принудительно обновляем размер карты
                             setTimeout(() => {
                                 if (cdekMap && cdekMap.container) {
@@ -1275,6 +1286,8 @@ jQuery(document).ready(function($) {
                             console.log('✅ Яндекс.Карты успешно инициализированы');
                         } catch (initError) {
                             console.error('❌ Ошибка создания карты:', initError);
+                            // Очищаем флаг инициализации при ошибке
+                            window.cdekMapInitializing = false;
                             throw initError;
                         }
                         
@@ -1287,6 +1300,8 @@ jQuery(document).ready(function($) {
                     });
                 } catch (error) {
                     console.error('СДЭК: Ошибка инициализации карты:', error);
+                    // Очищаем флаг инициализации при ошибке
+                    window.cdekMapInitializing = false;
                     showMapFallback();
                 }
             } else {
@@ -2639,10 +2654,10 @@ jQuery(document).ready(function($) {
                         });
                         
                         // Проверяем состояние карты и инициализируем при необходимости
-                        if (!window.cdekMap && !cdekMap) {
+                        if (!window.cdekMap && !cdekMap && !window.cdekMapInitializing) {
                             console.log('🔄 Инициализация СДЭК доставки (карта не существует)');
                             setTimeout(() => {
-                                if (typeof initCdekDelivery === 'function') {
+                                if (typeof initCdekDelivery === 'function' && !window.cdekMapInitializing) {
                                     initCdekDelivery();
                                 }
                             }, 100);
@@ -2720,10 +2735,10 @@ jQuery(document).ready(function($) {
                                         }
                                     }
                                 }, 200);
-                            } else {
-                                // Инициализируем карту
+                            } else if (!window.cdekMapInitializing) {
+                                // Инициализируем карту если не происходит инициализация
                                 setTimeout(() => {
-                                    if (typeof initCdekDelivery === 'function') {
+                                    if (typeof initCdekDelivery === 'function' && !window.cdekMapInitializing) {
                                         initCdekDelivery();
                                     }
                                 }, 100);

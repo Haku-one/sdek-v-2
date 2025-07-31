@@ -27,8 +27,45 @@ jQuery(document).ready(function($) {
             // Проверяем, не заполнено ли поле уже
             if (managerField.val() !== managerText) {
                 managerField.val(managerText);
-                managerField.trigger('change');
-                managerField.trigger('input');
+                
+                // Эмулируем полный пользовательский ввод
+                managerField.each(function() {
+                    // Устанавливаем значение через свойство value
+                    this.value = managerText;
+                    
+                    // Отмечаем поле как измененное
+                    this.setAttribute('data-dirty', 'true');
+                    this.setAttribute('data-filled', 'true');
+                    
+                    // Эмулируем события клавиатуры и мыши
+                    this.dispatchEvent(new Event('input', { bubbles: true }));
+                    this.dispatchEvent(new Event('change', { bubbles: true }));
+                    this.dispatchEvent(new Event('keyup', { bubbles: true }));
+                    this.dispatchEvent(new Event('blur', { bubbles: true }));
+                    this.dispatchEvent(new Event('focus', { bubbles: true }));
+                });
+                
+                // Дополнительно через jQuery
+                managerField.trigger('focus').trigger('input').trigger('change').trigger('keyup').trigger('blur');
+                
+                // Отмечаем через jQuery атрибуты
+                managerField.attr('data-dirty', 'true').attr('data-filled', 'true');
+                
+                // Уведомляем форму об изменениях
+                const form = managerField.closest('form');
+                if (form.length) {
+                    form.trigger('change');
+                    form.trigger('input');
+                }
+                
+                // Уведомляем родительские контейнеры
+                managerField.closest('.wp-block-checkout-fields-for-blocks-textarea').trigger('change');
+                
+                // Дополнительная задержка для обработки формой
+                setTimeout(() => {
+                    managerField.trigger('change');
+                }, 100);
+                
                 console.log('✅ Заполнено поле менеджера:', managerText);
             } else {
                 console.log('ℹ️ Поле менеджера уже заполнено корректно');
@@ -63,8 +100,45 @@ jQuery(document).ready(function($) {
             // Проверяем, не заполнено ли поле уже тем же текстом
             if (sdekField.val() !== cdekText) {
                 sdekField.val(cdekText);
-                sdekField.trigger('change');
-                sdekField.trigger('input');
+                
+                // Эмулируем полный пользовательский ввод
+                sdekField.each(function() {
+                    // Устанавливаем значение через свойство value
+                    this.value = cdekText;
+                    
+                    // Отмечаем поле как измененное
+                    this.setAttribute('data-dirty', 'true');
+                    this.setAttribute('data-filled', 'true');
+                    
+                    // Эмулируем события клавиатуры и мыши
+                    this.dispatchEvent(new Event('input', { bubbles: true }));
+                    this.dispatchEvent(new Event('change', { bubbles: true }));
+                    this.dispatchEvent(new Event('keyup', { bubbles: true }));
+                    this.dispatchEvent(new Event('blur', { bubbles: true }));
+                    this.dispatchEvent(new Event('focus', { bubbles: true }));
+                });
+                
+                // Дополнительно через jQuery
+                sdekField.trigger('focus').trigger('input').trigger('change').trigger('keyup').trigger('blur');
+                
+                // Отмечаем через jQuery атрибуты
+                sdekField.attr('data-dirty', 'true').attr('data-filled', 'true');
+                
+                // Уведомляем форму об изменениях
+                const form = sdekField.closest('form');
+                if (form.length) {
+                    form.trigger('change');
+                    form.trigger('input');
+                }
+                
+                // Уведомляем родительские контейнеры
+                sdekField.closest('.wp-block-checkout-fields-for-blocks-textarea').trigger('change');
+                
+                // Дополнительная задержка для обработки формой
+                setTimeout(() => {
+                    sdekField.trigger('change');
+                }, 100);
+                
                 console.log('✅ Заполнено поле СДЭК:', cdekText);
             } else {
                 console.log('ℹ️ Поле СДЭК уже заполнено корректно');

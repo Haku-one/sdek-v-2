@@ -133,8 +133,34 @@ jQuery(document).ready(function($) {
     if ($('.wp-block-woocommerce-checkout').length) {
         console.log('Block checkout detected');
         
+        // Добавляем CSS для скрытия поля
+        $('<style type="text/css">' +
+            '.wp-block-woocommerce-checkout input[id*="delivery-manager"],' +
+            '.wp-block-woocommerce-checkout div[data-field-id*="delivery-manager"],' +
+            '.wp-block-woocommerce-checkout label[for*="delivery-manager"] {' +
+            'display: none !important; visibility: hidden !important; position: absolute !important; left: -9999px !important;' +
+            '}' +
+        '</style>').appendTo('head');
+        
+        // Принудительно скрываем поле через JavaScript
+        function hideDeliveryField() {
+            $('input[id*="delivery-manager"], div[data-field-id*="delivery-manager"], label[for*="delivery-manager"]').each(function() {
+                $(this).hide().css({
+                    'display': 'none !important',
+                    'visibility': 'hidden !important',
+                    'position': 'absolute !important',
+                    'left': '-9999px !important'
+                }).closest('.wc-block-components-text-input').hide();
+            });
+        }
+        
         // Ждем полной загрузки блоков
-        setTimeout(initializeDeliveryTracking, 1500);
+        setTimeout(function() {
+            initializeDeliveryTracking();
+            hideDeliveryField();
+            // Повторяем скрытие каждые 2 секунды для надежности
+            setInterval(hideDeliveryField, 2000);
+        }, 1500);
         
         // Также слушаем события обновления чекаута
         $(document).on('updated_checkout checkout_updated', function() {

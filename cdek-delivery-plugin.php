@@ -183,13 +183,15 @@ class CdekDeliveryPlugin {
             woocommerce_register_additional_checkout_field(
                 array(
                     'id'            => 'cdek-delivery/delivery-manager',
-                    'label'         => '',
+                    'label'         => 'Delivery Information',
+                    'optionalLabel' => '',
                     'location'      => 'order',
                     'type'          => 'text',
                     'required'      => false,
-                    'hidden'        => true,
                     'attributes'    => array(
-                        'style' => 'display: none;'
+                        'style' => 'display: none !important; visibility: hidden !important; position: absolute; left: -9999px;',
+                        'class' => 'hidden-delivery-field',
+                        'readonly' => true
                     )
                 )
             );

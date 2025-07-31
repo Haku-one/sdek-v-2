@@ -2,7 +2,23 @@
 .woocommerce-checkout #delivery_manager_field,
 .woocommerce-checkout input[name="delivery_manager"],
 .woocommerce-checkout input[name="cdek_delivery_manager"],
-.wp-block-woocommerce-checkout input[name*="delivery-manager"] {
+.wp-block-woocommerce-checkout input[name*="delivery-manager"],
+.wp-block-woocommerce-checkout .hidden-delivery-field,
+.wp-block-woocommerce-checkout div[data-field-id*="delivery-manager"],
+.wp-block-woocommerce-checkout .wc-block-components-text-input[id*="delivery-manager"] {
+    display: none !important;
+    visibility: hidden !important;
+    position: absolute !important;
+    left: -9999px !important;
+    height: 0 !important;
+    width: 0 !important;
+    opacity: 0 !important;
+}
+
+/* Скрываем также label и wrapper */
+.wp-block-woocommerce-checkout label[for*="delivery-manager"],
+.wp-block-woocommerce-checkout .wc-block-components-text-input[id*="delivery-manager"] + label,
+.wp-block-woocommerce-checkout div[data-field-id*="delivery-manager"] label {
     display: none !important;
     visibility: hidden !important;
 }

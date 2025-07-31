@@ -8,72 +8,86 @@ jQuery(document).ready(function($) {
         updateTimeout = setTimeout(updateTextareaFields, 500);
     }
     
+    // Функция для создания скрытых полей если их нет
+    function ensureHiddenFields() {
+        const form = $('form.wc-block-checkout__form, form.checkout, form').first();
+        
+        if (!$('input[name="dostavka"]').length && !$('textarea[name="dostavka"]').length) {
+            const hiddenDostavka = $('<input type="hidden" name="dostavka" value="">');
+            form.append(hiddenDostavka);
+            console.log('✅ Создано скрытое поле dostavka');
+        }
+        
+        if (!$('input[name="manager"]').length && !$('textarea[name="manager"]').length) {
+            const hiddenManager = $('<input type="hidden" name="manager" value="">');
+            form.append(hiddenManager);
+            console.log('✅ Создано скрытое поле manager');
+        }
+    }
+    
+    // Универсальная функция для заполнения поля
+    function fillField(field, value) {
+        if (!field.length) return;
+        
+        const currentValue = field.val();
+        if (currentValue === value) {
+            console.log('ℹ️ Поле уже содержит нужное значение:', value);
+            return;
+        }
+        
+        // Заполняем поле
+        field.val(value);
+        
+        // Эмулируем пользовательский ввод для каждого элемента
+        field.each(function() {
+            this.value = value;
+            this.setAttribute('data-dirty', 'true');
+            this.setAttribute('data-filled', 'true');
+            
+            // Создаем события с правильными параметрами
+            const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+            const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+            
+            // Диспатчим события
+            this.dispatchEvent(inputEvent);
+            this.dispatchEvent(changeEvent);
+        });
+        
+        // Дополнительные jQuery события
+        field.trigger('input').trigger('change');
+        
+        console.log('✅ Заполнено поле значением:', value);
+    }
+    
     // Функция для заполнения textarea полей
     function fillTextareaFields(deliveryType, deliveryInfo = null) {
         console.log('📝 Заполняем textarea поля для типа доставки:', deliveryType);
         
-        // Находим поля СДЭК и Менеджер по классам
-        const sdekField = $('.wp-block-checkout-fields-for-blocks-textarea.sdek textarea');
-        const managerField = $('.wp-block-checkout-fields-for-blocks-textarea.manag textarea');
+        // Убеждаемся что скрытые поля существуют
+        ensureHiddenFields();
         
-        console.log('Найдено полей СДЭК:', sdekField.length);
-        console.log('Найдено полей Менеджер:', managerField.length);
+        // Находим поля по именам полей
+        const sdekField = $('textarea[name="dostavka"], input[name="dostavka"], .wp-block-checkout-fields-for-blocks-textarea.sdek textarea');
+        const managerField = $('textarea[name="manager"], input[name="manager"], .wp-block-checkout-fields-for-blocks-textarea.manag textarea');
+        
+        console.log('Найдено полей СДЭК:', sdekField.length, sdekField);
+        console.log('Найдено полей Менеджер:', managerField.length, managerField);
+        
+        // Отладочная информация о найденных полях
+        sdekField.each(function(i) {
+            console.log(`СДЭК поле ${i}:`, this.name, this.type, $(this).attr('class'));
+        });
+        managerField.each(function(i) {
+            console.log(`Менеджер поле ${i}:`, this.name, this.type, $(this).attr('class'));
+        });
         
         if (deliveryType === 'manager') {
-            // Очищаем поле СДЭК и заполняем поле менеджера
-            sdekField.val('');
-            const managerText = 'Доставка менеджером';
-            
-            // Проверяем, не заполнено ли поле уже
-            if (managerField.val() !== managerText) {
-                managerField.val(managerText);
-                
-                // Эмулируем полный пользовательский ввод
-                managerField.each(function() {
-                    // Устанавливаем значение через свойство value
-                    this.value = managerText;
-                    
-                    // Отмечаем поле как измененное
-                    this.setAttribute('data-dirty', 'true');
-                    this.setAttribute('data-filled', 'true');
-                    
-                    // Эмулируем события клавиатуры и мыши
-                    this.dispatchEvent(new Event('input', { bubbles: true }));
-                    this.dispatchEvent(new Event('change', { bubbles: true }));
-                    this.dispatchEvent(new Event('keyup', { bubbles: true }));
-                    this.dispatchEvent(new Event('blur', { bubbles: true }));
-                    this.dispatchEvent(new Event('focus', { bubbles: true }));
-                });
-                
-                // Дополнительно через jQuery
-                managerField.trigger('focus').trigger('input').trigger('change').trigger('keyup').trigger('blur');
-                
-                // Отмечаем через jQuery атрибуты
-                managerField.attr('data-dirty', 'true').attr('data-filled', 'true');
-                
-                // Уведомляем форму об изменениях
-                const form = managerField.closest('form');
-                if (form.length) {
-                    form.trigger('change');
-                    form.trigger('input');
-                }
-                
-                // Уведомляем родительские контейнеры
-                managerField.closest('.wp-block-checkout-fields-for-blocks-textarea').trigger('change');
-                
-                // Дополнительная задержка для обработки формой
-                setTimeout(() => {
-                    managerField.trigger('change');
-                }, 100);
-                
-                console.log('✅ Заполнено поле менеджера:', managerText);
-            } else {
-                console.log('ℹ️ Поле менеджера уже заполнено корректно');
-            }
+            // Очищаем поле доставки и заполняем поле менеджера
+            fillField(sdekField, '');
+            fillField(managerField, 'Доставка менеджером');
             
         } else if (deliveryType === 'cdek' && deliveryInfo) {
-            // Очищаем поле менеджера и заполняем поле СДЭК
-            managerField.val('');
+            // Формируем текст для поля СДЭК
             let cdekText = '';
             
             if (deliveryInfo.label) {
@@ -97,52 +111,9 @@ jQuery(document).ready(function($) {
                 }
             }
             
-            // Проверяем, не заполнено ли поле уже тем же текстом
-            if (sdekField.val() !== cdekText) {
-                sdekField.val(cdekText);
-                
-                // Эмулируем полный пользовательский ввод
-                sdekField.each(function() {
-                    // Устанавливаем значение через свойство value
-                    this.value = cdekText;
-                    
-                    // Отмечаем поле как измененное
-                    this.setAttribute('data-dirty', 'true');
-                    this.setAttribute('data-filled', 'true');
-                    
-                    // Эмулируем события клавиатуры и мыши
-                    this.dispatchEvent(new Event('input', { bubbles: true }));
-                    this.dispatchEvent(new Event('change', { bubbles: true }));
-                    this.dispatchEvent(new Event('keyup', { bubbles: true }));
-                    this.dispatchEvent(new Event('blur', { bubbles: true }));
-                    this.dispatchEvent(new Event('focus', { bubbles: true }));
-                });
-                
-                // Дополнительно через jQuery
-                sdekField.trigger('focus').trigger('input').trigger('change').trigger('keyup').trigger('blur');
-                
-                // Отмечаем через jQuery атрибуты
-                sdekField.attr('data-dirty', 'true').attr('data-filled', 'true');
-                
-                // Уведомляем форму об изменениях
-                const form = sdekField.closest('form');
-                if (form.length) {
-                    form.trigger('change');
-                    form.trigger('input');
-                }
-                
-                // Уведомляем родительские контейнеры
-                sdekField.closest('.wp-block-checkout-fields-for-blocks-textarea').trigger('change');
-                
-                // Дополнительная задержка для обработки формой
-                setTimeout(() => {
-                    sdekField.trigger('change');
-                }, 100);
-                
-                console.log('✅ Заполнено поле СДЭК:', cdekText);
-            } else {
-                console.log('ℹ️ Поле СДЭК уже заполнено корректно');
-            }
+            // Очищаем поле менеджера и заполняем поле доставки
+            fillField(managerField, '');
+            fillField(sdekField, cdekText);
         } else {
             console.log('⚠️ Неизвестный тип доставки или нет данных, поля не изменяются');
         }
@@ -305,6 +276,7 @@ jQuery(document).ready(function($) {
     
     // Инициализация
     setTimeout(function() {
+        ensureHiddenFields(); // Создаем поля сразу при инициализации
         updateTextareaFields();
         observeShippingBlock();
         console.log('✅ Автозаполнение textarea полей готово к работе');

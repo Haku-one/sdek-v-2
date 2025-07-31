@@ -75,6 +75,9 @@ class CdekDeliveryPlugin {
         
         // Добавляем габариты в описание товара в корзине
         add_filter('woocommerce_get_item_data', array($this, 'add_dimensions_to_cart_item'), 10, 2);
+        
+        // Подключаем обработчик данных доставки
+        add_action('plugins_loaded', array($this, 'load_delivery_data_handler'));
     }
     
     public function init() {
@@ -83,14 +86,42 @@ class CdekDeliveryPlugin {
     
     public function enqueue_scripts() {
         if (is_checkout()) {
-            wp_enqueue_script('yandex-maps', 'https://api-maps.yandex.ru/2.1/?apikey=4020b4d5-1d96-476c-a10e-8ab18f0f3702&lang=ru_RU', array(), null, true);
+            // Проверяем, не загружены ли уже Яндекс.Карты
+            if (!wp_script_is('yandex-maps', 'enqueued') && !wp_script_is('yandex-maps', 'done')) {
+                // Получаем API ключ из настроек или используем по умолчанию
+                $yandex_api_key = get_option('cdek_yandex_api_key', '4020b4d5-1d96-476c-a10e-8ab18f0f3702');
+                
+                // Формируем URL с обработкой ошибок
+                $yandex_maps_url = 'https://api-maps.yandex.ru/2.1/?' . http_build_query(array(
+                    'apikey' => $yandex_api_key,
+                    'lang' => 'ru_RU',
+                    'load' => 'package.full'
+                ));
+                
+                wp_enqueue_script('yandex-maps', $yandex_maps_url, array(), CDEK_DELIVERY_VERSION, true);
+                
+                // Добавляем обработку ошибок загрузки
+                wp_add_inline_script('yandex-maps', '
+                    window.yandexMapsLoadError = false;
+                    window.addEventListener("error", function(e) {
+                        if (e.target && e.target.src && e.target.src.includes("api-maps.yandex.ru")) {
+                            window.yandexMapsLoadError = true;
+                            console.warn("Ошибка загрузки Яндекс.Карт:", e);
+                        }
+                    });
+                ', 'before');
+            }
             
-            wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery.js', array('jquery', 'yandex-maps'), CDEK_DELIVERY_VERSION, true);
+            wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
+            
+            
+            
             wp_enqueue_style('cdek-delivery-css', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css', array(), CDEK_DELIVERY_VERSION);
             
             wp_localize_script('cdek-delivery-js', 'cdek_ajax', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
-                'nonce' => wp_create_nonce('cdek_nonce')
+                'nonce' => wp_create_nonce('cdek_nonce'),
+                'yandex_api_key' => $yandex_api_key
             ));
         }
     }
@@ -421,6 +452,8 @@ class CdekDeliveryPlugin {
         }
     }
     
+
+    
     public function display_cdek_point_in_admin($order) {
         $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
         $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
@@ -437,6 +470,8 @@ class CdekDeliveryPlugin {
             echo '</div>';
         }
     }
+    
+
     
     public function ajax_test_cdek_connection() {
         if (!wp_verify_nonce($_POST['nonce'], 'test_cdek_connection')) {
@@ -467,6 +502,29 @@ class CdekDeliveryPlugin {
     public function load_blocks_integration() {
         if (class_exists('Automattic\WooCommerce\Blocks\Integrations\IntegrationInterface')) {
             include_once plugin_dir_path(__FILE__) . 'includes/class-wc-blocks-integration.php';
+        }
+    }
+    
+    public function load_delivery_data_handler() {
+        // Подключаем обработчик данных доставки
+        if (file_exists(plugin_dir_path(__FILE__) . 'cdek-delivery-data-handler.php')) {
+            include_once plugin_dir_path(__FILE__) . 'cdek-delivery-data-handler.php';
+            error_log('СДЭК: Подключен обработчик данных доставки');
+        } else {
+            error_log('СДЭК: Файл обработчика данных доставки не найден');
+        }
+        
+        // Подключаем функции темы для обработки кастомных данных
+        if (file_exists(plugin_dir_path(__FILE__) . 'theme-functions-cdek.php')) {
+            include_once plugin_dir_path(__FILE__) . 'theme-functions-cdek.php';
+            
+            // Принудительно вызываем инициализацию функций темы
+            if (function_exists('cdek_theme_init')) {
+                cdek_theme_init();
+                error_log('СДЭК: Подключены и инициализированы функции темы');
+            }
+        } else {
+            error_log('СДЭК: Файл функций темы не найден');
         }
     }
 }

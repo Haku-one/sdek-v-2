@@ -79,18 +79,18 @@ class TabManager {
     
     handleManagerTab(cdekElements) {
         Utils.hide(cdekElements);
-        clearCdekSelectionOnly();
-        updateShippingTextForManager();
+        window.clearCdekSelectionOnly();
+        window.updateShippingTextForManager();
         this.addManagerField();
         this.removeManagerField(false);
-        fillAllFields();
+        window.fillAllFields();
     }
     
     handlePickupTab(cdekElements) {
         Utils.hide(cdekElements);
-        clearCdekSelectionOnly();
+        window.clearCdekSelectionOnly();
         window.cdekNeedsReinit = true;
-        updateShippingTextForPickup();
+        window.updateShippingTextForPickup();
         this.removeManagerField(true);
     }
     
@@ -106,7 +106,7 @@ class TabManager {
             this.initializeMapIfNeeded();
         } else {
             Utils.hide(cdekElements);
-            clearCdekSelectionOnly();
+            window.clearCdekSelectionOnly();
         }
     }
     
@@ -129,8 +129,8 @@ class TabManager {
             Utils.log('🔄 Инициализация СДЭК доставки');
             window.cdekNeedsReinit = false;
             Utils.delay(() => {
-                if (typeof initCdekDelivery === 'function' && !window.cdekMapInitializing) {
-                    initCdekDelivery();
+                if (typeof window.initCdekDelivery === 'function' && !window.cdekMapInitializing) {
+                    window.initCdekDelivery();
                 }
             });
         } else if (window.cdekMap?.container) {
@@ -2372,7 +2372,7 @@ jQuery(document).ready(function($) {
         console.log('✅ Данные СДЭК очищены');
     }
     
-    function clearCdekSelectionOnly() {
+    window.clearCdekSelectionOnly = function() {
         console.log('🧹 Очищаем только данные СДЭК (без переинициализации)');
         
         // Сбрасываем стоимость доставки
@@ -2392,7 +2392,7 @@ jQuery(document).ready(function($) {
         console.log('✅ Данные СДЭК очищены (карта НЕ переинициализируется)');
     }
     
-    function updateShippingTextForManager() {
+    window.updateShippingTextForManager = function() {
         console.log('📝 Обновляем текст доставки для менеджера');
         
         // Ищем блоки доставки
@@ -2413,7 +2413,7 @@ jQuery(document).ready(function($) {
         });
     }
     
-    function updateShippingTextForPickup() {
+    window.updateShippingTextForPickup = function() {
         console.log('📝 Восстанавливаем текст доставки для самовывоза');
         
         // Ищем блоки доставки
@@ -2434,7 +2434,7 @@ jQuery(document).ready(function($) {
         });
     }
     
-    function initCdekDelivery() {
+    window.initCdekDelivery = function() {
         // Проверяем состояние карты и контейнера
         const mapContainerExists = !!document.getElementById('cdek-map-container');
         const mapExists = !!(window.cdekMap || cdekMap);
@@ -2689,7 +2689,7 @@ jQuery(document).ready(function($) {
         console.log('🗣️ Инициализация функционала "Обсудить доставку с менеджером"');
         
         // Функция заполнения всех полей
-        function fillAllFields() {
+        window.fillAllFields = function() {
         const fieldMappings = [
             {
                 ids: ['billing_first_name', 'billing-first_name'],

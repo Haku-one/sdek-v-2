@@ -1,0 +1,156 @@
+/**
+ * СДЭК Доставка - Стили
+ * Основные стили для интеграции доставки СДЭК
+ */
+
+/* Контейнер карты */
+.cdek-map-container {
+    width: 100%;
+    height: 400px;
+    margin: 15px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+/* Список пунктов выдачи */
+.cdek-points-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin: 10px 0;
+}
+
+.cdek-point-item {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.cdek-point-item:hover {
+    background-color: #f5f5f5;
+}
+
+.cdek-point-item.selected {
+    background-color: #e3f2fd;
+    border-left: 3px solid #2196f3;
+}
+
+/* Информация о пункте */
+.cdek-point-info {
+    margin: 5px 0;
+}
+
+.cdek-point-address {
+    font-weight: bold;
+    color: #333;
+}
+
+.cdek-point-worktime {
+    color: #666;
+    font-size: 0.9em;
+}
+
+.cdek-point-price {
+    color: #4caf50;
+    font-weight: bold;
+}
+
+/* Поле поиска адреса */
+.cdek-address-search {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+/* Список подсказок адресов */
+.cdek-address-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #ddd;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.cdek-address-suggestion {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+
+.cdek-address-suggestion:hover {
+    background-color: #f5f5f5;
+}
+
+.cdek-address-suggestion:last-child {
+    border-bottom: none;
+}
+
+/* Скрытые поля WooCommerce */
+.woocommerce-checkout .form-row.woocommerce-invalid .select2-container,
+.woocommerce-checkout .form-row.woocommerce-invalid input.input-text,
+.woocommerce-checkout .form-row.woocommerce-invalid select {
+    border-color: #a00;
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .cdek-map-container {
+        height: 300px;
+    }
+    
+    .cdek-points-list {
+        max-height: 200px;
+    }
+    
+    .cdek-point-item {
+        padding: 8px;
+    }
+}
+
+/* Загрузка */
+.cdek-loading {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+}
+
+.cdek-loading:before {
+    content: "⟳ ";
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Ошибки */
+.cdek-error {
+    color: #a00;
+    padding: 10px;
+    background: #fee;
+    border: 1px solid #fcc;
+    border-radius: 4px;
+    margin: 10px 0;
+}
+
+/* Успешные сообщения */
+.cdek-success {
+    color: #4caf50;
+    padding: 10px;
+    background: #f1f8e9;
+    border: 1px solid #c8e6c9;
+    border-radius: 4px;
+    margin: 10px 0;
+}

@@ -1158,20 +1158,42 @@ jQuery(document).ready(function($) {
         calculateDeliveryCost(point, function(deliveryCost) {
             hideDeliveryCalculationLoader();
             
-            // Обновляем отображение стоимости доставки в классическом чекауте
-            updateClassicShippingCost(point, deliveryCost);
+            console.log('💰 Получена стоимость доставки:', deliveryCost, 'руб.');
             
             // Сохраняем стоимость доставки в скрытое поле
             $('#cdek-delivery-cost').val(deliveryCost);
             
-            // Запускаем обновление чекаута
+            // Обновляем отображение стоимости доставки в классическом чекауте
+            updateClassicShippingCost(point, deliveryCost);
+            
+            // Принудительно обновляем чекаут для пересчета итоговой суммы
+            console.log('🔄 Запускаем обновление чекаута...');
             $('body').trigger('update_checkout');
             
-            console.log('💰 Стоимость доставки обновлена:', deliveryCost, 'руб.');
+            // Дополнительно обновляем через AJAX
+            setTimeout(() => {
+                var ajaxUrl = cdek_ajax.ajax_url || '/wp-admin/admin-ajax.php';
+                var nonce = cdek_ajax.nonce || '';
+                
+                $.post(ajaxUrl, {
+                    action: 'woocommerce_update_order_review',
+                    security: nonce,
+                    cdek_delivery_cost: deliveryCost,
+                    cdek_selected_point_code: point.code
+                }, function(response) {
+                    console.log('✅ AJAX обновление завершено');
+                    // Принудительно обновляем страницу чекаута
+                    if (response) {
+                        $(document.body).trigger('update_checkout');
+                    }
+                });
+            }, 200);
         });
     }
     
     function updateClassicShippingCost(point, deliveryCost) {
+        console.log('💰 Обновляем стоимость доставки:', deliveryCost, 'руб.');
+        
         // Обновляем текст в методе доставки СДЭК
         var cdekShippingLabels = $('label[for*="shipping_method"]:contains("СДЭК"), label[for*="shipping_method"]:contains("cdek")');
         
@@ -1206,21 +1228,17 @@ jQuery(document).ready(function($) {
             $label.html(newText);
         });
         
-        // Обновляем в таблице заказа если есть
-        var orderTable = $('#order_review, .shop_table');
-        if (orderTable.length > 0) {
-            var shippingRow = orderTable.find('tr.shipping, tr:contains("Доставка"), tr:contains("СДЭК")');
-            shippingRow.each(function() {
-                var $row = $(this);
-                var $cell = $row.find('td:last');
-                if ($cell.length > 0) {
-                    $cell.html('<span class="amount">' + deliveryCost + ' руб.</span>');
-                }
-            });
+        // Обновляем в таблице заказа - ИСПРАВЛЕННАЯ ВЕРСИЯ
+        var shippingRow = $('.woocommerce-shipping-totals.shipping td');
+        if (shippingRow.length > 0) {
+            console.log('📊 Обновляем строку доставки в таблице');
+            shippingRow.html('<span class="amount">' + deliveryCost + ' руб.</span>');
         }
         
-        // Обновляем общую стоимость
-        updateTotalCost(deliveryCost);
+        // ПРИНУДИТЕЛЬНО обновляем WooCommerce
+        setTimeout(() => {
+            $('body').trigger('update_checkout');
+        }, 100);
     }
     
     function updateTotalCost(deliveryCost) {

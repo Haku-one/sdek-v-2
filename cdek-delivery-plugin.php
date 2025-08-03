@@ -49,6 +49,10 @@ class CdekDeliveryPlugin {
         add_action('wp_ajax_get_address_suggestions', array($this, 'ajax_get_address_suggestions'));
         add_action('wp_ajax_nopriv_get_address_suggestions', array($this, 'ajax_get_address_suggestions'));
         
+        // Обработчик для обновления стоимости доставки
+        add_action('wp_ajax_woocommerce_update_order_review', array($this, 'update_order_review_with_cdek_cost'));
+        add_action('wp_ajax_nopriv_woocommerce_update_order_review', array($this, 'update_order_review_with_cdek_cost'));
+        
         // Регистрация настроек плагина
         add_action('admin_menu', array($this, 'add_admin_menu'));
         
@@ -750,6 +754,26 @@ class CdekDeliveryPlugin {
             if (empty($point_code)) {
                 wc_add_notice('Пожалуйста, выберите пункт выдачи СДЭК на карте или в списке.', 'error');
             }
+        }
+    }
+    
+    public function update_order_review_with_cdek_cost() {
+        // Сохраняем стоимость доставки СДЭК в сессии
+        if (isset($_POST['cdek_delivery_cost']) && !empty($_POST['cdek_delivery_cost'])) {
+            $cost = floatval($_POST['cdek_delivery_cost']);
+            WC()->session->set('cdek_delivery_cost', $cost);
+            error_log('СДЭК: Сохранена стоимость доставки в сессии: ' . $cost);
+        }
+        
+        if (isset($_POST['cdek_selected_point_code']) && !empty($_POST['cdek_selected_point_code'])) {
+            $point_code = sanitize_text_field($_POST['cdek_selected_point_code']);
+            WC()->session->set('cdek_selected_point_code', $point_code);
+            error_log('СДЭК: Сохранен код пункта в сессии: ' . $point_code);
+        }
+        
+        // Вызываем стандартный обработчик WooCommerce
+        if (function_exists('woocommerce_ajax_update_order_review')) {
+            woocommerce_ajax_update_order_review();
         }
     }
 }

@@ -55,17 +55,37 @@ class WC_Cdek_Shipping_Method extends WC_Shipping_Method {
     }
     
     public function calculate_shipping($package = array()) {
-        // Получаем базовую стоимость из настроек
-        $base_cost = $this->get_option('base_cost', 300);
+        // Получаем стоимость доставки из сессии (если выбран пункт выдачи)
+        $cdek_cost = 0;
+        $label = 'Выберите пункт выдачи';
         
-        // Добавляем метод доставки с базовой стоимостью
-        // Реальная стоимость будет рассчитана через AJAX после выбора пункта выдачи
+        if (WC()->session) {
+            $session_cost = WC()->session->get('cdek_delivery_cost');
+            $session_point = WC()->session->get('cdek_selected_point_code');
+            
+            if (!empty($session_cost) && $session_cost > 0) {
+                $cdek_cost = floatval($session_cost);
+                $label = 'СДЭК доставка';
+                error_log('СДЭК: Используем стоимость из сессии: ' . $cdek_cost);
+            }
+        }
+        
+        // Если нет стоимости в сессии, проверяем POST данные
+        if ($cdek_cost == 0 && isset($_POST['cdek_delivery_cost']) && !empty($_POST['cdek_delivery_cost'])) {
+            $cdek_cost = floatval($_POST['cdek_delivery_cost']);
+            $label = 'СДЭК доставка';
+            error_log('СДЭК: Используем стоимость из POST: ' . $cdek_cost);
+        }
+        
+        // Добавляем метод доставки
         $this->add_rate(array(
             'id' => $this->id,
-            'label' => 'Выберите пункт выдачи',
-            'cost' => 0, // Начальная стоимость 0, будет обновлена после выбора пункта
+            'label' => $label,
+            'cost' => $cdek_cost,
             'calc_tax' => 'per_item'
         ));
+        
+        error_log('СДЭК: Добавлен метод доставки с стоимостью: ' . $cdek_cost);
     }
     
     public function is_available($package) {

@@ -635,10 +635,7 @@ class CdekDeliveryPlugin {
             return;
         }
         
-        // Не показываем админам
-        if ($sent_to_admin) {
-            return;
-        }
+        
         
         $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
         $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);

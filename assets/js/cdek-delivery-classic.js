@@ -236,6 +236,23 @@ jQuery(document).ready(function($) {
     
     // ========== ФУНКЦИИ ДЛЯ РАСЧЕТА ГАБАРИТОВ И СТОИМОСТИ ==========
     
+    // Вспомогательная функция для корректного парсинга цен
+    function parsePrice(priceText) {
+        if (!priceText) return 0;
+        
+        // Удаляем все символы кроме цифр и точек/запятых
+        var cleanText = priceText.toString().replace(/[^\d.,]/g, '');
+        
+        // Заменяем запятые на точки для decimal
+        cleanText = cleanText.replace(',', '.');
+        
+        // Парсим как float и округляем до целых
+        var result = Math.round(parseFloat(cleanText)) || 0;
+        
+        console.log('💰 Парсинг цены:', priceText, '→', cleanText, '→', result);
+        return result;
+    }
+    
     function getCartDataForCalculation() {
         var cartWeight = 0;
         var cartValue = 0;
@@ -308,8 +325,8 @@ jQuery(document).ready(function($) {
         // Получаем общую стоимость заказа из элементов страницы
         var orderTotalElement = $('.cart-subtotal .amount');
         if (orderTotalElement.length > 0) {
-            var totalText = orderTotalElement.first().text().replace(/[^\d]/g, '');
-            var parsedValue = parseInt(totalText);
+            var totalText = orderTotalElement.first().text();
+            var parsedValue = parsePrice(totalText);
             if (parsedValue > 0) {
                 cartValue = parsedValue;
             }
@@ -1475,8 +1492,8 @@ jQuery(document).ready(function($) {
         var subtotal = 0;
         
         if (subtotalElement.length > 0) {
-            var subtotalText = subtotalElement.first().text().replace(/[^\d]/g, '');
-            subtotal = parseInt(subtotalText) || 0;
+            var subtotalText = subtotalElement.first().text();
+            subtotal = parsePrice(subtotalText);
             console.log('📊 Подытог без доставки:', subtotal, 'руб.');
         }
         

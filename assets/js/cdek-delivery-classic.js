@@ -898,10 +898,48 @@ jQuery(document).ready(function($) {
                 var pointCityLower = pointCity.toLowerCase().trim();
                 
                 if (pointCityLower && searchCityLower) {
-                    if (pointCityLower !== searchCityLower && 
-                        !pointCityLower.includes(searchCityLower) && 
-                        !searchCityLower.includes(pointCityLower)) {
+                    // Более строгая проверка на точное соответствие
+                    var isMatch = false;
+                    
+                    // 1. Точное совпадение
+                    if (pointCityLower === searchCityLower) {
+                        isMatch = true;
+                    }
+                    
+                    // 2. Проверяем совпадение по началу (для случаев типа "Санкт-Петербург" и "СПб")
+                    else if (pointCityLower.startsWith(searchCityLower) || searchCityLower.startsWith(pointCityLower)) {
+                        // Но только если разница в длине не слишком большая (не более 3 символов)
+                        var lengthDiff = Math.abs(pointCityLower.length - searchCityLower.length);
+                        if (lengthDiff <= 3) {
+                            isMatch = true;
+                        }
+                    }
+                    
+                    // 3. Проверяем по словам (для случаев "Санкт-Петербург" -> "петербург")
+                    else if (searchCityLower.length >= 4) {
+                        var searchWords = searchCityLower.split(/[\s\-]+/);
+                        var pointWords = pointCityLower.split(/[\s\-]+/);
+                        
+                        var hasMatchingWord = false;
+                        for (var i = 0; i < searchWords.length; i++) {
+                            for (var j = 0; j < pointWords.length; j++) {
+                                if (searchWords[i].length >= 4 && pointWords[j].length >= 4) {
+                                    if (searchWords[i] === pointWords[j]) {
+                                        hasMatchingWord = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (hasMatchingWord) break;
+                        }
+                        isMatch = hasMatchingWord;
+                    }
+                    
+                    if (!isMatch) {
+                        console.log('🚫 Пункт отфильтрован:', pointCity, '(искали:', window.currentSearchCity + ')');
                         return false;
+                    } else {
+                        console.log('✅ Пункт прошел фильтр:', pointCity, '(искали:', window.currentSearchCity + ')');
                     }
                 }
             }

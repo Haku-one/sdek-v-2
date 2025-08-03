@@ -1095,11 +1095,48 @@ class CdekAPI {
                 $point_city = preg_replace('/^(г\.?\s*|город\s+)/ui', '', $point_city);
                 $point_city_lower = mb_strtolower(trim($point_city));
                 
-                // Проверяем соответствие города
-                if ($point_city_lower === $city_lower || 
-                    mb_strpos($point_city_lower, $city_lower) !== false || 
-                    mb_strpos($city_lower, $point_city_lower) !== false) {
+                // Строгая проверка соответствия города
+                $is_match = false;
+                
+                // 1. Точное совпадение
+                if ($point_city_lower === $city_lower) {
+                    $is_match = true;
+                }
+                // 2. Проверяем совпадение по началу (только для похожих названий)
+                elseif (mb_strlen($city_lower) >= 4 && mb_strlen($point_city_lower) >= 4) {
+                    $starts_match = (mb_strpos($point_city_lower, $city_lower) === 0) || 
+                                   (mb_strpos($city_lower, $point_city_lower) === 0);
+                    
+                    if ($starts_match) {
+                        // Только если разница в длине не более 3 символов
+                        $length_diff = abs(mb_strlen($point_city_lower) - mb_strlen($city_lower));
+                        if ($length_diff <= 3) {
+                            $is_match = true;
+                        }
+                    }
+                }
+                // 3. Проверяем по словам (для составных названий)
+                elseif (mb_strlen($city_lower) >= 4) {
+                    $search_words = preg_split('/[\s\-]+/u', $city_lower);
+                    $point_words = preg_split('/[\s\-]+/u', $point_city_lower);
+                    
+                    foreach ($search_words as $search_word) {
+                        if (mb_strlen($search_word) >= 4) {
+                            foreach ($point_words as $point_word) {
+                                if (mb_strlen($point_word) >= 4 && $search_word === $point_word) {
+                                    $is_match = true;
+                                    break 2;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if ($is_match) {
                     $filtered_points[] = $point;
+                    error_log('СДЭК фильтр: ✅ Пункт прошел: ' . $point_city . ' (искали: ' . $city . ')');
+                } else {
+                    error_log('СДЭК фильтр: 🚫 Пункт отфильтрован: ' . $point_city . ' (искали: ' . $city . ')');
                 }
             }
         }

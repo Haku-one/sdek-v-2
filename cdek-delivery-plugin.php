@@ -41,6 +41,14 @@ class CdekDeliveryPlugin {
         add_action('woocommerce_shipping_init', array($this, 'init_cdek_shipping'));
         add_filter('woocommerce_shipping_methods', array($this, 'add_cdek_shipping_method'));
         
+        // Кастомный классический checkout
+        add_shortcode('classic_checkout', array($this, 'classic_checkout_shortcode'));
+        add_action('woocommerce_checkout_before_customer_details', array($this, 'add_manager_button'));
+        
+        // AJAX обработчик для кнопки менеджера
+        add_action('wp_ajax_contact_manager', array($this, 'ajax_contact_manager'));
+        add_action('wp_ajax_nopriv_contact_manager', array($this, 'ajax_contact_manager'));
+        
         // Новое поле для выбора менеджера доставки (для блочного чекаута)
         add_action('woocommerce_init', array($this, 'register_delivery_manager_field'));
         
@@ -98,6 +106,12 @@ class CdekDeliveryPlugin {
     
     public function enqueue_scripts() {
         if (is_checkout()) {
+            // Подключаем CSS для классического checkout
+            wp_enqueue_style('classic-checkout-style', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/classic-checkout.css', array(), CDEK_DELIVERY_VERSION);
+            
+            // Подключаем JS для классического checkout
+            wp_enqueue_script('classic-checkout-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/classic-checkout.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
+            
             // Проверяем, не загружены ли уже Яндекс.Карты
             if (!wp_script_is('yandex-maps', 'enqueued') && !wp_script_is('yandex-maps', 'done')) {
                 // Получаем API ключ из настроек или используем по умолчанию
@@ -1030,4 +1044,222 @@ class CdekAPI {
         
         return $city;
     }
+    
+    /**
+     * Кастомный шорткод для классического checkout
+     */
+    public function classic_checkout_shortcode($atts) {
+        // Проверяем, что WooCommerce активен и есть товары в корзине
+        if (!class_exists('WooCommerce') || WC()->cart->is_empty()) {
+            return '<div class="woocommerce-message">Ваша корзина пуста.</div>';
+        }
+        
+        ob_start();
+        
+        // Получаем стандартную форму checkout
+        if (function_exists('woocommerce_checkout')) {
+            woocommerce_checkout();
+        } else {
+            echo '<div class="woocommerce-checkout">';
+            wc_get_template('checkout/form-checkout.php', array(
+                'checkout' => WC()->checkout()
+            ));
+            echo '</div>';
+        }
+        
+        return ob_get_clean();
+    }
+    
+    /**
+     * Добавляет кнопку "Менеджер" в форму checkout
+     */
+    public function add_manager_button() {
+        ?>
+        <div class="manager-contact-section" style="margin-bottom: 30px; padding: 20px; background: #f8f9fa; border: 2px solid #007cba; border-radius: 8px;">
+            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 250px;">
+                    <h3 style="margin: 0 0 10px 0; color: #007cba; font-size: 18px;">
+                        <span class="dashicons dashicons-businessman" style="font-size: 20px; margin-right: 8px;"></span>
+                        Нужна помощь с заказом?
+                    </h3>
+                    <p style="margin: 0; color: #666; font-size: 14px;">
+                        Наш менеджер поможет вам оформить заказ и ответит на все вопросы
+                    </p>
+                </div>
+                <div>
+                    <button type="button" id="contact-manager-btn" class="button alt" style="
+                        background: #007cba; 
+                        color: white; 
+                        padding: 12px 24px; 
+                        border: none; 
+                        border-radius: 5px; 
+                        font-size: 16px; 
+                        font-weight: bold; 
+                        cursor: pointer;
+                        transition: background-color 0.3s ease;
+                    ">
+                        <span class="dashicons dashicons-phone" style="margin-right: 5px;"></span>
+                        Связаться с менеджером
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Модальное окно для связи с менеджером -->
+        <div id="manager-modal" style="
+            display: none; 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            background: rgba(0,0,0,0.7); 
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        ">
+            <div style="
+                background: white; 
+                padding: 30px; 
+                border-radius: 10px; 
+                max-width: 500px; 
+                width: 90%; 
+                max-height: 80vh; 
+                overflow-y: auto;
+            ">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; color: #007cba;">Связаться с менеджером</h3>
+                    <button type="button" id="close-manager-modal" style="
+                        background: none; 
+                        border: none; 
+                        font-size: 24px; 
+                        cursor: pointer; 
+                        color: #999;
+                    ">&times;</button>
+                </div>
+                
+                <div class="manager-contact-options">
+                    <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                        <h4 style="margin: 0 0 10px 0; color: #333;">📞 Телефон</h4>
+                        <p style="margin: 0; font-size: 18px; font-weight: bold; color: #007cba;">
+                            <a href="tel:+78001234567" style="color: #007cba; text-decoration: none;">+7 (800) 123-45-67</a>
+                        </p>
+                        <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">Бесплатно по России</p>
+                    </div>
+                    
+                    <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                        <h4 style="margin: 0 0 10px 0; color: #333;">💬 WhatsApp</h4>
+                        <p style="margin: 0;">
+                            <a href="https://wa.me/78001234567" target="_blank" style="
+                                display: inline-block; 
+                                background: #25D366; 
+                                color: white; 
+                                padding: 10px 20px; 
+                                border-radius: 5px; 
+                                text-decoration: none; 
+                                font-weight: bold;
+                            ">Написать в WhatsApp</a>
+                        </p>
+                    </div>
+                    
+                    <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                        <h4 style="margin: 0 0 10px 0; color: #333;">📧 Email</h4>
+                        <p style="margin: 0;">
+                            <a href="mailto:manager@dobriytravnik.ru" style="color: #007cba; text-decoration: none;">
+                                manager@dobriytravnik.ru
+                            </a>
+                        </p>
+                    </div>
+                    
+                    <div style="padding: 15px; background: #e8f4f8; border-radius: 5px; border-left: 4px solid #007cba;">
+                        <p style="margin: 0; font-size: 14px; color: #333;">
+                            <strong>Часы работы:</strong><br>
+                            Пн-Пт: 9:00 - 18:00<br>
+                            Сб-Вс: 10:00 - 16:00
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            // Обработчик кнопки "Связаться с менеджером"
+            $('#contact-manager-btn').on('click', function() {
+                $('#manager-modal').css('display', 'flex');
+                $('body').css('overflow', 'hidden');
+            });
+            
+            // Закрытие модального окна
+            $('#close-manager-modal, #manager-modal').on('click', function(e) {
+                if (e.target === this) {
+                    $('#manager-modal').hide();
+                    $('body').css('overflow', 'auto');
+                }
+            });
+            
+            // Эффект hover для кнопки
+            $('#contact-manager-btn').hover(
+                function() { $(this).css('background', '#005a87'); },
+                function() { $(this).css('background', '#007cba'); }
+            );
+        });
+        </script>
+        
+        <style>
+        .manager-contact-section .dashicons {
+            vertical-align: middle;
+        }
+        
+        @media (max-width: 768px) {
+            .manager-contact-section > div {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            #manager-modal > div {
+                margin: 20px;
+                width: calc(100% - 40px);
+            }
+        }
+        </style>
+        <?php
+    }
+    
+    /**
+     * AJAX обработчик для контакта с менеджером
+     */
+    public function ajax_contact_manager() {
+        // Проверка nonce для безопасности
+        if (!wp_verify_nonce($_POST['nonce'], 'contact_manager_nonce')) {
+            wp_die('Ошибка безопасности');
+        }
+        
+        $contact_type = sanitize_text_field($_POST['contact_type']);
+        $customer_data = array();
+        
+        // Собираем данные клиента если они есть
+        if (isset($_POST['customer_name'])) {
+            $customer_data['name'] = sanitize_text_field($_POST['customer_name']);
+        }
+        if (isset($_POST['customer_phone'])) {
+            $customer_data['phone'] = sanitize_text_field($_POST['customer_phone']);
+        }
+        if (isset($_POST['customer_email'])) {
+            $customer_data['email'] = sanitize_email($_POST['customer_email']);
+        }
+        
+        // Логируем обращение к менеджеру
+        error_log('Клиент запросил связь с менеджером: ' . $contact_type . ', данные: ' . json_encode($customer_data));
+        
+        // Здесь можно добавить отправку уведомления менеджеру
+        // Например, email или запись в БД
+        
+        wp_send_json_success(array(
+            'message' => 'Ваш запрос принят. Менеджер свяжется с вами в ближайшее время.'
+        ));
+    }
 }
+
+// Инициализация плагина
+new CdekDeliveryPlugin();

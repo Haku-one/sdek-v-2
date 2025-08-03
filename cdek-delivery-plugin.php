@@ -76,8 +76,8 @@ class CdekDeliveryPlugin {
         add_action('woocommerce_order_details_after_order_table', array($this, 'display_cdek_info_in_order_details'));
         add_action('woocommerce_email_order_details', array($this, 'display_cdek_info_in_email'), 10, 4);
         
-        // Изменение текста доставки в таблице заказа (добавляем позже)
-        add_action('init', array($this, 'add_shipping_display_filters'), 20);
+        // Изменение текста доставки в таблице заказа (временно отключено)
+        // add_action('init', array($this, 'add_shipping_display_filters'), 20);
         
         // Изменение отображения метода доставки в таблице заказа
         // add_filter('woocommerce_order_get_formatted_shipping_full_name', array($this, 'modify_shipping_method_name'), 10, 2);
@@ -124,6 +124,17 @@ class CdekDeliveryPlugin {
     
     public function init() {
         load_plugin_textdomain('cdek-delivery', false, dirname(plugin_basename(__FILE__)) . '/languages');
+        
+        // Добавляем фильтры для отображения доставки после инициализации
+        if (method_exists($this, 'modify_shipping_display_text')) {
+            add_filter('woocommerce_order_shipping_to_display', array($this, 'modify_shipping_display_text'), 10, 2);
+        }
+        
+        if (method_exists($this, 'modify_shipping_method_name')) {
+            add_filter('woocommerce_order_get_formatted_shipping_full_name', array($this, 'modify_shipping_method_name'), 10, 2);
+        }
+        
+        error_log('CDEK Plugin: init() completed successfully');
     }
     
     public function enqueue_scripts() {
@@ -1966,14 +1977,6 @@ class CdekAPI {
             error_log('СДЭК API: HTTP ошибка при получении статуса заказа: ' . $response->get_error_message());
             return false;
         }
-    }
-    
-    /**
-     * Добавление фильтров для отображения доставки (вызывается после полной загрузки)
-     */
-    public function add_shipping_display_filters() {
-        add_filter('woocommerce_order_shipping_to_display', array($this, 'modify_shipping_display_text'), 10, 2);
-        add_filter('woocommerce_order_get_formatted_shipping_full_name', array($this, 'modify_shipping_method_name'), 10, 2);
     }
     
     /**

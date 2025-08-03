@@ -413,8 +413,8 @@ jQuery(document).ready(function($) {
     }
     
     function initAddressAutocomplete() {
-        // Используем стандартное поле адреса WooCommerce
-        var addressInput = $('#billing_address_1');
+        // Используем стандартные поля адреса WooCommerce
+        var addressInput = $('#billing_address_1, #shipping_address_1');
         if (addressInput.length === 0) {
             return;
         }
@@ -425,10 +425,13 @@ jQuery(document).ready(function($) {
     }
     
     function setupSmartAutocomplete() {
-        var addressInput = $('#billing_address_1');
+        var addressInput = $('#billing_address_1, #shipping_address_1');
         if (addressInput.length === 0) {
             return;
         }
+        
+        // Работаем с первым найденным полем
+        addressInput = addressInput.first();
         
         var suggestionsContainer = $(`
             <div id="address-suggestions" class="smart-address-suggestions" style="display: none;">
@@ -526,26 +529,26 @@ jQuery(document).ready(function($) {
                     border-radius: 2px;
                 }
                 
-                                 .suggestion-subtitle {
-                     font-size: 12px;
-                     color: #666;
-                 }
-                 
-                 .suggestions-footer {
-                     padding: 8px 12px;
-                     background: #f8f9fa;
-                     border-top: 1px solid #f0f0f0;
-                     text-align: center;
-                     position: sticky;
-                     bottom: 0;
-                 }
-                 
-                 .suggestions-footer small {
-                     color: #666;
-                     font-size: 11px;
-                 }
-                 </style>
-             `);
+                .suggestion-subtitle {
+                    font-size: 12px;
+                    color: #666;
+                }
+                
+                .suggestions-footer {
+                    padding: 8px 12px;
+                    background: #f8f9fa;
+                    border-top: 1px solid #f0f0f0;
+                    text-align: center;
+                    position: sticky;
+                    bottom: 0;
+                }
+                
+                .suggestions-footer small {
+                    color: #666;
+                    font-size: 11px;
+                }
+                </style>
+            `);
         }
         
         var currentSuggestions = [];
@@ -674,7 +677,7 @@ jQuery(document).ready(function($) {
         }
         
         $(document).on('click', function(e) {
-            if (!$(e.target).closest('#address-suggestions, #billing_address_1').length) {
+            if (!$(e.target).closest('#address-suggestions, #billing_address_1, #shipping_address_1').length) {
                 hideAddressSuggestions();
             }
         });
@@ -684,200 +687,73 @@ jQuery(document).ready(function($) {
     
     function initYandexMap() {
         const mapContainer = document.getElementById('cdek-map');
-        const mapExists = (window.cdekMap && window.cdekMap.container && typeof window.cdekMap.getCenter === 'function') || 
-                         (cdekMap && cdekMap.container && typeof cdekMap.getCenter === 'function');
         
-        const isMapVisible = mapContainer && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0;
-        const hasMapContent = mapContainer && mapContainer.children.length > 0;
-        
-        if (!window.cdekNeedsReinit && mapExists && isMapVisible && hasMapContent && !window.cdekMapInitializing) {
-            console.log('✅ Карта уже существует и работает');
-            
-            if (mapContainer) {
-                mapContainer.style.setProperty('display', 'block', 'important');
-                mapContainer.style.setProperty('visibility', 'visible', 'important');
-                mapContainer.style.setProperty('opacity', '1', 'important');
-            }
-            
-            if ((window.cdekMap || cdekMap) && !window.cdekMapInitializing) {
-                setTimeout(() => {
-                    if ((window.cdekMap || cdekMap) && (window.cdekMap?.container || cdekMap?.container)) {
-                        try {
-                            const map = window.cdekMap || cdekMap;
-                            map.container.fitToViewport();
-                        } catch (e) {
-                            console.log('Ошибка обновления карты:', e);
-                        }
-                    }
-                }, 200);
-            }
-            
+        if (!mapContainer) {
+            console.log('🚫 Контейнер карты не найден');
             return;
         }
         
-        // ПРИНУДИТЕЛЬНАЯ ПЕРЕИНИЦИАЛИЗАЦИЯ если карта серая
-        if (window.cdekNeedsReinit || (mapExists && mapContainer && mapContainer.innerHTML === '')) {
-            console.log('🔄 ПРИНУДИТЕЛЬНАЯ переинициализация серой карты');
-            window.cdekMap = null;
-            window.cdekMapInitializing = false;
-            window.cdekNeedsReinit = false;
-            mapContainer.innerHTML = '';
-        }
+        // Принудительно показываем контейнер карты
+        mapContainer.style.cssText = 'display: block !important; width: 100% !important; height: 450px !important; visibility: visible !important; position: relative !important; opacity: 1 !important;';
         
-        // Устанавливаем флаг инициализации
-        window.cdekMapInitializing = true;
-        
-        if (mapContainer) {
-            // Пытаемся правильно уничтожить старую карту
-            if (window.cdekMap && typeof window.cdekMap.destroy === 'function') {
+        // Проверяем, не создана ли уже карта
+        if (window.cdekMap && typeof window.cdekMap.getCenter === 'function') {
+            console.log('✅ Карта уже существует, обновляем размер');
+            setTimeout(() => {
                 try {
-                    console.log('🗑️ Уничтожаем старую карту через API');
-                    window.cdekMap.destroy();
+                    window.cdekMap.container.fitToViewport();
                 } catch (e) {
-                    console.log('Ошибка уничтожения карты:', e);
+                    console.log('Ошибка обновления карты:', e);
                 }
-                window.cdekMap = null;
-            }
-            
-            if (cdekMap && typeof cdekMap.destroy === 'function') {
-                try {
-                    cdekMap.destroy();
-                } catch (e) {
-                    console.log('Ошибка уничтожения карты:', e);
-                }
-                cdekMap = null;
-            }
-            
-            // Уничтожаем все дочерние элементы Yandex Maps
-            const ymapsElements = mapContainer.querySelectorAll('ymaps');
-            ymapsElements.forEach(el => el.remove());
-            mapContainer.innerHTML = '';
+            }, 100);
+            return;
         }
         
         // Проверяем загрузку Яндекс.Карт
-        if (window.yandexMapsLoadError || typeof ymaps === 'undefined') {
-            console.warn('СДЭК: Яндекс.Карты не загрузились или недоступны');
-            
-            if (mapContainer) {
-                mapContainer.innerHTML = `
-                    <div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #f5f5f5; border-radius: 6px; flex-direction: column;">
-                        <div style="font-size: 18px; color: #666; margin-bottom: 10px;">📍 Карта временно недоступна</div>
-                        <div style="font-size: 14px; color: #999;">Введите город выше для поиска пунктов выдачи</div>
-                    </div>
-                `;
-                window.cdekMapInitializing = false;
-            }
+        if (typeof ymaps === 'undefined') {
+            console.warn('🔄 Яндекс.Карты еще не загружены, ждем...');
+            setTimeout(() => initYandexMap(), 500);
             return;
         }
         
-        // Проверяем доступность ymaps с таймаутом
-        var maxAttempts = 50;
-        var attempts = 0;
+        console.log('🗺️ Инициализируем новую Яндекс карту');
         
-        function checkYmaps() {
-            attempts++;
-            console.log(`🔍 Проверка ymaps, попытка ${attempts}/${maxAttempts}`);
-            
-            if (typeof ymaps !== 'undefined' && ymaps.Map) {
-                initMapContainer();
-            } else if (attempts < maxAttempts) {
-                setTimeout(checkYmaps, 200);
-            } else {
-                console.warn('СДЭК: Яндекс.Карты не загрузились за 10 секунд');
+        ymaps.ready(function() {
+            try {
+                // Очищаем контейнер
+                mapContainer.innerHTML = '';
+                
+                // Создаем новую карту
+                cdekMap = new ymaps.Map(mapContainer, {
+                    center: [55.753994, 37.622093], // Москва
+                    zoom: 10,
+                    controls: ['zoomControl', 'searchControl']
+                }, {
+                    suppressMapOpenBlock: true
+                });
+                
+                // Сохраняем в глобальной переменной
+                window.cdekMap = cdekMap;
+                
+                console.log('✅ Яндекс карта успешно создана');
+                
+                // Обновляем размер карты
+                setTimeout(() => {
+                    if (cdekMap && cdekMap.container) {
+                        cdekMap.container.fitToViewport();
+                    }
+                }, 100);
+                
+                // Если есть пункты выдачи, отображаем их
+                if (cdekPoints && cdekPoints.length > 0) {
+                    displayCdekPoints(cdekPoints);
+                }
+                
+            } catch (error) {
+                console.error('❌ Ошибка создания карты:', error);
                 showMapFallback();
             }
-        }
-        
-        checkYmaps();
-    }
-    
-    function initMapContainer() {
-        var mapContainer = document.getElementById('cdek-map');
-        if (!mapContainer) {
-            setTimeout(initYandexMap, 500);
-            return;
-        }
-        
-        console.log('📦 Настраиваем контейнер карты:', mapContainer.id);
-        mapContainer.style.cssText = 'display: block !important; width: 100% !important; height: 450px !important; visibility: visible !important; position: relative !important;';
-        
-        var checkContainer = function() {
-            if (mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0) {
-                try {
-                    ymaps.ready(function() {
-                        try {
-                            // ДОПОЛНИТЕЛЬНАЯ проверка перед созданием карты
-                            if (window.cdekMap && typeof window.cdekMap.getCenter === 'function') {
-                                window.cdekMapInitializing = false;
-                                return;
-                            }
-                            
-                            // Проверяем блокировку создания карты
-                            if (window.cdekMapCreationLock) {
-                                window.cdekMapInitializing = false;
-                                return;
-                            }
-                            
-                            // Устанавливаем блокировку
-                            window.cdekMapCreationLock = true;
-                            
-                            console.log('🗺️ Создаем новую карту в контейнере:', mapContainer.id);
-                            
-                            cdekMap = new ymaps.Map(mapContainer, {
-                                center: [55.753994, 37.622093],
-                                zoom: 10,
-                                controls: ['zoomControl', 'searchControl']
-                            }, {
-                                suppressMapOpenBlock: true
-                            });
-                            
-                            // Также сохраняем в глобальной переменной для синхронизации
-                            window.cdekMap = cdekMap;
-                            
-                            // Очищаем флаги инициализации
-                            window.cdekMapInitializing = false;
-                            window.cdekMapCreationLock = false;
-                            
-                            // ПРИНУДИТЕЛЬНАЯ проверка что карта отображается
-                            cdekMap.events.add('ready', function() {
-                                console.log('🗺️ Карта готова');
-                                // Принудительный ресайз
-                                setTimeout(() => {
-                                    cdekMap.container.fitToViewport();
-                                }, 100);
-                            });
-                            
-                            // Принудительно обновляем размер карты
-                            setTimeout(() => {
-                                if (cdekMap && cdekMap.container) {
-                                    console.log('🔄 Обновляем размер карты');
-                                    cdekMap.container.fitToViewport();
-                                }
-                            }, 100);
-                            
-                        } catch (initError) {
-                            console.error('❌ Ошибка создания карты:', initError);
-                            window.cdekMapInitializing = false;
-                            window.cdekMapCreationLock = false;
-                            throw initError;
-                        }
-                        
-                        if (cdekPoints && cdekPoints.length > 0) {
-                            displayCdekPoints(cdekPoints);
-                        }
-                    });
-                } catch (error) {
-                    console.error('СДЭК: Ошибка инициализации карты:', error);
-                    window.cdekMapInitializing = false;
-                    window.cdekMapCreationLock = false;
-                    showMapFallback();
-                }
-            } else {
-                setTimeout(checkContainer, 300);
-            }
-        };
-        
-        setTimeout(checkContainer, 200);
+        });
     }
     
     function showMapFallback() {
@@ -1027,19 +903,13 @@ jQuery(document).ready(function($) {
     function displayCdekPoints(points) {
         cdekPoints = points;
         
-        if (!cdekMap || typeof ymaps === 'undefined') {
-            Utils.delay(() => displayCdekPoints(points), 200);
-            return;
-        }
-        
-        cdekMap.geoObjects.removeAll();
-        
         if (!points || points.length === 0) {
             var cityInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
             $('#cdek-points-count').text(`Пункты выдачи не найдены${cityInfo}`);
             return;
         }
         
+        // Фильтруем пункты по городу
         var filteredPoints = points.filter(function(point) {
             if (window.currentSearchCity) {
                 var pointCity = '';
@@ -1095,6 +965,21 @@ jQuery(document).ready(function($) {
         // Также отображаем список пунктов
         displayPointsList(pointsToShow);
         
+        // Если карта не загружена, показываем только список
+        if (!cdekMap && typeof ymaps === 'undefined') {
+            displayPointsAsList();
+            return;
+        }
+        
+        // Если карта не готова, ждем
+        if (!cdekMap) {
+            setTimeout(() => displayCdekPoints(points), 200);
+            return;
+        }
+        
+        // Очищаем карту и добавляем новые точки
+        cdekMap.geoObjects.removeAll();
+        
         var bounds = [];
         
         pointsToShow.forEach(function(point, index) {
@@ -1117,6 +1002,7 @@ jQuery(document).ready(function($) {
             }
         });
         
+        // Центрируем карту по найденным точкам
         if (bounds.length > 0) {
             if (bounds.length === 1) {
                 cdekMap.setCenter(bounds[0], 14);
@@ -1545,17 +1431,29 @@ jQuery(document).ready(function($) {
     
     // Инициализация при изменении метода доставки
     $(document).on('change', 'input[name^="shipping_method"]', function() {
+        console.log('🔄 Изменен метод доставки:', $(this).val());
+        
         if ($(this).val().indexOf('cdek_delivery') !== -1) {
+            console.log('✅ Выбрана доставка СДЭК');
             $('#cdek-map-container, #cdek-map-wrapper').show();
+            
+            // Принудительно показываем карту
+            $('#cdek-map').css({
+                'display': 'block !important',
+                'visibility': 'visible !important',
+                'opacity': '1 !important'
+            });
+            
             debouncer.debounce('init-cdek', () => initCdekDelivery(), 100);
         } else {
+            console.log('❌ Выбран другой метод доставки');
             $('#cdek-map-container, #cdek-map-wrapper').hide();
             clearSelectedPoint();
         }
     });
     
     // Обработчик поиска по городу в поле адреса
-    $(document).on('input', '#billing_address_1', function() {
+    $(document).on('input', '#billing_address_1, #shipping_address_1', function() {
         var address = $(this).val().trim();
         var city = address.split(',')[0].trim();
         
@@ -1582,8 +1480,28 @@ jQuery(document).ready(function($) {
     
     // Проверяем при загрузке страницы
     $(document).ready(function() {
-        // Если карта видна, значит СДЭК уже выбран
-        if ($('#cdek-map-wrapper').is(':visible')) {
+        console.log('📄 Страница загружена, проверяем состояние доставки');
+        
+        // Проверяем, выбрана ли доставка СДЭК
+        var cdekSelected = false;
+        $('input[name^="shipping_method"]:checked').each(function() {
+            if ($(this).val().indexOf('cdek_delivery') !== -1) {
+                cdekSelected = true;
+                console.log('✅ СДЭК доставка уже выбрана при загрузке');
+            }
+        });
+        
+        // Если карта видна или СДЭК выбран, инициализируем
+        if ($('#cdek-map-wrapper').is(':visible') || cdekSelected) {
+            $('#cdek-map-container, #cdek-map-wrapper').show();
+            
+            // Принудительно показываем карту
+            $('#cdek-map').css({
+                'display': 'block !important',
+                'visibility': 'visible !important',
+                'opacity': '1 !important'
+            });
+            
             debouncer.debounce('init-cdek-load', () => initCdekDelivery(), 500);
         }
     });

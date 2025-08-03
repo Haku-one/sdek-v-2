@@ -41,18 +41,6 @@ class CdekDeliveryPlugin {
         add_action('woocommerce_shipping_init', array($this, 'init_cdek_shipping'));
         add_filter('woocommerce_shipping_methods', array($this, 'add_cdek_shipping_method'));
         
-        // Новое поле для выбора менеджера доставки (для блочного чекаута)
-        add_action('woocommerce_init', array($this, 'register_delivery_manager_field'));
-        
-        // Хуки для сохранения и отображения поля
-        add_action('woocommerce_checkout_update_order_meta', array($this, 'save_delivery_manager_field'));
-        add_action('woocommerce_admin_order_data_after_shipping_address', array($this, 'display_delivery_manager_in_admin'));
-        add_action('woocommerce_order_item_meta_end', array($this, 'display_delivery_manager_in_emails'), 10, 3);
-        add_action('woocommerce_email_order_meta', array($this, 'add_delivery_manager_to_emails'), 10, 3);
-        
-        // Валидация поля (только для классического чекаута, если поле видимое)
-        // add_action('woocommerce_checkout_process', array($this, 'validate_delivery_manager_field'));
-        
         // AJAX обработчики
         add_action('wp_ajax_get_cdek_points', array($this, 'ajax_get_cdek_points'));
         add_action('wp_ajax_nopriv_get_cdek_points', array($this, 'ajax_get_cdek_points'));
@@ -82,14 +70,8 @@ class CdekDeliveryPlugin {
         // Активация плагина
         register_activation_hook(__FILE__, array($this, 'activate_plugin'));
         
-        // Поддержка новых блоков WooCommerce
-        add_action('plugins_loaded', array($this, 'load_blocks_integration'));
-        
         // Добавляем габариты в описание товара в корзине
         add_filter('woocommerce_get_item_data', array($this, 'add_dimensions_to_cart_item'), 10, 2);
-        
-        // Подключаем обработчик данных доставки
-        add_action('plugins_loaded', array($this, 'load_delivery_data_handler'));
         
         // Хуки для классического чекаута
         add_action('woocommerce_review_order_after_shipping', array($this, 'add_cdek_map_to_classic_checkout'));
@@ -112,14 +94,11 @@ class CdekDeliveryPlugin {
     
     public function enqueue_scripts() {
         if (is_checkout()) {
-            // Проверяем, используется ли блочный или классический чекаут
-            $is_block_checkout = has_block('woocommerce/checkout') || has_block('woocommerce/cart');
+            // Используем только классический чекаут
+            $yandex_api_key = get_option('cdek_yandex_api_key', '4020b4d5-1d96-476c-a10e-8ab18f0f3702');
             
             // Проверяем, не загружены ли уже Яндекс.Карты
             if (!wp_script_is('yandex-maps', 'enqueued') && !wp_script_is('yandex-maps', 'done')) {
-                // Получаем API ключ из настроек или используем по умолчанию
-                $yandex_api_key = get_option('cdek_yandex_api_key', '4020b4d5-1d96-476c-a10e-8ab18f0f3702');
-                
                 // Формируем URL с обработкой ошибок
                 $yandex_maps_url = 'https://api-maps.yandex.ru/2.1/?' . http_build_query(array(
                     'apikey' => $yandex_api_key,
@@ -141,25 +120,19 @@ class CdekDeliveryPlugin {
                 ', 'before');
             }
             
-            // Выбираем JS файл в зависимости от типа чекаута
-            if ($is_block_checkout) {
-                wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
-            } else {
-                wp_enqueue_script('cdek-delivery-classic-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery-classic.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
-            }
+            // Загружаем только JS для классического чекаута
+            wp_enqueue_script('cdek-delivery-classic-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery-classic.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
             
             // Добавляем скрипт для автозаполнения textarea полей
             wp_enqueue_script('textarea-auto-fill', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/textarea-auto-fill.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
             
             wp_enqueue_style('cdek-delivery-css', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css', array(), CDEK_DELIVERY_VERSION);
            
-            
-            $script_name = $is_block_checkout ? 'cdek-delivery-js' : 'cdek-delivery-classic-js';
-            wp_localize_script($script_name, 'cdek_ajax', array(
+            wp_localize_script('cdek-delivery-classic-js', 'cdek_ajax', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('cdek_nonce'),
                 'yandex_api_key' => $yandex_api_key,
-                'is_block_checkout' => $is_block_checkout
+                'is_block_checkout' => false
             ));
             
             wp_localize_script('textarea-auto-fill', 'textarea_auto_fill', array(
@@ -175,8 +148,6 @@ class CdekDeliveryPlugin {
         $fields['shipping']['shipping_address_1']['placeholder'] = 'Например: Москва';
         $fields['shipping']['shipping_address_1']['required'] = true;
         
-        // Удалено лишнее скрытое поле - используем textarea поля
-        
         return $fields;
     }
     
@@ -188,45 +159,6 @@ class CdekDeliveryPlugin {
         
         return $fields;
     }
-    
-    /**
-     * Регистрация поля для блочного чекаута - удалено, используем textarea поля
-     */
-    public function register_delivery_manager_field() {
-        // Удалено - используем существующие textarea поля
-    }
-    
-    /**
-     * Сохранение значения поля при оформлении заказа
-     */
-    public function save_delivery_manager_field($order_id) {
-        // Убрано сохранение - данные из textarea полей сохраняются автоматически плагином
-    }
-    
-    /**
-     * Отображение поля в админке заказа
-     */
-    public function display_delivery_manager_in_admin($order) {
-        // Убрано отображение - данные отображаются плагином автоматически
-    }
-    
-    /**
-     * Отображение поля в email уведомлениях
-     */
-    public function display_delivery_manager_in_emails($item_id, $item, $order) {
-        // Убрано отображение - данные отображаются плагином автоматически
-    }
-    
-    /**
-     * Добавление информации о способе доставки в email
-     */
-    public function add_delivery_manager_to_emails($order, $sent_to_admin, $plain_text) {
-        // Убрано отображение - данные отображаются плагином автоматически
-    }
-    
-    /**
-     * Валидация полей - удалено, используем textarea поля
-     */
     
     public function init_cdek_shipping() {
         if (!class_exists('WC_Cdek_Shipping_Method')) {
@@ -246,17 +178,11 @@ class CdekDeliveryPlugin {
         
         $address = sanitize_text_field($_POST['address']);
         
-        // Добавляем отладочную информацию
-       
-        
         $cdek_api = new CdekAPI();
         $points = $cdek_api->get_delivery_points($address);
         
         // Логируем результат
         error_log('СДЭК AJAX: Получено пунктов: ' . count($points));
-        if (!empty($points)) {
-           
-        }
         
         wp_send_json_success($points);
     }
@@ -272,8 +198,6 @@ class CdekDeliveryPlugin {
         $cart_dimensions = json_decode(stripslashes($_POST['cart_dimensions']), true);
         $cart_value = floatval($_POST['cart_value']);
         $has_real_dimensions = intval($_POST['has_real_dimensions']);
-        
-        
         
         // Проверяем, что у нас есть все необходимые данные
         if (empty($point_code)) {
@@ -292,14 +216,12 @@ class CdekDeliveryPlugin {
         $cost_data = $cdek_api->calculate_delivery_cost_to_point($point_code, $point_data, $cart_weight, $cart_dimensions, $cart_value, $has_real_dimensions);
         
         if ($cost_data && isset($cost_data['delivery_sum']) && $cost_data['delivery_sum'] > 0) {
-            
             // Убедимся что передаем флаг успешного API расчета
             $cost_data['api_success'] = true;
             $cost_data['fallback'] = false;
             
             wp_send_json_success($cost_data);
         } else {
-            
             // НЕТ РЕЗЕРВНОГО РАСЧЕТА! Возвращаем ошибку
             wp_send_json_error(array(
                 'message' => 'API СДЭК недоступен, расчет стоимости невозможен',
@@ -350,32 +272,6 @@ class CdekDeliveryPlugin {
         }
         
         return array_slice($suggestions, 0, 10);
-    }
-    
-    private function calculate_fallback_cost($weight, $value, $dimensions, $has_real_dimensions) {
-        $base_cost = 300; // Базовая стоимость
-        
-        // Дополнительная стоимость за вес свыше 500г
-        if ($weight > 500) {
-            $extra_weight = ceil(($weight - 500) / 500);
-            $base_cost += $extra_weight * 35;
-        }
-        
-        // Дополнительная стоимость за габариты
-        if ($has_real_dimensions && $dimensions) {
-            $volume = $dimensions['length'] * $dimensions['width'] * $dimensions['height'];
-            if ($volume > 12000) {
-                $extra_volume = ceil(($volume - 12000) / 6000);
-                $base_cost += $extra_volume * 50;
-            }
-        }
-        
-        // Страховка за высокую стоимость
-        if ($value > 3000) {
-            $base_cost += ceil(($value - 3000) / 1000) * 20;
-        }
-        
-        return $base_cost;
     }
     
     public function display_product_dimensions_checkout() {
@@ -529,9 +425,7 @@ class CdekDeliveryPlugin {
             }
         }
     }
-    
 
-    
     public function display_cdek_point_in_admin($order) {
         $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
         $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
@@ -548,8 +442,6 @@ class CdekDeliveryPlugin {
             echo '</div>';
         }
     }
-    
-
     
     public function ajax_test_cdek_connection() {
         if (!wp_verify_nonce($_POST['nonce'], 'test_cdek_connection')) {
@@ -577,48 +469,10 @@ class CdekDeliveryPlugin {
         }
     }
     
-    public function load_blocks_integration() {
-        // Загружаем интеграцию с блоками только если используется блочный редактор
-        if (class_exists('Automattic\WooCommerce\Blocks\Integrations\IntegrationInterface')) {
-            // Проверяем, что это не классический чекаут
-            if (!is_checkout() || has_block('woocommerce/checkout')) {
-                include_once plugin_dir_path(__FILE__) . 'includes/class-wc-blocks-integration.php';
-            }
-        }
-    }
-    
-    public function load_delivery_data_handler() {
-        // Подключаем обработчик данных доставки
-        if (file_exists(plugin_dir_path(__FILE__) . 'cdek-delivery-data-handler.php')) {
-            include_once plugin_dir_path(__FILE__) . 'cdek-delivery-data-handler.php';
-           
-        } else {
-            
-        }
-        
-        // Подключаем функции темы для обработки кастомных данных
-        if (file_exists(plugin_dir_path(__FILE__) . 'theme-functions-cdek.php')) {
-            include_once plugin_dir_path(__FILE__) . 'theme-functions-cdek.php';
-            
-            // Принудительно вызываем инициализацию функций темы
-            if (function_exists('cdek_theme_init')) {
-                cdek_theme_init();
-                
-            }
-        } else {
-           
-        }
-    }
-    
     /**
      * Добавление карты СДЭК в классический чекаут
      */
     public function add_cdek_map_to_classic_checkout() {
-        // Проверяем, что это не блочный чекаут
-        if (has_block('woocommerce/checkout')) {
-            return;
-        }
-        
         echo $this->render_cdek_map_html();
     }
     
@@ -626,14 +480,9 @@ class CdekDeliveryPlugin {
      * Альтернативная позиция для карты в классическом чекауте
      */
     public function add_cdek_map_alternative_position() {
-        // Проверяем, что это не блочный чекаут
-        if (has_block('woocommerce/checkout')) {
-            return;
-        }
-        
         // Показываем карту только если выбран метод доставки СДЭК
         ?>
-        <div id="cdek-map-wrapper">
+        <div id="cdek-map-wrapper" style="display: none;">
             <?php echo $this->render_cdek_map_html(); ?>
         </div>
         
@@ -703,20 +552,20 @@ class CdekDeliveryPlugin {
             <!-- Кнопки выбора способа доставки -->
             <div id="cdek-delivery-options" style="margin-bottom: 20px;">
                 <button type="button" class="cdek-delivery-option" data-option="pickup" style="margin-right: 10px; padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                    📍 Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно
+                    <img draggable="false" role="img" class="emoji" alt="📍" src="https://s.w.org/images/core/emoji/16.0.1/svg/1f4cd.svg"> Самовывоз (г.Саратов, ул. Осипова, д. 18а) — Бесплатно
                 </button>
                 <button type="button" class="cdek-delivery-option" data-option="manager" style="margin-right: 10px; padding: 10px 20px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                    📞 Обсудить доставку с менеджером - Бесплатно
+                    <img draggable="false" role="img" class="emoji" alt="📞" src="https://s.w.org/images/core/emoji/16.0.1/svg/1f4de.svg"> Обсудить доставку с менеджером — Бесплатно
                 </button>
                 <button type="button" class="cdek-delivery-option active" data-option="cdek" style="padding: 10px 20px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                    🚚 Доставка СДЭК
+                    <img draggable="false" role="img" class="emoji" alt="🚚" src="https://s.w.org/images/core/emoji/16.0.1/svg/1f69a.svg"> Доставка СДЭК
                 </button>
             </div>
             
             <div id="cdek-delivery-content">
                 <div id="cdek-points-info" style="margin-bottom: 10px; padding: 10px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px;">
                     <strong>Информация:</strong>
-                    <div id="cdek-points-count">Введите город в поле "Адрес" выше для поиска пунктов выдачи</div>
+                    <div id="cdek-points-count">Введите город в поле «Адрес» выше для поиска пунктов выдачи</div>
                 </div>
                 
                 <div id="cdek-selected-point" style="margin-bottom: 10px; padding: 10px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; display: none;">
@@ -727,7 +576,7 @@ class CdekDeliveryPlugin {
                     </button>
                 </div>
                 
-                <div id="cdek-map" style="width: 100%; height: <?php echo esc_attr($height); ?>; border: 1px solid #ddd; border-radius: 6px;"></div>
+                <div id="cdek-map" style="width: 100%; height: <?php echo esc_attr($height); ?>; border: 1px solid #ddd; border-radius: 6px; display: block !important; visibility: visible !important;"></div>
                 
                 <div id="cdek-points-list" style="margin-top: 15px; max-height: 300px; overflow-y: auto; display: none;">
                     <h5>Список пунктов выдачи:</h5>
@@ -736,7 +585,7 @@ class CdekDeliveryPlugin {
             </div>
             
             <p style="font-size: 14px; color: #666; margin-top: 10px;">
-                💡 Введите город в поле "Адрес" выше, затем выберите пункт выдачи на карте или в списке
+                <img draggable="false" role="img" class="emoji" alt="💡" src="https://s.w.org/images/core/emoji/16.0.1/svg/1f4a1.svg"> Введите город в поле «Адрес» выше, затем выберите пункт выдачи на карте или в списке
             </p>
         </div>
         
@@ -753,11 +602,6 @@ class CdekDeliveryPlugin {
      * Резервная позиция для карты СДЭК
      */
     public function add_cdek_map_fallback_position() {
-        // Проверяем, что это не блочный чекаут
-        if (has_block('woocommerce/checkout')) {
-            return;
-        }
-        
         // Показываем карту только если выбран метод доставки СДЭК и карта еще не отображена
         ?>
         <script>
@@ -796,7 +640,7 @@ class CdekDeliveryPlugin {
      * Добавление стилей для классического чекаута
      */
     public function add_classic_checkout_styles() {
-        if (is_checkout() && !has_block('woocommerce/checkout')) {
+        if (is_checkout()) {
             ?>
             <style>
             /* Стили для классического чекаута СДЭК */
@@ -807,6 +651,16 @@ class CdekDeliveryPlugin {
                 border: 1px solid #ddd;
                 border-radius: 8px;
                 display: block !important;
+            }
+            
+            /* Принудительно показываем карту */
+            #cdek-map {
+                display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                width: 100% !important;
+                height: 450px !important;
+                position: relative !important;
             }
             
             /* Кнопки выбора способа доставки */
@@ -867,12 +721,6 @@ class CdekDeliveryPlugin {
             
             #cdek-clear-selection:hover {
                 background: #c82333;
-            }
-            
-            #cdek-map {
-                min-height: 400px;
-                border: 1px solid #ddd;
-                border-radius: 6px;
             }
             
             #cdek-points-list {
@@ -1027,45 +875,26 @@ class CdekAPI {
         // Извлекаем город из адреса
         $city = $this->extract_city_from_address($address);
         
-        // УБИРАЕМ ВСЕ ОГРАНИЧЕНИЯ - показываем ВСЕ пункты выдачи без фильтров
+        error_log('СДЭК API: Поиск пунктов для города: ' . $city);
+        
+        // Параметры запроса с фильтрацией по городу
         $params = array(
-            'country_code' => 'RU', // Только код страны для России
-            'size' => 5000, // Максимальное количество результатов
-            'page' => 0 // Первая страница
-        );
-        
-        // Добавляем город только если он указан
-        if (!empty($city)) {
-            $params['city'] = $city;
-        }
-        
-        // Строим URL с минимальными параметрами для GET запроса
-        $url = add_query_arg($params, $this->base_url . '/deliverypoints');
-        
-        error_log('СДЭК API: 🔓 УБРАНЫ ВСЕ ОГРАНИЧЕНИЯ - URL запроса: ' . $url);
-        
-        $response = wp_remote_get($url, array(
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Content-Type' => 'application/json'
-            ),
-            'timeout' => 30 // Увеличиваем таймаут для больших запросов
-        ));
-        
-        // Дополнительно делаем запрос БЕЗ ОГРАНИЧЕНИЙ для сравнения
-        $params_unrestricted = array(
             'country_code' => 'RU',
             'size' => 5000,
             'page' => 0
         );
         
+        // Добавляем город для фильтрации
         if (!empty($city)) {
-            $params_unrestricted['city'] = $city;
+            $params['city'] = $city;
         }
         
-        $url_unrestricted = add_query_arg($params_unrestricted, $this->base_url . '/deliverypoints');
+        // Строим URL для GET запроса
+        $url = add_query_arg($params, $this->base_url . '/deliverypoints');
         
-        $response_unrestricted = wp_remote_get($url_unrestricted, array(
+        error_log('СДЭК API: URL запроса: ' . $url);
+        
+        $response = wp_remote_get($url, array(
             'headers' => array(
                 'Authorization' => 'Bearer ' . $token,
                 'Content-Type' => 'application/json'
@@ -1073,36 +902,95 @@ class CdekAPI {
             'timeout' => 30
         ));
         
-        if (!is_wp_error($response_unrestricted)) {
-            $body_unrestricted = wp_remote_retrieve_body($response_unrestricted);
-            $data_unrestricted = json_decode($body_unrestricted, true);
-            $count_unrestricted = is_array($data_unrestricted) ? count($data_unrestricted) : 0;
-        }
-        
         if (!is_wp_error($response)) {
             $response_code = wp_remote_retrieve_response_code($response);
             $body = json_decode(wp_remote_retrieve_body($response), true);
             
+            error_log('СДЭК API: Код ответа: ' . $response_code);
             
             if ($response_code === 200 && $body) {
+                $points = array();
+                
                 // Проверяем различные форматы ответа СДЭК API
                 if (isset($body['entity']) && is_array($body['entity'])) {
-                    return $body['entity'];
+                    $points = $body['entity'];
                 } elseif (is_array($body) && !empty($body)) {
-                    // Если ответ - массив пунктов напрямую
-                    return $body;
-                } else {
-                    return array();
+                    $points = $body;
                 }
+                
+                // Дополнительная фильтрация по городу на стороне PHP
+                if (!empty($city) && !empty($points)) {
+                    $points = $this->filter_points_by_city($points, $city);
+                }
+                
+                error_log('СДЭК API: Получено пунктов после фильтрации: ' . count($points));
+                return $points;
             } else {
                 if (isset($body['errors'])) {
+                    error_log('СДЭК API: Ошибки в ответе: ' . print_r($body['errors'], true));
                 }
                 return array();
             }
         } else {
+            error_log('СДЭК API: Ошибка HTTP: ' . $response->get_error_message());
         }
         
         return array();
+    }
+    
+    private function filter_points_by_city($points, $city) {
+        if (empty($points) || empty($city)) {
+            return $points;
+        }
+        
+        $city_lower = mb_strtolower(trim($city));
+        $filtered_points = array();
+        
+        foreach ($points as $point) {
+            $point_city = '';
+            
+            // Пытаемся извлечь город из различных полей
+            if (isset($point['location']['city']) && !empty($point['location']['city'])) {
+                $point_city = $point['location']['city'];
+            } elseif (isset($point['location']['address']) && !empty($point['location']['address'])) {
+                // Извлекаем город из адреса
+                $address_parts = explode(',', $point['location']['address']);
+                if (!empty($address_parts[0])) {
+                    $point_city = trim($address_parts[0]);
+                }
+            } elseif (isset($point['location']['address_full']) && !empty($point['location']['address_full'])) {
+                // Извлекаем город из полного адреса
+                $address_parts = explode(',', $point['location']['address_full']);
+                foreach ($address_parts as $part) {
+                    $part = trim($part);
+                    // Ищем часть с названием города
+                    if (preg_match('/^(г\.?\s*)?([А-Яа-я\-\s]+)$/u', $part, $matches)) {
+                        $city_candidate = trim($matches[2]);
+                        // Проверяем, что это известный город
+                        $known_cities = ['Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань', 'Нижний Новгород', 'Челябинск', 'Самара', 'Уфа', 'Ростов-на-Дону', 'Краснодар', 'Пермь', 'Воронеж', 'Волгоград', 'Красноярск', 'Саратов', 'Тюмень', 'Тольятти', 'Ижевск', 'Барнаул'];
+                        if (in_array($city_candidate, $known_cities)) {
+                            $point_city = $city_candidate;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (!empty($point_city)) {
+                // Очищаем от префиксов "г.", "город"
+                $point_city = preg_replace('/^(г\.?\s*|город\s+)/ui', '', $point_city);
+                $point_city_lower = mb_strtolower(trim($point_city));
+                
+                // Проверяем соответствие города
+                if ($point_city_lower === $city_lower || 
+                    mb_strpos($point_city_lower, $city_lower) !== false || 
+                    mb_strpos($city_lower, $point_city_lower) !== false) {
+                    $filtered_points[] = $point;
+                }
+            }
+        }
+        
+        return $filtered_points;
     }
     
     public function calculate_delivery_cost_to_point($point_code, $point_data, $cart_weight, $cart_dimensions, $cart_value, $has_real_dimensions) {

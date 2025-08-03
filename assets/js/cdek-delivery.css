@@ -196,6 +196,61 @@
 
 
 
+/* Стили для кнопок доставки */
+#cdek-delivery-options {
+    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.cdek-delivery-option {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 14px;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.cdek-delivery-option:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.cdek-delivery-option.active {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.cdek-delivery-option[data-option="pickup"] {
+    background: #28a745;
+    color: white;
+}
+
+.cdek-delivery-option[data-option="manager"] {
+    background: #17a2b8;
+    color: white;
+}
+
+.cdek-delivery-option[data-option="cdek"] {
+    background: #007cba;
+    color: white;
+}
+
+.cdek-delivery-option .emoji {
+    width: 16px;
+    height: 16px;
+    margin-right: 5px;
+    flex-shrink: 0;
+}
+
 /* Адаптивность для мобильных устройств */
 @media (max-width: 768px) {
     #cdek-map-container {
@@ -222,6 +277,23 @@
     .product-dimensions span {
         font-size: 12px;
     }
+    
+    /* Адаптивные стили для кнопок доставки */
+    #cdek-delivery-options {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .cdek-delivery-option {
+        width: 100%;
+        padding: 12px 15px;
+        font-size: 13px;
+        text-align: left;
+        justify-content: flex-start;
+        white-space: normal;
+        text-overflow: unset;
+        overflow: visible;
+    }
 }
 
 @media (max-width: 480px) {
@@ -241,6 +313,17 @@
     .suggestion-item {
         padding: 6px 10px;
         font-size: 14px;
+    }
+    
+    /* Дополнительные мобильные стили для кнопок */
+    .cdek-delivery-option {
+        padding: 10px 12px;
+        font-size: 12px;
+    }
+    
+    .cdek-delivery-option .emoji {
+        width: 14px;
+        height: 14px;
     }
 }
 

@@ -762,7 +762,7 @@ class CdekDeliveryPlugin {
     
     public function ajax_update_shipping_cost() {
         // Проверяем nonce для безопасности
-        if (!wp_verify_nonce($_POST['nonce'], 'cdek_ajax_nonce')) {
+        if (!wp_verify_nonce($_POST['nonce'], 'cdek_nonce')) {
             wp_die('Security check failed');
         }
         
@@ -790,11 +790,18 @@ class CdekDeliveryPlugin {
         woocommerce_order_review();
         $order_review = ob_get_clean();
         
+        // Получаем общую сумму заказа для передачи в JavaScript
+        $cart_total = WC()->cart->get_total();
+        
         wp_send_json_success(array(
             'fragments' => array(
-                '.shop_table.woocommerce-checkout-review-order-table' => $order_review
+                '.shop_table.woocommerce-checkout-review-order-table' => $order_review,
+                '.woocommerce-checkout-review-order-table' => $order_review,
+                'form.checkout' => '<form class="checkout woocommerce-checkout" method="post" name="checkout" action="' . esc_url( wc_get_checkout_url() ) . '" enctype="multipart/form-data" novalidate="novalidate">' . $order_review . '</form>'
             ),
-            'cost' => $cost ?? 0
+            'cost' => $cost ?? 0,
+            'cart_total' => $cart_total,
+            'refresh_checkout' => true
         ));
     }
     

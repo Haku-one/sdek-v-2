@@ -1196,10 +1196,33 @@ jQuery(document).ready(function($) {
                             });
                             
                             console.log('📊 Таблица заказа обновлена');
+                            
+                            // Если сервер вернул общую сумму, выводим её
+                            if (response.data.cart_total) {
+                                console.log('💰 Сервер вернул общую сумму:', response.data.cart_total);
+                            }
+                            
+                            // Если сервер просит обновить чекаут
+                            if (response.data.refresh_checkout) {
+                                console.log('🔄 Сервер запросил обновление чекаута');
+                            }
                         }
                         
-                        // Дополнительно обновляем чекаут
-                        $(document.body).trigger('update_checkout');
+                        // Принудительное обновление всех элементов чекаута
+                        setTimeout(() => {
+                            console.log('🔄 Принудительно обновляем все элементы чекаута...');
+                            
+                            // Обновляем чекаут несколькими способами
+                            $(document.body).trigger('update_checkout');
+                            $(document.body).trigger('updated_checkout');
+                            $('form.checkout').trigger('checkout_updated');
+                            
+                            // Принудительно пересчитываем и показываем итог
+                            setTimeout(() => {
+                                updateTotalCost(deliveryCost);
+                            }, 200);
+                            
+                        }, 100);
                     },
                     error: function(xhr, status, error) {
                         console.error('❌ Ошибка AJAX:', status, error);
@@ -1207,6 +1230,12 @@ jQuery(document).ready(function($) {
                         
                         // В случае ошибки все равно пытаемся обновить чекаут
                         $(document.body).trigger('update_checkout');
+                        $(document.body).trigger('updated_checkout');
+                        
+                        // И принудительно обновляем итог
+                        setTimeout(() => {
+                            updateTotalCost(deliveryCost);
+                        }, 200);
                     }
                 });
             }, 300);
@@ -1314,9 +1343,70 @@ jQuery(document).ready(function($) {
             console.log('✅ Обновлена итоговая сумма (.order-total td strong)');
         }
         
+        // Вариант 4: Более широкий поиск итоговой суммы
+        if (!totalUpdated) {
+            var totalElement4 = $('.order-total strong, .order-total .amount, .woocommerce-checkout-review-order-table .order-total .amount');
+            if (totalElement4.length > 0) {
+                totalElement4.each(function() {
+                    $(this).html('<span class="woocommerce-Price-amount amount">' + newTotal + ' руб.</span>');
+                });
+                totalUpdated = true;
+                console.log('✅ Обновлена итоговая сумма (широкий поиск)');
+            }
+        }
+        
+        // Вариант 5: Попытка обновить через data-атрибуты
+        if (!totalUpdated) {
+            var totalElement5 = $('[data-total], .total, .checkout-total');
+            if (totalElement5.length > 0) {
+                totalElement5.html(newTotal + ' руб.');
+                totalUpdated = true;
+                console.log('✅ Обновлена итоговая сумма (data-атрибуты)');
+            }
+        }
+        
         if (!totalUpdated) {
             console.warn('⚠️ Не удалось найти элемент для обновления итоговой суммы');
+            console.log('🔍 Доступные элементы на странице:');
+            console.log('order-total elements:', $('.order-total').length);
+            console.log('amount elements:', $('.amount').length);
+            console.log('total elements:', $('[class*="total"]').length);
         }
+        
+        // Принудительно уведомляем о изменении цены для интеграций
+        $(document).trigger('cdek_price_updated', {
+            newTotal: newTotal,
+            deliveryCost: deliveryCost,
+            subtotal: subtotal
+        });
+        
+        // Дополнительные события для платежных систем
+        $(document).trigger('checkout_updated');
+        $(document).trigger('woocommerce_checkout_updated');
+        $(document).trigger('payment_method_updated');
+        
+        // Уведомляем window для внешних скриптов
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+                type: 'checkout_total_updated',
+                total: newTotal,
+                delivery: deliveryCost
+            }, '*');
+        }
+        
+        // Принудительно обновляем все поля с суммой
+        setTimeout(() => {
+            $('*').filter(function() {
+                return $(this).text().includes('180') && $(this).text().includes('₽');
+            }).each(function() {
+                var currentText = $(this).text();
+                var newText = currentText.replace(/180\s*₽/g, newTotal + ' ₽');
+                if (currentText !== newText) {
+                    $(this).text(newText);
+                    console.log('🔄 Обновлен текст с 180₽ на', newTotal + '₽');
+                }
+            });
+        }, 500);
     }
     
     // ========== ФУНКЦИИ ДЛЯ ЗАГРУЗЧИКОВ И ОШИБОК ==========

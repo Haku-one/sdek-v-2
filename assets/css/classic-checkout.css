@@ -1,267 +1,62 @@
 /* Классический checkout стили */
 
-/* Основная секция с кнопкой менеджера */
-.manager-contact-section {
-    margin-bottom: 30px;
-    padding: 20px;
-    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-    border: 2px solid #007cba;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 123, 186, 0.1);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+/* Секция с кнопкой менеджера */
+.delivery-manager-section {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #fff3cd;
+    border: 1px solid #ffeeba;
+    border-radius: 5px;
 }
 
-.manager-contact-section:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 12px rgba(0, 123, 186, 0.15);
-}
-
-.manager-contact-section h3 {
-    margin: 0 0 10px 0;
-    color: #007cba;
-    font-size: 18px;
+.delivery-manager-section h4 {
+    margin: 0 0 5px 0;
+    color: #856404;
+    font-size: 16px;
     font-weight: 600;
 }
 
-.manager-contact-section p {
+.delivery-manager-section p {
     margin: 0;
-    color: #666;
-    font-size: 14px;
+    color: #856404;
+    font-size: 13px;
     line-height: 1.4;
 }
 
-/* Кнопка связаться с менеджером */
-#contact-manager-btn {
-    background: linear-gradient(135deg, #007cba 0%, #005a87 100%);
+/* Кнопка обсудить доставку */
+#discuss-delivery-btn {
+    background: #856404;
     color: white;
-    padding: 12px 24px;
+    padding: 8px 16px;
     border: none;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: 600;
+    border-radius: 3px;
+    font-size: 14px;
     cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 4px rgba(0, 123, 186, 0.2);
-    position: relative;
-    overflow: hidden;
+    transition: background-color 0.3s ease;
 }
 
-#contact-manager-btn:hover {
-    background: linear-gradient(135deg, #005a87 0%, #004066 100%);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0, 123, 186, 0.3);
-}
-
-#contact-manager-btn:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(0, 123, 186, 0.2);
-}
-
-#contact-manager-btn::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-    transition: left 0.6s;
-}
-
-#contact-manager-btn:hover::before {
-    left: 100%;
+#discuss-delivery-btn:hover {
+    background: #6c5206 !important;
 }
 
 /* Иконки Dashicons */
-.manager-contact-section .dashicons {
+.delivery-manager-section .dashicons {
     vertical-align: middle;
-    margin-right: 5px;
-}
-
-/* Модальное окно */
-#manager-modal {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    z-index: 9999;
-    justify-content: center;
-    align-items: center;
-    animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-#manager-modal > div {
-    background: white;
-    padding: 30px;
-    border-radius: 15px;
-    max-width: 500px;
-    width: 90%;
-    max-height: 80vh;
-    overflow-y: auto;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-    animation: slideIn 0.3s ease;
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-30px) scale(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
-}
-
-/* Заголовок модального окна */
-#manager-modal h3 {
-    margin: 0;
-    color: #007cba;
-    font-size: 24px;
-    font-weight: 600;
-}
-
-/* Кнопка закрытия */
-#close-manager-modal {
-    background: none;
-    border: none;
-    font-size: 28px;
-    cursor: pointer;
-    color: #999;
-    transition: color 0.2s ease;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-}
-
-#close-manager-modal:hover {
-    color: #666;
-    background: #f0f0f0;
-}
-
-/* Варианты связи */
-.manager-contact-options > div {
-    margin-bottom: 20px;
-    padding: 15px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border-left: 4px solid #007cba;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.manager-contact-options > div:hover {
-    transform: translateX(5px);
-    box-shadow: 0 2px 8px rgba(0, 123, 186, 0.1);
-}
-
-.manager-contact-options h4 {
-    margin: 0 0 10px 0;
-    color: #333;
     font-size: 16px;
-    font-weight: 600;
-}
-
-/* Ссылки в модальном окне */
-.manager-contact-options a {
-    color: #007cba;
-    text-decoration: none;
-    transition: color 0.2s ease;
-}
-
-.manager-contact-options a:hover {
-    color: #005a87;
-    text-decoration: underline;
-}
-
-/* WhatsApp кнопка */
-.manager-contact-options a[href*="wa.me"] {
-    display: inline-block;
-    background: linear-gradient(135deg, #25D366 0%, #20b954 100%);
-    color: white !important;
-    padding: 10px 20px;
-    border-radius: 25px;
-    text-decoration: none !important;
-    font-weight: 600;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 4px rgba(37, 211, 102, 0.2);
-}
-
-.manager-contact-options a[href*="wa.me"]:hover {
-    background: linear-gradient(135deg, #20b954 0%, #1da64a 100%);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(37, 211, 102, 0.3);
-    color: white !important;
-}
-
-/* Телефонная ссылка */
-.manager-contact-options a[href^="tel:"] {
-    font-size: 18px;
-    font-weight: bold;
-    color: #007cba !important;
-}
-
-/* Блок с часами работы */
-.manager-contact-options > div:last-child {
-    background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%);
-    border-left: 4px solid #007cba;
+    margin-right: 5px;
 }
 
 /* Адаптивные стили */
 @media (max-width: 768px) {
-    .manager-contact-section > div:first-child {
+    .delivery-manager-section > div:first-child {
         flex-direction: column;
         text-align: center;
-        gap: 20px;
+        gap: 10px;
     }
     
-    #manager-modal > div {
-        margin: 20px;
-        width: calc(100% - 40px);
-        padding: 20px;
-    }
-    
-    #contact-manager-btn {
+    #discuss-delivery-btn {
         width: 100%;
-        padding: 15px 20px;
-        font-size: 18px;
-    }
-    
-    .manager-contact-section h3 {
-        font-size: 16px;
-    }
-    
-    .manager-contact-options a[href*="wa.me"] {
-        display: block;
-        text-align: center;
-        margin: 10px 0;
-    }
-}
-
-@media (max-width: 480px) {
-    .manager-contact-section {
-        padding: 15px;
-        margin-bottom: 20px;
-    }
-    
-    #manager-modal > div {
-        margin: 10px;
-        width: calc(100% - 20px);
-        padding: 15px;
-    }
-    
-    .manager-contact-options > div {
-        padding: 12px;
+        padding: 10px 16px;
     }
 }
 
@@ -320,19 +115,119 @@
     box-shadow: 0 0 0 3px rgba(0, 123, 186, 0.1);
 }
 
-/* Анимация загрузки */
-.processing::after {
+/* Анимации */
+.form-row {
+    transition: transform 0.2s ease;
+}
+
+.form-row:focus-within {
+    transform: scale(1.01);
+}
+
+/* Индикатор загрузки */
+.woocommerce-checkout .blockUI.blockOverlay {
+    background: rgba(255, 255, 255, 0.8) !important;
+}
+
+.woocommerce-checkout .blockUI.blockOverlay:before {
     content: '';
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    border: 2px solid #ffffff;
+    display: block;
+    width: 40px;
+    height: 40px;
+    border: 4px solid #007cba;
     border-radius: 50%;
     border-top-color: transparent;
     animation: spin 1s ease-in-out infinite;
-    margin-left: 10px;
+    margin: 50px auto;
 }
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+/* СДЭК блоки информации */
+#product-dimensions-info {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+#product-dimensions-info h4 {
+    color: #007cba;
+    margin-top: 0;
+    font-size: 18px;
+}
+
+.product-dimensions {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    padding: 12px;
+    margin-bottom: 10px;
+}
+
+.product-dimensions strong {
+    color: #333;
+    font-size: 16px;
+}
+
+/* Мобильная адаптация */
+@media (max-width: 480px) {
+    .woocommerce-checkout {
+        padding: 15px;
+        border-radius: 5px;
+    }
+    
+    .delivery-manager-section {
+        padding: 12px;
+    }
+    
+    .woocommerce-checkout .button.alt {
+        width: 100%;
+        padding: 12px 20px;
+    }
+    
+    #product-dimensions-info {
+        padding: 15px;
+    }
+}
+
+/* Улучшения UX */
+.woocommerce-checkout input.valid {
+    border-color: #28a745 !important;
+    box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.1) !important;
+}
+
+.woocommerce-checkout input.error {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1) !important;
+}
+
+/* Сообщения об ошибках */
+.woocommerce-error,
+.woocommerce-message,
+.woocommerce-info {
+    border-radius: 5px;
+    padding: 12px 15px;
+    margin-bottom: 20px;
+}
+
+.woocommerce-error {
+    background: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24;
+}
+
+.woocommerce-message {
+    background: #d4edda;
+    border-color: #c3e6cb;
+    color: #155724;
+}
+
+.woocommerce-info {
+    background: #d1ecf1;
+    border-color: #bee5eb;
+    color: #0c5460;
 }

@@ -45,9 +45,7 @@ class CdekDeliveryPlugin {
         add_shortcode('classic_checkout', array($this, 'classic_checkout_shortcode'));
         add_action('woocommerce_checkout_before_customer_details', array($this, 'add_manager_button'));
         
-        // AJAX обработчик для кнопки менеджера
-        add_action('wp_ajax_contact_manager', array($this, 'ajax_contact_manager'));
-        add_action('wp_ajax_nopriv_contact_manager', array($this, 'ajax_contact_manager'));
+
         
         // Новое поле для выбора менеджера доставки (для блочного чекаута)
         add_action('woocommerce_init', array($this, 'register_delivery_manager_field'));
@@ -77,6 +75,10 @@ class CdekDeliveryPlugin {
         
         // Отображение информации о пункте выдачи в админке
         add_action('woocommerce_admin_order_data_after_shipping_address', array($this, 'display_cdek_point_in_admin'));
+        
+        // Отправка уведомлений о новых заказах в админку
+        add_action('woocommerce_new_order', array($this, 'send_order_notification_to_admin'));
+        add_action('woocommerce_checkout_order_processed', array($this, 'send_order_email_to_admin'));
         
         // AJAX для проверки подключения
         add_action('wp_ajax_test_cdek_connection', array($this, 'ajax_test_cdek_connection'));
@@ -1071,194 +1073,236 @@ class CdekAPI {
     }
     
     /**
-     * Добавляет кнопку "Менеджер" в форму checkout
+     * Добавляет кнопку "Обсудить доставку с менеджером" в форму checkout
      */
     public function add_manager_button() {
         ?>
-        <div class="manager-contact-section" style="margin-bottom: 30px; padding: 20px; background: #f8f9fa; border: 2px solid #007cba; border-radius: 8px;">
+        <div class="delivery-manager-section" style="margin-bottom: 20px; padding: 15px; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 5px;">
             <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 250px;">
-                    <h3 style="margin: 0 0 10px 0; color: #007cba; font-size: 18px;">
-                        <span class="dashicons dashicons-businessman" style="font-size: 20px; margin-right: 8px;"></span>
-                        Нужна помощь с заказом?
-                    </h3>
-                    <p style="margin: 0; color: #666; font-size: 14px;">
-                        Наш менеджер поможет вам оформить заказ и ответит на все вопросы
+                <div style="flex: 1;">
+                    <h4 style="margin: 0 0 5px 0; color: #856404; font-size: 16px;">
+                        <span class="dashicons dashicons-email-alt" style="margin-right: 5px;"></span>
+                        Нужна консультация по доставке?
+                    </h4>
+                    <p style="margin: 0; color: #856404; font-size: 13px;">
+                        Наш менеджер поможет выбрать оптимальный способ доставки
                     </p>
                 </div>
                 <div>
-                    <button type="button" id="contact-manager-btn" class="button alt" style="
-                        background: #007cba; 
+                    <button type="button" id="discuss-delivery-btn" class="button" style="
+                        background: #856404; 
                         color: white; 
-                        padding: 12px 24px; 
+                        padding: 8px 16px; 
                         border: none; 
-                        border-radius: 5px; 
-                        font-size: 16px; 
-                        font-weight: bold; 
+                        border-radius: 3px; 
+                        font-size: 14px; 
                         cursor: pointer;
-                        transition: background-color 0.3s ease;
-                    ">
-                        <span class="dashicons dashicons-phone" style="margin-right: 5px;"></span>
-                        Связаться с менеджером
+                    " onclick="window.location.href='mailto:manager@dobriytravnik.ru?subject=Консультация по доставке заказа'">
+                        Обсудить доставку с менеджером
                     </button>
                 </div>
             </div>
         </div>
         
-        <!-- Модальное окно для связи с менеджером -->
-        <div id="manager-modal" style="
-            display: none; 
-            position: fixed; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            height: 100%; 
-            background: rgba(0,0,0,0.7); 
-            z-index: 9999;
-            justify-content: center;
-            align-items: center;
-        ">
-            <div style="
-                background: white; 
-                padding: 30px; 
-                border-radius: 10px; 
-                max-width: 500px; 
-                width: 90%; 
-                max-height: 80vh; 
-                overflow-y: auto;
-            ">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h3 style="margin: 0; color: #007cba;">Связаться с менеджером</h3>
-                    <button type="button" id="close-manager-modal" style="
-                        background: none; 
-                        border: none; 
-                        font-size: 24px; 
-                        cursor: pointer; 
-                        color: #999;
-                    ">&times;</button>
-                </div>
-                
-                <div class="manager-contact-options">
-                    <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
-                        <h4 style="margin: 0 0 10px 0; color: #333;">📞 Телефон</h4>
-                        <p style="margin: 0; font-size: 18px; font-weight: bold; color: #007cba;">
-                            <a href="tel:+78001234567" style="color: #007cba; text-decoration: none;">+7 (800) 123-45-67</a>
-                        </p>
-                        <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">Бесплатно по России</p>
-                    </div>
-                    
-                    <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
-                        <h4 style="margin: 0 0 10px 0; color: #333;">💬 WhatsApp</h4>
-                        <p style="margin: 0;">
-                            <a href="https://wa.me/78001234567" target="_blank" style="
-                                display: inline-block; 
-                                background: #25D366; 
-                                color: white; 
-                                padding: 10px 20px; 
-                                border-radius: 5px; 
-                                text-decoration: none; 
-                                font-weight: bold;
-                            ">Написать в WhatsApp</a>
-                        </p>
-                    </div>
-                    
-                    <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
-                        <h4 style="margin: 0 0 10px 0; color: #333;">📧 Email</h4>
-                        <p style="margin: 0;">
-                            <a href="mailto:manager@dobriytravnik.ru" style="color: #007cba; text-decoration: none;">
-                                manager@dobriytravnik.ru
-                            </a>
-                        </p>
-                    </div>
-                    
-                    <div style="padding: 15px; background: #e8f4f8; border-radius: 5px; border-left: 4px solid #007cba;">
-                        <p style="margin: 0; font-size: 14px; color: #333;">
-                            <strong>Часы работы:</strong><br>
-                            Пн-Пт: 9:00 - 18:00<br>
-                            Сб-Вс: 10:00 - 16:00
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <script>
-        jQuery(document).ready(function($) {
-            // Обработчик кнопки "Связаться с менеджером"
-            $('#contact-manager-btn').on('click', function() {
-                $('#manager-modal').css('display', 'flex');
-                $('body').css('overflow', 'hidden');
-            });
-            
-            // Закрытие модального окна
-            $('#close-manager-modal, #manager-modal').on('click', function(e) {
-                if (e.target === this) {
-                    $('#manager-modal').hide();
-                    $('body').css('overflow', 'auto');
-                }
-            });
-            
-            // Эффект hover для кнопки
-            $('#contact-manager-btn').hover(
-                function() { $(this).css('background', '#005a87'); },
-                function() { $(this).css('background', '#007cba'); }
-            );
-        });
-        </script>
-        
         <style>
-        .manager-contact-section .dashicons {
+        .delivery-manager-section .dashicons {
             vertical-align: middle;
+            font-size: 16px;
+        }
+        
+        #discuss-delivery-btn:hover {
+            background: #6c5206 !important;
         }
         
         @media (max-width: 768px) {
-            .manager-contact-section > div {
+            .delivery-manager-section > div {
                 flex-direction: column;
                 text-align: center;
+                gap: 10px;
             }
             
-            #manager-modal > div {
-                margin: 20px;
-                width: calc(100% - 40px);
+            #discuss-delivery-btn {
+                width: 100%;
+                padding: 10px 16px;
             }
         }
-        </style>
+                </style>
         <?php
     }
     
     /**
-     * AJAX обработчик для контакта с менеджером
+     * Отправка уведомления администратору о новом заказе
      */
-    public function ajax_contact_manager() {
-        // Проверка nonce для безопасности
-        if (!wp_verify_nonce($_POST['nonce'], 'contact_manager_nonce')) {
-            wp_die('Ошибка безопасности');
-        }
+    public function send_order_notification_to_admin($order_id) {
+        $order = wc_get_order($order_id);
+        if (!$order) return;
         
-        $contact_type = sanitize_text_field($_POST['contact_type']);
-        $customer_data = array();
+        $admin_email = get_option('admin_email');
+        $site_name = get_bloginfo('name');
         
-        // Собираем данные клиента если они есть
-        if (isset($_POST['customer_name'])) {
-            $customer_data['name'] = sanitize_text_field($_POST['customer_name']);
-        }
-        if (isset($_POST['customer_phone'])) {
-            $customer_data['phone'] = sanitize_text_field($_POST['customer_phone']);
-        }
-        if (isset($_POST['customer_email'])) {
-            $customer_data['email'] = sanitize_email($_POST['customer_email']);
-        }
+        $subject = sprintf('[%s] Новый заказ #%s', $site_name, $order->get_order_number());
         
-        // Логируем обращение к менеджеру
-        error_log('Клиент запросил связь с менеджером: ' . $contact_type . ', данные: ' . json_encode($customer_data));
+        $message = $this->format_order_email($order);
         
-        // Здесь можно добавить отправку уведомления менеджеру
-        // Например, email или запись в БД
+        $headers = array(
+            'Content-Type: text/html; charset=UTF-8',
+            'From: ' . $site_name . ' <' . $admin_email . '>'
+        );
         
-        wp_send_json_success(array(
-            'message' => 'Ваш запрос принят. Менеджер свяжется с вами в ближайшее время.'
-        ));
+        wp_mail($admin_email, $subject, $message, $headers);
+        
+        // Логируем отправку
+        error_log('Отправлено уведомление администратору о заказе #' . $order_id);
     }
+    
+    /**
+     * Дополнительная отправка email после обработки checkout
+     */
+    public function send_order_email_to_admin($order_id) {
+        $order = wc_get_order($order_id);
+        if (!$order) return;
+        
+        // Отправляем дополнительное уведомление с полной информацией
+        $this->send_detailed_order_email($order);
+    }
+    
+    /**
+     * Отправка детального уведомления о заказе
+     */
+    private function send_detailed_order_email($order) {
+        $admin_email = get_option('admin_email');
+        $site_name = get_bloginfo('name');
+        
+        $subject = sprintf('[%s] Подробности заказа #%s - СДЭК Доставка', $site_name, $order->get_order_number());
+        
+        $message = $this->format_detailed_order_email($order);
+        
+        $headers = array(
+            'Content-Type: text/html; charset=UTF-8',
+            'From: ' . $site_name . ' <' . $admin_email . '>',
+            'Reply-To: ' . $order->get_billing_email()
+        );
+        
+        wp_mail($admin_email, $subject, $message, $headers);
+    }
+    
+    /**
+     * Форматирование email с информацией о заказе
+     */
+    private function format_order_email($order) {
+        $order_date = $order->get_date_created()->date('d.m.Y H:i');
+        $order_total = $order->get_formatted_order_total();
+        
+        $html = '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">';
+        $html .= '<h2 style="color: #007cba; border-bottom: 2px solid #007cba; padding-bottom: 10px;">Новый заказ #' . $order->get_order_number() . '</h2>';
+        
+        // Информация о заказе
+        $html .= '<div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">';
+        $html .= '<h3 style="margin-top: 0; color: #333;">Основная информация</h3>';
+        $html .= '<p><strong>Дата заказа:</strong> ' . $order_date . '</p>';
+        $html .= '<p><strong>Сумма заказа:</strong> ' . $order_total . '</p>';
+        $html .= '<p><strong>Статус:</strong> ' . wc_get_order_status_name($order->get_status()) . '</p>';
+        $html .= '</div>';
+        
+        // Информация о клиенте
+        $html .= '<div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0;">';
+        $html .= '<h3 style="margin-top: 0; color: #856404;">Информация о клиенте</h3>';
+        $html .= '<p><strong>Имя:</strong> ' . $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() . '</p>';
+        $html .= '<p><strong>Email:</strong> <a href="mailto:' . $order->get_billing_email() . '">' . $order->get_billing_email() . '</a></p>';
+        if ($order->get_billing_phone()) {
+            $html .= '<p><strong>Телефон:</strong> <a href="tel:' . $order->get_billing_phone() . '">' . $order->get_billing_phone() . '</a></p>';
+        }
+        $html .= '</div>';
+        
+        // Адрес доставки
+        $html .= '<div style="background: #e8f4f8; padding: 15px; border-radius: 5px; margin: 15px 0;">';
+        $html .= '<h3 style="margin-top: 0; color: #007cba;">Адрес доставки</h3>';
+        $shipping_address = $order->get_formatted_shipping_address();
+        if ($shipping_address) {
+            $html .= '<p>' . nl2br($shipping_address) . '</p>';
+        } else {
+            $html .= '<p>' . nl2br($order->get_formatted_billing_address()) . '</p>';
+        }
+        $html .= '</div>';
+        
+        // Товары в заказе
+        $html .= '<div style="background: #ffffff; padding: 15px; border: 1px solid #dee2e6; border-radius: 5px; margin: 15px 0;">';
+        $html .= '<h3 style="margin-top: 0; color: #333;">Товары в заказе</h3>';
+        $html .= '<table style="width: 100%; border-collapse: collapse;">';
+        $html .= '<thead>';
+        $html .= '<tr style="background: #f8f9fa;">';
+        $html .= '<th style="padding: 10px; text-align: left; border-bottom: 1px solid #dee2e6;">Товар</th>';
+        $html .= '<th style="padding: 10px; text-align: center; border-bottom: 1px solid #dee2e6;">Кол-во</th>';
+        $html .= '<th style="padding: 10px; text-align: right; border-bottom: 1px solid #dee2e6;">Цена</th>';
+        $html .= '</tr>';
+        $html .= '</thead>';
+        $html .= '<tbody>';
+        
+        foreach ($order->get_items() as $item) {
+            $product = $item->get_product();
+            $html .= '<tr>';
+            $html .= '<td style="padding: 10px; border-bottom: 1px solid #eee;">' . $item->get_name() . '</td>';
+            $html .= '<td style="padding: 10px; text-align: center; border-bottom: 1px solid #eee;">' . $item->get_quantity() . '</td>';
+            $html .= '<td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;">' . wc_price($item->get_total()) . '</td>';
+            $html .= '</tr>';
+        }
+        
+        $html .= '</tbody>';
+        $html .= '</table>';
+        $html .= '</div>';
+        
+        // Примечания к заказу
+        $customer_note = $order->get_customer_note();
+        if ($customer_note) {
+            $html .= '<div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0;">';
+            $html .= '<h3 style="margin-top: 0; color: #856404;">Примечания клиента</h3>';
+            $html .= '<p>' . nl2br(esc_html($customer_note)) . '</p>';
+            $html .= '</div>';
+        }
+        
+        $html .= '<div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6;">';
+        $html .= '<p style="color: #666; font-size: 14px;">Для управления заказом перейдите в <a href="' . admin_url('post.php?post=' . $order->get_id() . '&action=edit') . '">админку WooCommerce</a></p>';
+        $html .= '</div>';
+        
+        $html .= '</div>';
+        
+        return $html;
+    }
+    
+    /**
+     * Форматирование детального email с СДЭК информацией
+     */
+    private function format_detailed_order_email($order) {
+        $html = $this->format_order_email($order);
+        
+        // Добавляем информацию о СДЭК доставке
+        $cdek_point = get_post_meta($order->get_id(), '_cdek_point_data', true);
+        if ($cdek_point) {
+            $cdek_html = '<div style="background: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745;">';
+            $cdek_html .= '<h3 style="margin-top: 0; color: #155724;">Информация о доставке СДЭК</h3>';
+            
+            if (isset($cdek_point['name'])) {
+                $cdek_html .= '<p><strong>Пункт выдачи:</strong> ' . esc_html($cdek_point['name']) . '</p>';
+            }
+            if (isset($cdek_point['address'])) {
+                $cdek_html .= '<p><strong>Адрес:</strong> ' . esc_html($cdek_point['address']) . '</p>';
+            }
+            if (isset($cdek_point['code'])) {
+                $cdek_html .= '<p><strong>Код пункта:</strong> ' . esc_html($cdek_point['code']) . '</p>';
+            }
+            if (isset($cdek_point['work_time'])) {
+                $cdek_html .= '<p><strong>Режим работы:</strong> ' . esc_html($cdek_point['work_time']) . '</p>';
+            }
+            
+            $cdek_html .= '</div>';
+            
+            // Вставляем информацию о СДЭК после адреса доставки
+            $html = str_replace('</div>', $cdek_html . '</div>', $html);
+        }
+        
+        return $html;
+    }
+ 
 }
 
 // Инициализация плагина

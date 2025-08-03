@@ -216,22 +216,14 @@ class CdekDeliveryPlugin {
         $cost_data = $cdek_api->calculate_delivery_cost_to_point($point_code, $point_data, $cart_weight, $cart_dimensions, $cart_value, $has_real_dimensions);
         
         if ($cost_data && isset($cost_data['delivery_sum']) && $cost_data['delivery_sum'] > 0) {
-            // Убедимся что передаем флаг успешного API расчета
+            // Только API расчет, никаких fallback
             $cost_data['api_success'] = true;
-            $cost_data['fallback'] = false;
-            
             wp_send_json_success($cost_data);
         } else {
-            // НЕТ РЕЗЕРВНОГО РАСЧЕТА! Возвращаем ошибку
+            // Только API, без резервных расчетов
             wp_send_json_error(array(
                 'message' => 'API СДЭК недоступен, расчет стоимости невозможен',
-                'api_response' => $cost_data,
-                'debug_info' => array(
-                    'point_code' => $point_code,
-                    'cart_weight' => $cart_weight,
-                    'cart_value' => $cart_value,
-                    'cart_dimensions' => $cart_dimensions
-                )
+                'api_response' => $cost_data
             ));
         }
     }
@@ -482,14 +474,14 @@ class CdekDeliveryPlugin {
     public function add_cdek_map_alternative_position() {
         // Показываем карту только если выбран метод доставки СДЭК
         ?>
-        <div id="cdek-map-wrapper" style="display: none;">
+        <div id="cdek-map-wrapper" style="display: block !important;">
             <?php echo $this->render_cdek_map_html(); ?>
         </div>
         
         <script>
         jQuery(document).ready(function($) {
-            // Изначально скрываем карту
-            $('#cdek-map-wrapper').hide();
+            // Всегда показываем карту СДЭК
+            $('#cdek-map-wrapper').show();
             
             // Показываем карту при выборе СДЭК доставки
             $('body').on('change', 'input[name^="shipping_method"]', function() {
@@ -506,7 +498,8 @@ class CdekDeliveryPlugin {
                 }
             });
             
-            // Проверяем при загрузке страницы
+            // Проверяем при загрузке страницы и всегда показываем карту
+            $('#cdek-map-wrapper').show();
             $('input[name^="shipping_method"]:checked').each(function() {
                 if ($(this).val().indexOf('cdek_delivery') !== -1) {
                     $('#cdek-map-wrapper').show();
@@ -518,6 +511,13 @@ class CdekDeliveryPlugin {
                     }, 300);
                 }
             });
+            
+            // Принудительно инициализируем карту через 1 секунду
+            setTimeout(function() {
+                if (typeof window.initCdekDelivery === 'function') {
+                    window.initCdekDelivery();
+                }
+            }, 1000);
         });
         </script>
         <?php
@@ -644,13 +644,15 @@ class CdekDeliveryPlugin {
             ?>
             <style>
             /* Стили для классического чекаута СДЭК */
-            #cdek-map-container, #cdek-map-fallback-wrapper {
+            #cdek-map-container, #cdek-map-fallback-wrapper, #cdek-map-wrapper {
                 margin: 20px 0;
                 padding: 15px;
                 background: #f9f9f9;
                 border: 1px solid #ddd;
                 border-radius: 8px;
                 display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
             }
             
             /* Принудительно показываем карту */
@@ -877,11 +879,9 @@ class CdekAPI {
         
         error_log('СДЭК API: Поиск пунктов для города: ' . $city);
         
-        // Параметры запроса с фильтрацией по городу
+        // Параметры запроса с фильтрацией по городу - БЕЗ ОГРАНИЧЕНИЙ
         $params = array(
-            'country_code' => 'RU',
-            'size' => 5000,
-            'page' => 0
+            'country_code' => 'RU'
         );
         
         // Добавляем город для фильтрации

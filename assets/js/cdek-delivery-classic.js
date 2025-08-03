@@ -294,13 +294,13 @@ jQuery(document).ready(function($) {
         
         if (typeof cdek_ajax === 'undefined' || !cdek_ajax.ajax_url) {
             console.error('CDEK AJAX не инициализирован');
-            callback(calculateFallbackCost(point, cartData));
+            callback(0);
             return;
         }
         
         if (!point || !point.code) {
             console.error('Не указан пункт выдачи или его код');
-            callback(calculateFallbackCost(point, cartData));
+            callback(0);
             return;
         }
         
@@ -333,9 +333,8 @@ jQuery(document).ready(function($) {
                     
                     callback(deliveryCost);
                 } else {
-                    var fallbackCost = calculateFallbackCost(point, cartData);
-                    console.log('🔄 Используем резервный расчет стоимости:', fallbackCost, 'руб.');
-                    callback(fallbackCost);
+                    console.log('❌ API СДЭК не вернул стоимость');
+                    callback(0);
                 }
             },
             error: function(xhr, status, error) {
@@ -344,47 +343,13 @@ jQuery(document).ready(function($) {
                     error: error
                 });
                 
-                var fallbackCost = calculateFallbackCost(point, cartData);
-                console.log('🔄 Используем резервный расчет стоимости:', fallbackCost, 'руб.');
-                callback(fallbackCost);
+                console.log('❌ Расчет стоимости невозможен');
+                callback(0);
             }
         });
     }
     
-    function calculateFallbackCost(point, cartData) {
-        var baseCost = 350; // Базовая стоимость
-        
-        if (!cartData) {
-            return baseCost;
-        }
-        
-        // Надбавка за вес
-        if (cartData.weight > 500) {
-            var extraWeight = Math.ceil((cartData.weight - 500) / 500);
-            baseCost += extraWeight * 40;
-        }
-        
-        // Надбавка за габариты
-        if (cartData.hasRealDimensions && cartData.dimensions) {
-            var volume = cartData.dimensions.length * cartData.dimensions.width * cartData.dimensions.height;
-            if (volume > 12000) {
-                var extraVolume = Math.ceil((volume - 12000) / 6000);
-                baseCost += extraVolume * 60;
-            }
-        }
-        
-        // Надбавка за стоимость
-        if (cartData.value > 3000) {
-            baseCost += Math.ceil((cartData.value - 3000) / 1000) * 25;
-        }
-        
-        // Умножаем на количество коробок
-        if (cartData.packagesCount > 1) {
-            baseCost = baseCost * cartData.packagesCount;
-        }
-        
-        return baseCost;
-    }
+    // Fallback расчеты удалены - используем только API СДЭК
     
     // ========== ФУНКЦИИ ДЛЯ РАБОТЫ С АДРЕСАМИ ==========
     
@@ -793,7 +758,7 @@ jQuery(document).ready(function($) {
         
         var html = '<h5 style="margin: 0 0 15px 0;">Доступные пункты выдачи:</h5>';
         
-        cdekPoints.slice(0, 10).forEach(function(point, index) {
+        cdekPoints.forEach(function(point, index) {
             var pointName = point.name || 'Пункт выдачи';
             var address = '';
             
@@ -946,16 +911,13 @@ jQuery(document).ready(function($) {
         
         console.log('📍 Отфильтровано пунктов:', filteredPoints.length);
         
-        var maxPoints = 100;
-        var pointsToShow = filteredPoints.slice(0, maxPoints);
+        // ПОКАЗЫВАЕМ ВСЕ ПУНКТЫ БЕЗ ОГРАНИЧЕНИЙ
+        var pointsToShow = filteredPoints;
         
         var pointsInfo = '';
         if (filteredPoints.length > 0) {
             var locationInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
             pointsInfo = `Найдено ${filteredPoints.length} пунктов выдачи${locationInfo}`;
-            if (filteredPoints.length > maxPoints) {
-                pointsInfo += ` (показано ${maxPoints})`;
-            }
         } else {
             var locationInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
             pointsInfo = `Пункты выдачи не найдены${locationInfo}`;
@@ -1041,7 +1003,7 @@ jQuery(document).ready(function($) {
         }
         
         var html = '';
-        points.slice(0, 10).forEach(function(point, index) {
+        points.forEach(function(point, index) {
             var pointName = point.name || 'Пункт выдачи';
             var address = '';
             
@@ -1491,19 +1453,17 @@ jQuery(document).ready(function($) {
             }
         });
         
-        // Если карта видна или СДЭК выбран, инициализируем
-        if ($('#cdek-map-wrapper').is(':visible') || cdekSelected) {
-            $('#cdek-map-container, #cdek-map-wrapper').show();
-            
-            // Принудительно показываем карту
-            $('#cdek-map').css({
-                'display': 'block !important',
-                'visibility': 'visible !important',
-                'opacity': '1 !important'
-            });
-            
-            debouncer.debounce('init-cdek-load', () => initCdekDelivery(), 500);
-        }
+        // ВСЕГДА показываем карту при загрузке
+        $('#cdek-map-container, #cdek-map-wrapper').show();
+        
+        // Принудительно показываем карту
+        $('#cdek-map').css({
+            'display': 'block !important',
+            'visibility': 'visible !important',
+            'opacity': '1 !important'
+        });
+        
+        debouncer.debounce('init-cdek-load', () => initCdekDelivery(), 500);
     });
     
     // Обновление чекаута при изменениях

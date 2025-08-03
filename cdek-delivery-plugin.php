@@ -72,6 +72,15 @@ class CdekDeliveryPlugin {
         // Отображение информации о пункте выдачи в админке
         add_action('woocommerce_admin_order_data_after_shipping_address', array($this, 'display_cdek_point_in_admin'));
         
+        // Отображение информации о доставке в письмах и личном кабинете
+        add_action('woocommerce_order_details_after_order_table', array($this, 'display_cdek_info_in_order_details'));
+        add_action('woocommerce_email_order_details', array($this, 'display_cdek_info_in_email'), 10, 4);
+        
+        // Хуки для трекинга статуса заказа СДЭК
+        add_action('woocommerce_order_status_changed', array($this, 'track_order_status_change'), 10, 4);
+        add_action('wp', array($this, 'schedule_cdek_status_check'));
+        add_action('cdek_check_order_status', array($this, 'check_cdek_order_status'));
+        
         // AJAX для проверки подключения
         add_action('wp_ajax_test_cdek_connection', array($this, 'ajax_test_cdek_connection'));
         
@@ -426,33 +435,463 @@ class CdekDeliveryPlugin {
     }
     
     public function save_cdek_point_data($order_id) {
-        if (isset($_POST['cdek_selected_point_code']) && !empty($_POST['cdek_selected_point_code'])) {
-            update_post_meta($order_id, '_cdek_point_code', sanitize_text_field($_POST['cdek_selected_point_code']));
+        // Сохраняем тип доставки
+        if (isset($_POST['cdek_delivery_type'])) {
+            $delivery_type = sanitize_text_field($_POST['cdek_delivery_type']);
+            update_post_meta($order_id, '_cdek_delivery_type', $delivery_type);
         }
         
-        if (isset($_POST['cdek_selected_point_data']) && !empty($_POST['cdek_selected_point_data'])) {
-            $point_data = json_decode(stripslashes($_POST['cdek_selected_point_data']), true);
-            if ($point_data) {
-                update_post_meta($order_id, '_cdek_point_data', $point_data);
+        // Сохраняем данные пункта выдачи только для доставки СДЭК
+        $delivery_type = isset($_POST['cdek_delivery_type']) ? $_POST['cdek_delivery_type'] : 'cdek';
+        
+        if ($delivery_type === 'cdek') {
+            if (isset($_POST['cdek_selected_point_code']) && !empty($_POST['cdek_selected_point_code'])) {
+                update_post_meta($order_id, '_cdek_point_code', sanitize_text_field($_POST['cdek_selected_point_code']));
+            }
+            
+            if (isset($_POST['cdek_selected_point_data']) && !empty($_POST['cdek_selected_point_data'])) {
+                $point_data = json_decode(stripslashes($_POST['cdek_selected_point_data']), true);
+                if ($point_data) {
+                    update_post_meta($order_id, '_cdek_point_data', $point_data);
+                }
             }
         }
     }
 
     public function display_cdek_point_in_admin($order) {
+        $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
         $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
         $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
         
-        if ($point_code && $point_data) {
-            echo '<div class="cdek-point-info" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;">';
-            echo '<h4>Пункт выдачи СДЭК:</h4>';
-            echo '<strong>' . esc_html($point_data['name']) . '</strong><br>';
-            echo 'Код: ' . esc_html($point_code) . '<br>';
-            echo 'Адрес: ' . esc_html($point_data['location']['address_full']) . '<br>';
-            if (isset($point_data['phone'])) {
-                echo 'Телефон: ' . esc_html($point_data['phone']) . '<br>';
+        // Показываем информацию о доставке в зависимости от типа
+        if ($delivery_type) {
+            echo '<div class="cdek-delivery-info" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;">';
+            echo '<h4>Информация о доставке:</h4>';
+            
+            switch ($delivery_type) {
+                case 'pickup':
+                    echo '<strong>📍 Самовывоз</strong><br>';
+                    echo 'Адрес: г.Саратов, ул. Осипова, д. 18а<br>';
+                    echo 'Стоимость: Бесплатно';
+                    break;
+                    
+                case 'manager':
+                    echo '<strong>📞 Обсудить доставку с менеджером</strong><br>';
+                    echo 'Стоимость: Бесплатно';
+                    break;
+                    
+                case 'cdek':
+                default:
+                    if ($point_code && $point_data) {
+                        echo '<strong>🚚 Пункт выдачи СДЭК:</strong><br>';
+                        echo '<strong>' . esc_html($point_data['name']) . '</strong><br>';
+                        echo 'Код: ' . esc_html($point_code) . '<br>';
+                        if (isset($point_data['location']['address_full'])) {
+                            echo 'Адрес: ' . esc_html($point_data['location']['address_full']) . '<br>';
+                        }
+                        if (isset($point_data['phones']) && is_array($point_data['phones']) && !empty($point_data['phones'])) {
+                            $phone_numbers = array();
+                            foreach ($point_data['phones'] as $phone) {
+                                if (is_array($phone) && isset($phone['number'])) {
+                                    $phone_numbers[] = $phone['number'];
+                                } else {
+                                    $phone_numbers[] = $phone;
+                                }
+                            }
+                            if (!empty($phone_numbers)) {
+                                echo 'Телефон: ' . esc_html(implode(', ', $phone_numbers)) . '<br>';
+                            }
+                        }
+                    } else {
+                        echo '<strong>🚚 Доставка СДЭК</strong><br>';
+                        echo 'Пункт выдачи не выбран';
+                    }
+                    break;
             }
+            
             echo '</div>';
         }
+    }
+    
+    /**
+     * Отображение информации о доставке в личном кабинете клиента
+     */
+    public function display_cdek_info_in_order_details($order) {
+        $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
+        $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
+        $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
+        
+        // Проверяем, что это заказ с доставкой СДЭК
+        $shipping_methods = $order->get_shipping_methods();
+        $is_cdek_order = false;
+        
+        foreach ($shipping_methods as $item_id => $item) {
+            if (strpos($item->get_method_id(), 'cdek_delivery') !== false) {
+                $is_cdek_order = true;
+                break;
+            }
+        }
+        
+        if (!$is_cdek_order || !$delivery_type) {
+            return;
+        }
+        
+        echo '<div class="cdek-delivery-details" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px;">';
+        echo '<h3>Информация о получении заказа</h3>';
+        
+        switch ($delivery_type) {
+            case 'pickup':
+                echo '<p><strong>📍 Самовывоз</strong></p>';
+                echo '<p>Адрес для самовывоза:<br><strong>г.Саратов, ул. Осипова, д. 18а</strong></p>';
+                echo '<p>Стоимость: <strong>Бесплатно</strong></p>';
+                echo '<p><em>Пожалуйста, свяжитесь с нами для уточнения времени получения заказа.</em></p>';
+                break;
+                
+            case 'manager':
+                echo '<p><strong>📞 Доставка по договоренности с менеджером</strong></p>';
+                echo '<p>Наш менеджер свяжется с вами для уточнения деталей доставки.</p>';
+                echo '<p>Стоимость: <strong>Бесплатно</strong></p>';
+                break;
+                
+            case 'cdek':
+            default:
+                if ($point_code && $point_data) {
+                    echo '<p><strong>🚚 Пункт выдачи СДЭК</strong></p>';
+                    echo '<div style="margin-left: 20px;">';
+                    echo '<p><strong>' . esc_html($point_data['name']) . '</strong></p>';
+                    echo '<p>Код пункта: <strong>' . esc_html($point_code) . '</strong></p>';
+                    
+                    if (isset($point_data['location']['address_full'])) {
+                        echo '<p>Адрес: ' . esc_html($point_data['location']['address_full']) . '</p>';
+                    }
+                    
+                    // Режим работы
+                    if (isset($point_data['work_time_list']) && is_array($point_data['work_time_list'])) {
+                        echo '<p><strong>Режим работы:</strong><br>';
+                        $days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+                        foreach ($point_data['work_time_list'] as $work_time) {
+                            if (isset($work_time['day']) && isset($work_time['time'])) {
+                                $day_index = intval($work_time['day']) - 1;
+                                if ($day_index >= 0 && $day_index < 7) {
+                                    echo $days[$day_index] . ': ' . esc_html($work_time['time']) . '<br>';
+                                }
+                            }
+                        }
+                        echo '</p>';
+                    }
+                    
+                    // Телефоны
+                    if (isset($point_data['phones']) && is_array($point_data['phones']) && !empty($point_data['phones'])) {
+                        $phone_numbers = array();
+                        foreach ($point_data['phones'] as $phone) {
+                            if (is_array($phone) && isset($phone['number'])) {
+                                $phone_numbers[] = $phone['number'];
+                            } else {
+                                $phone_numbers[] = $phone;
+                            }
+                        }
+                        if (!empty($phone_numbers)) {
+                            echo '<p>Телефон: ' . esc_html(implode(', ', $phone_numbers)) . '</p>';
+                        }
+                    }
+                    
+                    echo '</div>';
+                    echo '<p><em>Заказ будет доставлен в выбранный пункт выдачи. После прибытия вы получите SMS-уведомление.</em></p>';
+                } else {
+                    echo '<p><strong>🚚 Доставка СДЭК</strong></p>';
+                    echo '<p>Пункт выдачи: не выбран</p>';
+                }
+                break;
+        }
+        
+        echo '</div>';
+    }
+    
+    /**
+     * Отображение информации о доставке в email уведомлениях
+     */
+    public function display_cdek_info_in_email($order, $sent_to_admin, $plain_text, $email) {
+        // Не показываем админам
+        if ($sent_to_admin) {
+            return;
+        }
+        
+        $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
+        $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
+        $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
+        
+        // Проверяем, что это заказ с доставкой СДЭК
+        $shipping_methods = $order->get_shipping_methods();
+        $is_cdek_order = false;
+        
+        foreach ($shipping_methods as $item_id => $item) {
+            if (strpos($item->get_method_id(), 'cdek_delivery') !== false) {
+                $is_cdek_order = true;
+                break;
+            }
+        }
+        
+        if (!$is_cdek_order || !$delivery_type) {
+            return;
+        }
+        
+        if ($plain_text) {
+            // Версия для обычного текста
+            echo "\n" . "ИНФОРМАЦИЯ О ПОЛУЧЕНИИ ЗАКАЗА" . "\n";
+            echo str_repeat('-', 40) . "\n";
+            
+            switch ($delivery_type) {
+                case 'pickup':
+                    echo "Самовывоз" . "\n";
+                    echo "Адрес: г.Саратов, ул. Осипова, д. 18а" . "\n";
+                    echo "Стоимость: Бесплатно" . "\n";
+                    break;
+                    
+                case 'manager':
+                    echo "Доставка по договоренности с менеджером" . "\n";
+                    echo "Наш менеджер свяжется с вами для уточнения деталей доставки." . "\n";
+                    echo "Стоимость: Бесплатно" . "\n";
+                    break;
+                    
+                case 'cdek':
+                default:
+                    if ($point_code && $point_data) {
+                        echo "Пункт выдачи СДЭК" . "\n";
+                        echo "Название: " . $point_data['name'] . "\n";
+                        echo "Код пункта: " . $point_code . "\n";
+                        if (isset($point_data['location']['address_full'])) {
+                            echo "Адрес: " . $point_data['location']['address_full'] . "\n";
+                        }
+                    }
+                    break;
+            }
+            echo "\n";
+        } else {
+            // HTML версия
+            echo '<div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border: 1px solid #ddd;">';
+            echo '<h3 style="margin-top: 0;">Информация о получении заказа</h3>';
+            
+            switch ($delivery_type) {
+                case 'pickup':
+                    echo '<p><strong>📍 Самовывоз</strong></p>';
+                    echo '<p>Адрес: <strong>г.Саратов, ул. Осипова, д. 18а</strong></p>';
+                    echo '<p>Стоимость: <strong>Бесплатно</strong></p>';
+                    break;
+                    
+                case 'manager':
+                    echo '<p><strong>📞 Доставка по договоренности с менеджером</strong></p>';
+                    echo '<p>Наш менеджер свяжется с вами для уточнения деталей доставки.</p>';
+                    echo '<p>Стоимость: <strong>Бесплатно</strong></p>';
+                    break;
+                    
+                case 'cdek':
+                default:
+                    if ($point_code && $point_data) {
+                        echo '<p><strong>🚚 Пункт выдачи СДЭК</strong></p>';
+                        echo '<p><strong>' . esc_html($point_data['name']) . '</strong></p>';
+                        echo '<p>Код пункта: <strong>' . esc_html($point_code) . '</strong></p>';
+                        if (isset($point_data['location']['address_full'])) {
+                            echo '<p>Адрес: ' . esc_html($point_data['location']['address_full']) . '</p>';
+                        }
+                    }
+                    break;
+            }
+            
+            echo '</div>';
+        }
+    }
+    
+    /**
+     * Отслеживание изменения статуса заказа
+     */
+    public function track_order_status_change($order_id, $old_status, $new_status, $order) {
+        // Проверяем, что это заказ с доставкой СДЭК
+        $delivery_type = get_post_meta($order_id, '_cdek_delivery_type', true);
+        
+        if (!$delivery_type || $delivery_type !== 'cdek') {
+            return;
+        }
+        
+        error_log('СДЭК: Изменение статуса заказа #' . $order_id . ' с "' . $old_status . '" на "' . $new_status . '"');
+        
+        // Если заказ переводится в статус "обработка" или "завершен", создаем заказ в СДЭК
+        if ($new_status === 'processing' || $new_status === 'completed') {
+            $this->create_cdek_order($order);
+        }
+        
+        // Обновляем мета-данные заказа
+        update_post_meta($order_id, '_cdek_last_status_check', current_time('timestamp'));
+        update_post_meta($order_id, '_wc_order_status', $new_status);
+    }
+    
+    /**
+     * Планирование проверки статуса заказов СДЭК
+     */
+    public function schedule_cdek_status_check() {
+        if (!wp_next_scheduled('cdek_check_order_status')) {
+            wp_schedule_event(time(), 'hourly', 'cdek_check_order_status');
+        }
+    }
+    
+    /**
+     * Проверка статуса заказов СДЭК
+     */
+    public function check_cdek_order_status() {
+        // Получаем заказы со статусом "обработка" за последние 30 дней
+        $args = array(
+            'limit' => 50,
+            'status' => array('processing', 'on-hold'),
+            'date_created' => '>' . (time() - (30 * 24 * 60 * 60)),
+            'meta_query' => array(
+                array(
+                    'key' => '_cdek_delivery_type',
+                    'value' => 'cdek',
+                    'compare' => '='
+                )
+            )
+        );
+        
+        $orders = wc_get_orders($args);
+        
+        foreach ($orders as $order) {
+            $this->update_order_status_from_cdek($order);
+        }
+    }
+    
+    /**
+     * Создание заказа в СДЭК
+     */
+    private function create_cdek_order($order) {
+        $order_id = $order->get_id();
+        
+        // Проверяем, не создан ли уже заказ в СДЭК
+        $cdek_order_uuid = get_post_meta($order_id, '_cdek_order_uuid', true);
+        if (!empty($cdek_order_uuid)) {
+            error_log('СДЭК: Заказ #' . $order_id . ' уже создан в СДЭК с UUID: ' . $cdek_order_uuid);
+            return;
+        }
+        
+        $point_code = get_post_meta($order_id, '_cdek_point_code', true);
+        $point_data = get_post_meta($order_id, '_cdek_point_data', true);
+        
+        if (empty($point_code) || empty($point_data)) {
+            error_log('СДЭК: Нет данных о пункте выдачи для заказа #' . $order_id);
+            return;
+        }
+        
+        // Получаем данные товаров (это упрощенная версия, нужно доработать)
+        $packages = array();
+        foreach ($order->get_items() as $item) {
+            $product = $item->get_product();
+            if ($product) {
+                $packages[] = array(
+                    'number' => $item->get_id(),
+                    'weight' => intval($product->get_weight() * $item->get_quantity() * 1000), // в граммах
+                    'length' => intval($product->get_length() ?: 20),
+                    'width' => intval($product->get_width() ?: 15),
+                    'height' => intval($product->get_height() ?: 10),
+                    'comment' => $product->get_name()
+                );
+            }
+        }
+        
+        if (empty($packages)) {
+            error_log('СДЭК: Нет товаров для создания заказа #' . $order_id);
+            return;
+        }
+        
+        // Формируем данные заказа для API СДЭК
+        $order_data = array(
+            'number' => $order_id,
+            'tariff_code' => 136, // Пункт выдачи
+            'from_location' => array(
+                'code' => get_option('cdek_sender_city', '428') // Саратов
+            ),
+            'to_location' => array(
+                'code' => $point_code
+            ),
+            'packages' => $packages,
+            'recipient' => array(
+                'name' => $order->get_billing_first_name() . ' ' . $order->get_billing_last_name(),
+                'phones' => array(
+                    array('number' => $order->get_billing_phone())
+                )
+            ),
+            'sender' => array(
+                'name' => get_bloginfo('name')
+            )
+        );
+        
+        // Отправляем запрос в API СДЭК
+        $cdek_api = new CdekAPI();
+        $response = $cdek_api->create_order($order_data);
+        
+        if ($response && isset($response['entity']['uuid'])) {
+            $cdek_uuid = $response['entity']['uuid'];
+            update_post_meta($order_id, '_cdek_order_uuid', $cdek_uuid);
+            update_post_meta($order_id, '_cdek_order_created', current_time('timestamp'));
+            
+            // Добавляем заметку к заказу
+            $order->add_order_note('Заказ создан в СДЭК. UUID: ' . $cdek_uuid);
+            
+            error_log('СДЭК: Заказ #' . $order_id . ' успешно создан в СДЭК с UUID: ' . $cdek_uuid);
+        } else {
+            error_log('СДЭК: Ошибка создания заказа #' . $order_id . ' в СДЭК: ' . print_r($response, true));
+        }
+    }
+    
+    /**
+     * Обновление статуса заказа из СДЭК
+     */
+    private function update_order_status_from_cdek($order) {
+        $order_id = $order->get_id();
+        $cdek_uuid = get_post_meta($order_id, '_cdek_order_uuid', true);
+        
+        if (empty($cdek_uuid)) {
+            return;
+        }
+        
+        // Проверяем статус в СДЭК
+        $cdek_api = new CdekAPI();
+        $status_info = $cdek_api->get_order_status($cdek_uuid);
+        
+        if ($status_info && isset($status_info['statuses'])) {
+            $latest_status = end($status_info['statuses']);
+            $cdek_status_code = $latest_status['code'];
+            $cdek_status_name = $latest_status['name'];
+            
+            // Сопоставляем статусы СДЭК со статусами WooCommerce
+            $new_wc_status = $this->map_cdek_status_to_wc($cdek_status_code);
+            
+            if ($new_wc_status && $order->get_status() !== $new_wc_status) {
+                $order->update_status($new_wc_status, 'Статус обновлен из СДЭК: ' . $cdek_status_name);
+                
+                // Сохраняем информацию о статусе СДЭК
+                update_post_meta($order_id, '_cdek_status_code', $cdek_status_code);
+                update_post_meta($order_id, '_cdek_status_name', $cdek_status_name);
+                update_post_meta($order_id, '_cdek_last_status_update', current_time('timestamp'));
+                
+                error_log('СДЭК: Статус заказа #' . $order_id . ' обновлен на "' . $new_wc_status . '" (СДЭК: ' . $cdek_status_name . ')');
+            }
+        }
+    }
+    
+    /**
+     * Сопоставление статусов СДЭК со статусами WooCommerce
+     */
+    private function map_cdek_status_to_wc($cdek_status_code) {
+        $status_map = array(
+            'CREATED' => 'processing',           // Создан
+            'ACCEPTED' => 'processing',          // Принят
+            'READY_FOR_SHIPMENT' => 'processing', // Готов к отгрузке
+            'SENT' => 'processing',              // Отправлен
+            'IN_TRANSIT' => 'processing',        // В пути
+            'DELIVERED' => 'completed',          // Доставлен
+            'NOT_DELIVERED' => 'on-hold',        // Не доставлен
+            'CANCELED' => 'cancelled'            // Отменен
+        );
+        
+        return isset($status_map[$cdek_status_code]) ? $status_map[$cdek_status_code] : null;
     }
     
     public function ajax_test_cdek_connection() {
@@ -767,11 +1206,18 @@ class CdekDeliveryPlugin {
         }
         
         if ($is_cdek_selected) {
-            $point_code = isset($_POST['cdek_selected_point_code']) ? sanitize_text_field($_POST['cdek_selected_point_code']) : '';
+            // Получаем тип доставки
+            $delivery_type = isset($_POST['cdek_delivery_type']) ? sanitize_text_field($_POST['cdek_delivery_type']) : 'cdek';
             
-            if (empty($point_code)) {
-                wc_add_notice('Пожалуйста, выберите пункт выдачи СДЭК на карте или в списке.', 'error');
+            // Проверяем пункт выдачи только для доставки СДЭК, но НЕ для самовывоза и менеджера
+            if ($delivery_type === 'cdek') {
+                $point_code = isset($_POST['cdek_selected_point_code']) ? sanitize_text_field($_POST['cdek_selected_point_code']) : '';
+                
+                if (empty($point_code)) {
+                    wc_add_notice('Пожалуйста, выберите пункт выдачи СДЭК на карте или в списке.', 'error');
+                }
             }
+            // Для самовывоза (pickup) и менеджера (manager) валидация пункта не нужна
         }
     }
     
@@ -1275,15 +1721,37 @@ class CdekAPI {
             return;
         }
         
-        // Используем ТОЛЬКО переданные габариты без изменений
-        $packages = array(
-            array(
-                'weight' => intval($cart_weight), // Используем точный вес
-                'length' => intval($cart_dimensions['length']), // Используем точную длину
-                'width' => intval($cart_dimensions['width']), // Используем точную ширину  
-                'height' => intval($cart_dimensions['height']) // Используем точную высоту
-            )
-        );
+        // Получаем количество коробок
+        $packages_count = isset($_POST['packages_count']) ? intval($_POST['packages_count']) : 1;
+        
+        // Проверяем и корректируем количество коробок
+        if ($packages_count < 1) $packages_count = 1;
+        if ($packages_count > 10) $packages_count = 10; // Ограничиваем разумным количеством
+        
+        error_log('СДЭК расчет: Количество коробок: ' . $packages_count);
+        
+        // Создаем массив коробок
+        $packages = array();
+        
+        // Распределяем вес по коробкам
+        $weight_per_package = ceil($cart_weight / $packages_count);
+        
+        for ($i = 0; $i < $packages_count; $i++) {
+            // Для последней коробки корректируем вес
+            if ($i == $packages_count - 1) {
+                $remaining_weight = $cart_weight - ($weight_per_package * ($packages_count - 1));
+                $weight_per_package = max(100, $remaining_weight); // Минимум 100г на коробку
+            }
+            
+            $packages[] = array(
+                'weight' => intval($weight_per_package),
+                'length' => intval($cart_dimensions['length']),
+                'width' => intval($cart_dimensions['width']),
+                'height' => intval($cart_dimensions['height'])
+            );
+        }
+        
+        error_log('СДЭК расчет: Коробки: ' . print_r($packages, true));
         
         
         // Определяем тариф для доставки ИЗ САРАТОВА до пункта выдачи
@@ -1362,15 +1830,17 @@ class CdekAPI {
                     }
                 }
                 
-                // Пробуем альтернативный способ расчета
-                return $this->try_alternative_calculation($data, $token);
+                // Только API, без альтернативных расчетов
+                return false;
             } else {
                 
                 // Проверяем, есть ли warnings
                 if (isset($parsed_body['warnings']) && !empty($parsed_body['warnings'])) {
+                    error_log('⚠️ СДЭК API: Предупреждения в ответе: ' . print_r($parsed_body['warnings'], true));
                 }
                 
-                return $this->try_alternative_calculation($data, $token);
+                // Только API, без альтернативных расчетов
+                return false;
             }
         } else {
             if (!$parsed_body && $body) {
@@ -1381,64 +1851,7 @@ class CdekAPI {
         return false;
     }
     
-    private function try_alternative_calculation($original_data, $token) {
-        error_log('СДЭК расчет: Пробуем альтернативный метод расчета');
-        
-        // Попробуем разные тарифы ИЗ САРАТОВА
-        $alternative_tariffs = [136, 138, 233, 234]; // ПВЗ, Постамат, Эконом, Стандарт
-        
-        foreach ($alternative_tariffs as $tariff) {
-            $data = $original_data;
-            $data['tariff_code'] = $tariff;
-            
-            // Добавляем недостающие поля если их нет
-            if (!isset($data['date'])) {
-                $data['date'] = date('Y-m-d\TH:i:sO');
-            }
-            if (!isset($data['currency'])) {
-                $data['currency'] = 1; // RUB
-            }
-            if (!isset($data['lang'])) {
-                $data['lang'] = 'rus';
-            }
-            
-            // Упростим локацию - используем только город Москва если не указано
-            if (!isset($data['to_location']['code'])) {
-                $data['to_location'] = array('code' => 44); // Москва
-            }
-            
-            error_log('СДЭК расчет: Пробуем тариф ' . $tariff . ' с данными: ' . print_r($data, true));
-            
-            $response = wp_remote_post($this->base_url . '/calculator/tariff', array(
-                'headers' => array(
-                    'Authorization' => 'Bearer ' . $token,
-                    'Content-Type' => 'application/json'
-                ),
-                'body' => json_encode($data),
-                'timeout' => 30
-            ));
-            
-            if (!is_wp_error($response)) {
-                $response_code = wp_remote_retrieve_response_code($response);
-                if ($response_code === 200) {
-                    $body = json_decode(wp_remote_retrieve_body($response), true);
-                    if (isset($body['delivery_sum']) && $body['delivery_sum'] > 0) {
-                        error_log('СДЭК расчет: Альтернативный расчет успешен с тарифом ' . $tariff . ': ' . $body['delivery_sum']);
-                        return array(
-                            'delivery_sum' => intval($body['delivery_sum']),
-                            'period_min' => isset($body['period_min']) ? $body['period_min'] : null,
-                            'period_max' => isset($body['period_max']) ? $body['period_max'] : null,
-                            'api_success' => true,
-                            'alternative_tariff' => $tariff
-                        );
-                    }
-                }
-            }
-        }
-        
-        error_log('СДЭК расчет: Альтернативные методы не сработали');
-        return false;
-    }
+
     
     private function extract_city_from_address($address) {
         // Улучшенное извлечение города из адреса
@@ -1458,5 +1871,81 @@ class CdekAPI {
         $city = trim($parts[0]);
         
         return $city;
+    }
+    
+    /**
+     * Создание заказа в СДЭК
+     */
+    public function create_order($order_data) {
+        $token = $this->get_auth_token();
+        if (!$token) {
+            return false;
+        }
+        
+        error_log('СДЭК API: Создание заказа с данными: ' . print_r($order_data, true));
+        
+        $response = wp_remote_post($this->base_url . '/orders', array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type' => 'application/json'
+            ),
+            'body' => json_encode($order_data),
+            'timeout' => 30
+        ));
+        
+        if (!is_wp_error($response)) {
+            $response_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            
+            error_log('СДЭК API: Создание заказа - код ответа: ' . $response_code);
+            error_log('СДЭК API: Создание заказа - ответ: ' . $body);
+            
+            if ($response_code === 201 || $response_code === 200) {
+                $parsed_body = json_decode($body, true);
+                return $parsed_body;
+            } else {
+                error_log('СДЭК API: Ошибка создания заказа: ' . $body);
+                return false;
+            }
+        } else {
+            error_log('СДЭК API: HTTP ошибка при создании заказа: ' . $response->get_error_message());
+            return false;
+        }
+    }
+    
+    /**
+     * Получение статуса заказа из СДЭК
+     */
+    public function get_order_status($order_uuid) {
+        $token = $this->get_auth_token();
+        if (!$token) {
+            return false;
+        }
+        
+        $url = $this->base_url . '/orders/' . $order_uuid;
+        
+        $response = wp_remote_get($url, array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type' => 'application/json'
+            ),
+            'timeout' => 30
+        ));
+        
+        if (!is_wp_error($response)) {
+            $response_code = wp_remote_retrieve_response_code($response);
+            $body = wp_remote_retrieve_body($response);
+            
+            if ($response_code === 200) {
+                $parsed_body = json_decode($body, true);
+                return isset($parsed_body['entity']) ? $parsed_body['entity'] : $parsed_body;
+            } else {
+                error_log('СДЭК API: Ошибка получения статуса заказа: ' . $body);
+                return false;
+            }
+        } else {
+            error_log('СДЭК API: HTTP ошибка при получении статуса заказа: ' . $response->get_error_message());
+            return false;
+        }
     }
 }

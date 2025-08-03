@@ -333,66 +333,117 @@ jQuery(document).ready(function($) {
             value: cartValue,
             dimensions: dimensions,
             hasRealDimensions: hasValidDimensions,
-            packagesCount: packagesCount
+            packagesCount: dimensions.packagesCount || 1
         };
     }
     
     // Функция для расчета оптимального размера коробки на основе ТОЛЬКО реальных габаритов
     function calculateOptimalBoxSize(totalVolume, maxLength, maxWidth, maxHeight, totalItems) {
-        console.log('📦 Расчет коробки на основе реальных габаритов товаров');
+        console.log('📦 Расчет коробок для большого заказа');
         console.log('📏 Общий объем товаров:', totalVolume, 'см³');
         console.log('📏 Максимальные размеры:', {length: maxLength, width: maxWidth, height: maxHeight});
+        console.log('📦 Общее количество товаров:', totalItems);
         
-        // Добавляем 30% запас для упаковки
-        var packingVolume = totalVolume * 1.3;
+        // Добавляем 20% запас для упаковки (уменьшаем с 30% для больших заказов)
+        var packingVolume = totalVolume * 1.2;
         
-        // Стандартные коробки (длина x ширина x высота в см)
+        // Стандартные коробки СДЭК (длина x ширина x высота в см)
         var standardBoxes = [
-            { name: 'Маленькая', length: 20, width: 15, height: 10, volume: 3000 },
-            { name: 'Средняя', length: 30, width: 20, height: 15, volume: 9000 },
-            { name: 'Большая', length: 40, width: 30, height: 20, volume: 24000 },
-            { name: 'XL', length: 50, width: 40, height: 25, volume: 50000 },
-            { name: 'XXL', length: 60, width: 50, height: 30, volume: 90000 }
+            { name: 'S', length: 19, width: 17, height: 10, volume: 3230, maxWeight: 5000 },
+            { name: 'M', length: 24, width: 17, height: 10, volume: 4080, maxWeight: 5000 },
+            { name: 'L', length: 34, width: 24, height: 17, volume: 13872, maxWeight: 10000 },
+            { name: 'XL', length: 39, width: 27, height: 21, volume: 22113, maxWeight: 15000 },
+            { name: 'XXL', length: 60, width: 40, height: 35, volume: 84000, maxWeight: 30000 }
         ];
         
+        // Определяем количество коробок для больших заказов
+        var packagesCount = 1;
         var selectedBox = null;
         
-        // Находим подходящую коробку
-        for (var i = 0; i < standardBoxes.length; i++) {
-            var box = standardBoxes[i];
+        // Для больших заказов (более 200 товаров) используем множественные коробки
+        if (totalItems > 200) {
+            console.log('🚚 Большой заказ (' + totalItems + ' товаров), рассчитываем несколько коробок');
             
-            // Проверяем, что товары помещаются по размерам И по объему
-            var fitsSize = (maxLength <= box.length && maxWidth <= box.width && maxHeight <= box.height);
-            var fitsVolume = (packingVolume <= box.volume);
+            // Рассчитываем количество коробок исходя из объема
+            var maxBoxVolume = standardBoxes[standardBoxes.length - 1].volume; // Самая большая коробка
+            packagesCount = Math.ceil(packingVolume / maxBoxVolume);
             
-            console.log('🔍 Проверяем коробку ' + box.name + ':', {
-                fitsSize: fitsSize,
-                fitsVolume: fitsVolume,
-                requiredVolume: packingVolume,
-                boxVolume: box.volume
-            });
+            // Ограничиваем максимальное количество коробок для разумности
+            if (packagesCount > 10) {
+                packagesCount = 10;
+                console.log('⚠️ Ограничиваем количество коробок до 10');
+            }
             
-            if (fitsSize && fitsVolume) {
-                selectedBox = box;
-                break;
+            // Объем на одну коробку
+            var volumePerBox = packingVolume / packagesCount;
+            
+            console.log('📦 Планируем ' + packagesCount + ' коробок, объем на коробку: ' + Math.round(volumePerBox) + ' см³');
+            
+            // Находим подходящую коробку для нового объема
+            for (var i = 0; i < standardBoxes.length; i++) {
+                var box = standardBoxes[i];
+                
+                // Проверяем, что товары помещаются по размерам И по объему
+                var fitsSize = (maxLength <= box.length && maxWidth <= box.width && maxHeight <= box.height);
+                var fitsVolume = (volumePerBox <= box.volume);
+                
+                console.log('🔍 Проверяем коробку ' + box.name + ' для ' + packagesCount + ' коробок:', {
+                    fitsSize: fitsSize,
+                    fitsVolume: fitsVolume,
+                    requiredVolumePerBox: Math.round(volumePerBox),
+                    boxVolume: box.volume
+                });
+                
+                if (fitsSize && fitsVolume) {
+                    selectedBox = box;
+                    break;
+                }
+            }
+        } else {
+            // Для обычных заказов используем стандартную логику
+            for (var i = 0; i < standardBoxes.length; i++) {
+                var box = standardBoxes[i];
+                
+                var fitsSize = (maxLength <= box.length && maxWidth <= box.width && maxHeight <= box.height);
+                var fitsVolume = (packingVolume <= box.volume);
+                
+                console.log('🔍 Проверяем коробку ' + box.name + ':', {
+                    fitsSize: fitsSize,
+                    fitsVolume: fitsVolume,
+                    requiredVolume: Math.round(packingVolume),
+                    boxVolume: box.volume
+                });
+                
+                if (fitsSize && fitsVolume) {
+                    selectedBox = box;
+                    break;
+                }
             }
         }
         
         // Если не нашли подходящую коробку, берем самую большую
         if (!selectedBox) {
             selectedBox = standardBoxes[standardBoxes.length - 1];
-            console.log('⚠️ Товары не помещаются в стандартные коробки, используем максимальную');
+            console.log('⚠️ Используем максимальную коробку:', selectedBox.name);
         }
         
-        var dimensions = {
+        var result = {
             length: selectedBox.length,
             width: selectedBox.width,
-            height: selectedBox.height
+            height: selectedBox.height,
+            packagesCount: packagesCount,
+            boxName: selectedBox.name
         };
         
-        console.log('📦 Выбрана коробка:', selectedBox.name, dimensions);
+        console.log('📦 Итоговый план упаковки:', {
+            коробка: selectedBox.name,
+            размеры: result.length + '×' + result.width + '×' + result.height + ' см',
+            количество: packagesCount + ' шт.',
+            общий_объем: Math.round(totalVolume) + ' см³',
+            объем_с_упаковкой: Math.round(packingVolume) + ' см³'
+        });
         
-        return dimensions;
+        return result;
     }
     
     function calculateDeliveryCost(point, callback) {
@@ -1640,6 +1691,17 @@ jQuery(document).ready(function($) {
         }, 3000);
     }
     
+    // Функции для управления подсказкой СДЭК
+    function hideCdekHint() {
+        // Скрываем подсказку о выборе города
+        $('p:contains("Введите город в поле «Адрес» выше, затем выберите пункт выдачи")').hide();
+    }
+    
+    function showCdekHint() {
+        // Показываем подсказку о выборе города
+        $('p:contains("Введите город в поле «Адрес» выше, затем выберите пункт выдачи")').show();
+    }
+    
     // ========== ИНИЦИАЛИЗАЦИЯ ДЛЯ КЛАССИЧЕСКОГО ЧЕКАУТА ==========
     
     function initCdekDelivery() {
@@ -1688,6 +1750,7 @@ jQuery(document).ready(function($) {
         if (option === 'pickup') {
             // Самовывоз
             $('#cdek-delivery-content').hide();
+            hideCdekHint();
             clearSelectedPoint();
             updateShippingTextForPickup();
             $('#cdek-delivery-cost').val(0);
@@ -1695,6 +1758,7 @@ jQuery(document).ready(function($) {
         } else if (option === 'manager') {
             // Обсудить с менеджером
             $('#cdek-delivery-content').hide();
+            hideCdekHint();
             clearSelectedPoint();
             updateShippingTextForManager();
             $('#cdek-delivery-cost').val(0);
@@ -1702,6 +1766,7 @@ jQuery(document).ready(function($) {
         } else if (option === 'cdek') {
             // Доставка СДЭК
             $('#cdek-delivery-content').show();
+            showCdekHint();
             // Автоматически ищем пункты если город уже введен
             var currentAddress = $('#billing_address_1').val();
             if (currentAddress && currentAddress.length > 2) {
@@ -1716,12 +1781,16 @@ jQuery(document).ready(function($) {
     // Функции для обновления текста доставки
     window.updateShippingTextForPickup = function() {
         console.log('🏪 Выбран самовывоз');
+        // Скрываем подсказку о выборе города
+        hideCdekHint();
         // Обновляем отображение в чекауте
         updateClassicShippingCost({name: 'Самовывоз (г.Саратов, ул. Осипова, д. 18а)'}, 0);
     };
     
     window.updateShippingTextForManager = function() {
         console.log('📞 Выбрано обсуждение с менеджером');
+        // Скрываем подсказку о выборе города
+        hideCdekHint();
         // Обновляем отображение в чекауте
         updateClassicShippingCost({name: 'Обсудить доставку с менеджером'}, 0);
     };

@@ -413,34 +413,38 @@ jQuery(document).ready(function($) {
     }
     
     function initAddressAutocomplete() {
-        var cityInput = $('#cdek-city-input');
-        if (cityInput.length === 0) {
+        // Используем стандартное поле адреса WooCommerce
+        var addressInput = $('#billing_address_1');
+        if (addressInput.length === 0) {
             return;
         }
         
-        $('#cdek-city-suggestions').remove();
+        $('#address-suggestions').remove();
         
         setupSmartAutocomplete();
     }
     
     function setupSmartAutocomplete() {
-        var cityInput = $('#cdek-city-input');
-        if (cityInput.length === 0) {
+        var addressInput = $('#billing_address_1');
+        if (addressInput.length === 0) {
             return;
         }
         
         var suggestionsContainer = $(`
-            <div id="cdek-city-suggestions" class="smart-address-suggestions" style="display: none;">
+            <div id="address-suggestions" class="smart-address-suggestions" style="display: none;">
                 <div class="suggestions-header">
                     <span class="suggestions-title">Выберите город</span>
                     <span class="suggestions-count"></span>
                 </div>
                 <div class="suggestions-list"></div>
+                <div class="suggestions-footer">
+                    <small>💡 Начните вводить название города</small>
+                </div>
             </div>
         `);
         
-        cityInput.parent().css('position', 'relative');
-        cityInput.parent().append(suggestionsContainer);
+        addressInput.parent().css('position', 'relative');
+        addressInput.parent().append(suggestionsContainer);
         
         // Добавляем стили
         if (!$('#smart-search-styles').length) {
@@ -522,28 +526,66 @@ jQuery(document).ready(function($) {
                     border-radius: 2px;
                 }
                 
-                .suggestion-subtitle {
-                    font-size: 12px;
-                    color: #666;
-                }
-                </style>
-            `);
+                                 .suggestion-subtitle {
+                     font-size: 12px;
+                     color: #666;
+                 }
+                 
+                 .suggestions-footer {
+                     padding: 8px 12px;
+                     background: #f8f9fa;
+                     border-top: 1px solid #f0f0f0;
+                     text-align: center;
+                     position: sticky;
+                     bottom: 0;
+                 }
+                 
+                 .suggestions-footer small {
+                     color: #666;
+                     font-size: 11px;
+                 }
+                 </style>
+             `);
         }
         
         var currentSuggestions = [];
         
-        cityInput.on('input', function() {
+        addressInput.on('input', function() {
             var query = $(this).val().trim();
             
             if (query.length >= 2) {
+                // Показываем индикатор поиска городов
+                showSearchLoader();
+                
                 addressSearch.search(query, function(suggestions) {
                     currentSuggestions = suggestions;
+                    hideSearchLoader();
                     showAddressSuggestions(suggestions, query);
                 });
             } else {
                 hideAddressSuggestions();
+                hideSearchLoader();
             }
         });
+        
+        function showSearchLoader() {
+            var container = suggestionsContainer.find('.suggestions-list');
+            container.html(`
+                <div class="suggestion-item">
+                    <div class="suggestion-icon">🔄</div>
+                    <div class="suggestion-content">
+                        <div class="suggestion-title">Поиск городов...</div>
+                        <div class="suggestion-subtitle">Подождите несколько секунд</div>
+                    </div>
+                </div>
+            `);
+            suggestionsContainer.find('.suggestions-count').text('Поиск...');
+            suggestionsContainer.show();
+        }
+        
+        function hideSearchLoader() {
+            // Лоадер скрывается при показе результатов
+        }
         
         function showAddressSuggestions(suggestions, query) {
             var container = suggestionsContainer.find('.suggestions-list');
@@ -587,11 +629,18 @@ jQuery(document).ready(function($) {
         }
         
         function selectSuggestion(suggestion) {
-            cityInput.val(suggestion.city);
+            addressInput.val(suggestion.city);
             hideAddressSuggestions();
+            
+            saveRecentSearch(suggestion);
             
             // Запоминаем выбранный город
             window.lastSelectedCity = suggestion.city;
+            
+            // Очищаем предыдущий выбор ПВЗ только при смене города
+            if (window.currentSearchCity && window.currentSearchCity !== suggestion.city) {
+                clearSelectedPoint();
+            }
             
             // Показываем индикатор загрузки ПВЗ
             showPvzLoader();
@@ -601,12 +650,31 @@ jQuery(document).ready(function($) {
             }, 50, 6);
         }
         
+        function saveRecentSearch(suggestion) {
+            try {
+                var recentSearches = JSON.parse(localStorage.getItem('cdek_recent_searches') || '[]');
+                
+                recentSearches = recentSearches.filter(item => item.city !== suggestion.city);
+                
+                recentSearches.unshift({
+                    city: suggestion.city,
+                    timestamp: Date.now()
+                });
+                
+                recentSearches = recentSearches.slice(0, 5);
+                
+                localStorage.setItem('cdek_recent_searches', JSON.stringify(recentSearches));
+            } catch (error) {
+                console.log('Ошибка сохранения истории поиска:', error);
+            }
+        }
+        
         function hideAddressSuggestions() {
             suggestionsContainer.hide();
         }
         
         $(document).on('click', function(e) {
-            if (!$(e.target).closest('#cdek-city-suggestions, #cdek-city-input').length) {
+            if (!$(e.target).closest('#address-suggestions, #billing_address_1').length) {
                 hideAddressSuggestions();
             }
         });
@@ -1261,16 +1329,32 @@ jQuery(document).ready(function($) {
         
         cdekShippingLabels.each(function() {
             var $label = $(this);
-            var originalText = $label.text();
             
-            // Очищаем от предыдущих цен
-            var cleanText = originalText.replace(/\d+\s*руб\.?/g, '').trim();
-            if (cleanText.endsWith(' -')) {
-                cleanText = cleanText.slice(0, -2).trim();
+            var newText;
+            if (deliveryCost === 0) {
+                // Для самовывоза и менеджера
+                if (point.name.includes('Самовывоз')) {
+                    newText = '📍 ' + point.name + ' - Бесплатно';
+                } else if (point.name.includes('менеджером')) {
+                    newText = '📞 ' + point.name + ' - Бесплатно';
+                } else {
+                    newText = point.name + ' - Бесплатно';
+                }
+            } else {
+                // Для доставки СДЭК
+                var pointName = point.name || 'Пункт выдачи';
+                if (pointName.includes(',')) {
+                    pointName = pointName.split(',').slice(1).join(',').trim();
+                }
+                
+                var displayName = pointName;
+                if (point.location && point.location.city) {
+                    displayName = point.location.city + ', ' + pointName.replace(point.location.city, '').replace(/^[,\s]+/, '');
+                }
+                
+                newText = '🚚 СДЭК: ' + displayName + ' - ' + deliveryCost + ' руб.';
             }
             
-            // Добавляем новую цену
-            var newText = cleanText + ' - ' + deliveryCost + ' руб.';
             $label.html(newText);
         });
         
@@ -1401,7 +1485,63 @@ jQuery(document).ready(function($) {
         console.log('✅ СДЭК доставка инициализирована для классического чекаута');
     }
     
+    // Делаем функцию глобальной
+    window.initCdekDelivery = initCdekDelivery;
+    
     // ========== ОБРАБОТЧИКИ СОБЫТИЙ ==========
+    
+    // Обработчики для кнопок выбора способа доставки
+    $(document).on('click', '.cdek-delivery-option', function() {
+        var option = $(this).data('option');
+        
+        // Убираем активный класс со всех кнопок
+        $('.cdek-delivery-option').removeClass('active');
+        // Добавляем активный класс на выбранную кнопку
+        $(this).addClass('active');
+        
+        // Сохраняем тип доставки
+        $('#cdek-delivery-type').val(option);
+        
+        if (option === 'pickup') {
+            // Самовывоз
+            $('#cdek-delivery-content').hide();
+            clearSelectedPoint();
+            updateShippingTextForPickup();
+            $('#cdek-delivery-cost').val(0);
+            $('body').trigger('update_checkout');
+        } else if (option === 'manager') {
+            // Обсудить с менеджером
+            $('#cdek-delivery-content').hide();
+            clearSelectedPoint();
+            updateShippingTextForManager();
+            $('#cdek-delivery-cost').val(0);
+            $('body').trigger('update_checkout');
+        } else if (option === 'cdek') {
+            // Доставка СДЭК
+            $('#cdek-delivery-content').show();
+            // Автоматически ищем пункты если город уже введен
+            var currentAddress = $('#billing_address_1').val();
+            if (currentAddress && currentAddress.length > 2) {
+                var city = currentAddress.split(',')[0].trim();
+                if (city.length > 2) {
+                    setTimeout(() => searchCdekPoints(city), 200);
+                }
+            }
+        }
+    });
+    
+    // Функции для обновления текста доставки
+    window.updateShippingTextForPickup = function() {
+        console.log('🏪 Выбран самовывоз');
+        // Обновляем отображение в чекауте
+        updateClassicShippingCost({name: 'Самовывоз (г.Саратов, ул. Осипова, д. 18а)'}, 0);
+    };
+    
+    window.updateShippingTextForManager = function() {
+        console.log('📞 Выбрано обсуждение с менеджером');
+        // Обновляем отображение в чекауте
+        updateClassicShippingCost({name: 'Обсудить доставку с менеджером'}, 0);
+    };
     
     // Инициализация при изменении метода доставки
     $(document).on('change', 'input[name^="shipping_method"]', function() {
@@ -1414,17 +1554,20 @@ jQuery(document).ready(function($) {
         }
     });
     
-    // Обработчик поиска по городу
-    $(document).on('input', '#cdek-city-input', function() {
-        var city = $(this).val().trim();
+    // Обработчик поиска по городу в поле адреса
+    $(document).on('input', '#billing_address_1', function() {
+        var address = $(this).val().trim();
+        var city = address.split(',')[0].trim();
         
-        if (city.length > 2) {
-            debouncer.debounce('city-search', () => searchCdekPoints(city), 300);
-        } else {
+        // Автоматически ищем пункты СДЭК только если выбрана доставка СДЭК
+        if ($('#cdek-delivery-type').val() === 'cdek' && city.length > 2) {
+            debouncer.debounce('city-search', () => searchCdekPoints(city), 500);
+        } else if (city.length <= 2) {
             $('#cdek-points-list').hide();
             if (cdekMap) {
                 cdekMap.geoObjects.removeAll();
             }
+            $('#cdek-points-count').text('Введите город в поле "Адрес" для поиска пунктов выдачи');
         }
     });
     
@@ -1439,9 +1582,8 @@ jQuery(document).ready(function($) {
     
     // Проверяем при загрузке страницы
     $(document).ready(function() {
-        var selectedShippingMethod = $('input[name^="shipping_method"]:checked');
-        if (selectedShippingMethod.length > 0 && selectedShippingMethod.val().indexOf('cdek_delivery') !== -1) {
-            $('#cdek-map-container, #cdek-map-wrapper').show();
+        // Если карта видна, значит СДЭК уже выбран
+        if ($('#cdek-map-wrapper').is(':visible')) {
             debouncer.debounce('init-cdek-load', () => initCdekDelivery(), 500);
         }
     });
@@ -1450,9 +1592,17 @@ jQuery(document).ready(function($) {
     $(document).on('updated_checkout', function() {
         // Переинициализируем обработчики после обновления чекаута
         setTimeout(() => {
-            var selectedShippingMethod = $('input[name^="shipping_method"]:checked');
-            if (selectedShippingMethod.length > 0 && selectedShippingMethod.val().indexOf('cdek_delivery') !== -1) {
-                $('#cdek-map-container, #cdek-map-wrapper').show();
+            if ($('#cdek-map-wrapper').is(':visible')) {
+                // Восстанавливаем состояние кнопок
+                var deliveryType = $('#cdek-delivery-type').val() || 'cdek';
+                $('.cdek-delivery-option').removeClass('active');
+                $('.cdek-delivery-option[data-option="' + deliveryType + '"]').addClass('active');
+                
+                if (deliveryType === 'cdek') {
+                    $('#cdek-delivery-content').show();
+                } else {
+                    $('#cdek-delivery-content').hide();
+                }
             }
         }, 100);
     });

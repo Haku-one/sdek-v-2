@@ -633,16 +633,25 @@ class CdekDeliveryPlugin {
         
         // Показываем карту только если выбран метод доставки СДЭК
         ?>
-        <div id="cdek-map-wrapper" style="display: none;">
+        <div id="cdek-map-wrapper">
             <?php echo $this->render_cdek_map_html(); ?>
         </div>
         
         <script>
         jQuery(document).ready(function($) {
+            // Изначально скрываем карту
+            $('#cdek-map-wrapper').hide();
+            
             // Показываем карту при выборе СДЭК доставки
             $('body').on('change', 'input[name^="shipping_method"]', function() {
                 if ($(this).val().indexOf('cdek_delivery') !== -1) {
                     $('#cdek-map-wrapper').show();
+                    // Инициализируем карту с задержкой
+                    setTimeout(function() {
+                        if (typeof window.initCdekDelivery === 'function') {
+                            window.initCdekDelivery();
+                        }
+                    }, 300);
                 } else {
                     $('#cdek-map-wrapper').hide();
                 }
@@ -652,6 +661,12 @@ class CdekDeliveryPlugin {
             $('input[name^="shipping_method"]:checked').each(function() {
                 if ($(this).val().indexOf('cdek_delivery') !== -1) {
                     $('#cdek-map-wrapper').show();
+                    // Инициализируем карту с задержкой
+                    setTimeout(function() {
+                        if (typeof window.initCdekDelivery === 'function') {
+                            window.initCdekDelivery();
+                        }
+                    }, 300);
                 }
             });
         });
@@ -682,38 +697,46 @@ class CdekDeliveryPlugin {
     private function render_cdek_map_html($height = '450px') {
         ob_start();
         ?>
-        <div id="cdek-map-container" style="margin-top: 20px; display: block;">
-            <h4>Выберите пункт выдачи СДЭК:</h4>
+        <div id="cdek-map-container" style="margin-top: 20px;">
+            <h4>Выберите способ получения заказа:</h4>
             
-            <div id="cdek-address-search" style="margin-bottom: 15px;">
-                <label for="cdek-city-input"><strong>Город доставки:</strong></label>
-                <input type="text" id="cdek-city-input" placeholder="Введите название города..." 
-                       style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px;">
-                <div id="cdek-city-suggestions" style="display: none;"></div>
-            </div>
-            
-            <div id="cdek-points-info" style="margin-bottom: 10px; padding: 10px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px;">
-                <strong>Информация:</strong>
-                <div id="cdek-points-count">Введите город выше для поиска пунктов выдачи</div>
-            </div>
-            
-            <div id="cdek-selected-point" style="margin-bottom: 10px; padding: 10px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; display: none;">
-                <strong>Выбранный пункт выдачи:</strong>
-                <div id="cdek-point-info"></div>
-                <button type="button" id="cdek-clear-selection" style="margin-top: 10px; padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">
-                    Очистить выбор
+            <!-- Кнопки выбора способа доставки -->
+            <div id="cdek-delivery-options" style="margin-bottom: 20px;">
+                <button type="button" class="cdek-delivery-option" data-option="pickup" style="margin-right: 10px; padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    📍 Самовывоз (г.Саратов, ул. Осипова, д. 18а) - Бесплатно
+                </button>
+                <button type="button" class="cdek-delivery-option" data-option="manager" style="margin-right: 10px; padding: 10px 20px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    📞 Обсудить доставку с менеджером - Бесплатно
+                </button>
+                <button type="button" class="cdek-delivery-option active" data-option="cdek" style="padding: 10px 20px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    🚚 Доставка СДЭК
                 </button>
             </div>
             
-            <div id="cdek-map" style="width: 100%; height: <?php echo esc_attr($height); ?>; border: 1px solid #ddd; border-radius: 6px; display: block;"></div>
-            
-            <div id="cdek-points-list" style="margin-top: 15px; max-height: 300px; overflow-y: auto; display: none;">
-                <h5>Список пунктов выдачи:</h5>
-                <div id="cdek-points-list-content"></div>
+            <div id="cdek-delivery-content">
+                <div id="cdek-points-info" style="margin-bottom: 10px; padding: 10px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px;">
+                    <strong>Информация:</strong>
+                    <div id="cdek-points-count">Введите город в поле "Адрес" выше для поиска пунктов выдачи</div>
+                </div>
+                
+                <div id="cdek-selected-point" style="margin-bottom: 10px; padding: 10px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; display: none;">
+                    <strong>Выбранный пункт выдачи:</strong>
+                    <div id="cdek-point-info"></div>
+                    <button type="button" id="cdek-clear-selection" style="margin-top: 10px; padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                        Очистить выбор
+                    </button>
+                </div>
+                
+                <div id="cdek-map" style="width: 100%; height: <?php echo esc_attr($height); ?>; border: 1px solid #ddd; border-radius: 6px;"></div>
+                
+                <div id="cdek-points-list" style="margin-top: 15px; max-height: 300px; overflow-y: auto; display: none;">
+                    <h5>Список пунктов выдачи:</h5>
+                    <div id="cdek-points-list-content"></div>
+                </div>
             </div>
             
             <p style="font-size: 14px; color: #666; margin-top: 10px;">
-                💡 Введите город в поле выше, затем выберите пункт выдачи на карте или в списке
+                💡 Введите город в поле "Адрес" выше, затем выберите пункт выдачи на карте или в списке
             </p>
         </div>
         
@@ -721,6 +744,7 @@ class CdekDeliveryPlugin {
         <input type="hidden" id="cdek-selected-point-code" name="cdek_selected_point_code" value="">
         <input type="hidden" id="cdek-selected-point-data" name="cdek_selected_point_data" value="">
         <input type="hidden" id="cdek-delivery-cost" name="cdek_delivery_cost" value="">
+        <input type="hidden" id="cdek-delivery-type" name="cdek_delivery_type" value="cdek">
         <?php
         return ob_get_clean();
     }
@@ -782,6 +806,23 @@ class CdekDeliveryPlugin {
                 background: #f9f9f9;
                 border: 1px solid #ddd;
                 border-radius: 8px;
+                display: block !important;
+            }
+            
+            /* Кнопки выбора способа доставки */
+            .cdek-delivery-option {
+                transition: all 0.3s ease;
+                opacity: 0.7;
+            }
+            
+            .cdek-delivery-option:hover {
+                opacity: 1;
+                transform: translateY(-1px);
+            }
+            
+            .cdek-delivery-option.active {
+                opacity: 1;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             }
             
             #cdek-map-container h4 {

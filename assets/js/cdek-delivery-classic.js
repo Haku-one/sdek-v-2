@@ -240,16 +240,70 @@ jQuery(document).ready(function($) {
     function parsePrice(priceText) {
         if (!priceText) return 0;
         
-        // Удаляем все символы кроме цифр и точек/запятых
-        var cleanText = priceText.toString().replace(/[^\d.,]/g, '');
+        var originalText = priceText.toString();
         
-        // Заменяем запятые на точки для decimal
-        cleanText = cleanText.replace(',', '.');
+        // Удаляем все символы кроме цифр, точек и запятых
+        var cleanText = originalText.replace(/[^\d.,]/g, '');
         
-        // Парсим как float и округляем до целых
-        var result = Math.round(parseFloat(cleanText)) || 0;
+        // Определяем формат числа
+        var result = 0;
         
-        console.log('💰 Парсинг цены:', priceText, '→', cleanText, '→', result);
+        // Если есть и точка и запятая, то последний символ - десятичный разделитель
+        if (cleanText.indexOf('.') !== -1 && cleanText.indexOf(',') !== -1) {
+            var lastDot = cleanText.lastIndexOf('.');
+            var lastComma = cleanText.lastIndexOf(',');
+            
+            if (lastDot > lastComma) {
+                // Точка - десятичный разделитель, запятые - разделители тысяч
+                cleanText = cleanText.replace(/,/g, '');
+                result = parseFloat(cleanText);
+            } else {
+                // Запятая - десятичный разделитель, точки - разделители тысяч
+                cleanText = cleanText.replace(/\./g, '').replace(',', '.');
+                result = parseFloat(cleanText);
+            }
+        }
+        // Если только точки
+        else if (cleanText.indexOf('.') !== -1) {
+            var dotCount = (cleanText.match(/\./g) || []).length;
+            if (dotCount === 1) {
+                var parts = cleanText.split('.');
+                // Если после точки 3 цифры, то это разделитель тысяч
+                if (parts[1] && parts[1].length === 3 && parts[1].match(/^\d{3}$/)) {
+                    result = parseInt(cleanText.replace('.', ''));
+                } else {
+                    // Иначе это десятичный разделитель
+                    result = parseFloat(cleanText);
+                }
+            } else {
+                // Множественные точки - разделители тысяч
+                result = parseInt(cleanText.replace(/\./g, ''));
+            }
+        }
+        // Если только запятые
+        else if (cleanText.indexOf(',') !== -1) {
+            var commaCount = (cleanText.match(/,/g) || []).length;
+            if (commaCount === 1) {
+                var parts = cleanText.split(',');
+                // Если после запятой 3 цифры, то это разделитель тысяч
+                if (parts[1] && parts[1].length === 3 && parts[1].match(/^\d{3}$/)) {
+                    result = parseInt(cleanText.replace(',', ''));
+                } else {
+                    // Иначе это десятичный разделитель
+                    result = parseFloat(cleanText.replace(',', '.'));
+                }
+            } else {
+                // Множественные запятые - разделители тысяч
+                result = parseInt(cleanText.replace(/,/g, ''));
+            }
+        }
+        // Если только цифры
+        else {
+            result = parseInt(cleanText);
+        }
+        
+        result = Math.round(result) || 0;
+        console.log('💰 Парсинг цены:', originalText, '→', cleanText, '→', result);
         return result;
     }
     

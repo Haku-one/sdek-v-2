@@ -1330,6 +1330,10 @@ jQuery(document).ready(function($) {
         
         console.log('✅ Выбран пункт выдачи:', point.code, point.name);
         
+        // Добавляем скрытое поле с типом доставки СДЭК
+        $('#cdek-delivery-type').remove(); // Удаляем предыдущее поле
+        $('form.checkout').append('<input type="hidden" id="cdek-delivery-type" name="cdek_delivery_type" value="cdek">');
+        
         // Сохраняем информацию о выбранном ПВЗ
         window.selectedCdekPoint = {
             code: point.code,
@@ -1854,6 +1858,10 @@ jQuery(document).ready(function($) {
         // Обновляем отображение в чекауте
         updateClassicShippingCost({name: 'Самовывоз (г.Саратов, ул. Осипова, д. 18а)'}, 0);
         
+        // Добавляем скрытое поле с типом доставки
+        $('#cdek-delivery-type').remove(); // Удаляем предыдущее поле
+        $('form.checkout').append('<input type="hidden" id="cdek-delivery-type" name="cdek_delivery_type" value="pickup">');
+        
         // Принудительно очищаем стоимость доставки СДЭК в сессии
         if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
             $.ajax({
@@ -1881,6 +1889,10 @@ jQuery(document).ready(function($) {
         hideCdekHint();
         // Обновляем отображение в чекауте
         updateClassicShippingCost({name: 'Обсудить доставку с менеджером'}, 0);
+        
+        // Добавляем скрытое поле с типом доставки
+        $('#cdek-delivery-type').remove(); // Удаляем предыдущее поле
+        $('form.checkout').append('<input type="hidden" id="cdek-delivery-type" name="cdek_delivery_type" value="manager">');
         
         // Принудительно очищаем стоимость доставки СДЭК в сессии
         if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {

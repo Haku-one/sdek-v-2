@@ -56,6 +56,9 @@ class CdekDeliveryPlugin {
         // Хук для обработки стандартного обновления чекаута
         add_action('woocommerce_checkout_update_order_review', array($this, 'handle_checkout_update_order_review'));
         
+        // Хук для очистки сессии при загрузке checkout
+        add_action('woocommerce_checkout_init', array($this, 'cleanup_session_on_checkout_init'));
+        
         // Хук для обновления суммы заказа ПЕРЕД инициализацией платежа
         add_action('woocommerce_checkout_process', array($this, 'update_order_total_before_payment'), 5);
         add_filter('woocommerce_calculated_total', array($this, 'filter_calculated_total'), 10, 2);
@@ -1562,8 +1565,17 @@ class CdekDeliveryPlugin {
             parse_str($posted_data, $post_data);
         }
         
-        // Если есть данные СДЭК в POST, сохраняем их в сессию
-        if (isset($post_data['cdek_delivery_cost']) && !empty($post_data['cdek_delivery_cost'])) {
+        // Проверяем тип доставки
+        $delivery_type = isset($post_data['cdek_delivery_type']) ? $post_data['cdek_delivery_type'] : null;
+        
+        if ($delivery_type === 'manager' || $delivery_type === 'pickup') {
+            // Для менеджера и самовывоза очищаем стоимость доставки
+            WC()->session->set('cdek_delivery_cost', 0);
+            WC()->session->__unset('cdek_selected_point_code');
+            WC()->session->__unset('cdek_selected_point_data');
+            error_log('СДЭК: Очищена стоимость доставки для типа: ' . $delivery_type);
+        } elseif (isset($post_data['cdek_delivery_cost']) && !empty($post_data['cdek_delivery_cost'])) {
+            // Если есть данные СДЭК в POST, сохраняем их в сессию
             $cost = floatval($post_data['cdek_delivery_cost']);
             WC()->session->set('cdek_delivery_cost', $cost);
             error_log('СДЭК: Сохранена стоимость доставки из чекаута: ' . $cost);
@@ -1583,6 +1595,21 @@ class CdekDeliveryPlugin {
         
         // Логируем для отладки
         error_log('СДЭК: Итого в корзине после пересчета: ' . WC()->cart->get_total());
+    }
+    
+    /**
+     * Очистка сессии СДЭК при загрузке checkout (для случаев повторного входа)
+     */
+    public function cleanup_session_on_checkout_init($checkout) {
+        // Проверяем, есть ли в URL параметры, указывающие на возврат к checkout
+        if (isset($_GET['key']) || isset($_GET['order']) || isset($_GET['order-received'])) {
+            // Это возврат после неудачного заказа - очищаем старые данные СДЭК
+            WC()->session->__unset('cdek_delivery_cost');
+            WC()->session->__unset('cdek_selected_point_code');
+            WC()->session->__unset('cdek_selected_point_data');
+            WC()->session->__unset('cdek_delivery_type');
+            error_log('СДЭК: Очищена сессия при повторном входе в checkout');
+        }
     }
     
     public function update_order_total_before_payment() {

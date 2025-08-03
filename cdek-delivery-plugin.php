@@ -449,18 +449,32 @@ class CdekDeliveryPlugin {
     }
     
     public function save_cdek_point_data($order_id) {
-        // Сохраняем тип доставки
+        // Получаем тип доставки из POST или из сессии
+        $delivery_type = 'cdek'; // По умолчанию
+        
         if (isset($_POST['cdek_delivery_type'])) {
             $delivery_type = sanitize_text_field($_POST['cdek_delivery_type']);
-            update_post_meta($order_id, '_cdek_delivery_type', $delivery_type);
+        } else {
+            // Если в POST нет, берем из сессии
+            $session_delivery_type = WC()->session->get('cdek_delivery_type');
+            if ($session_delivery_type) {
+                $delivery_type = $session_delivery_type;
+            }
         }
         
-        // Сохраняем данные пункта выдачи только для доставки СДЭК
-        $delivery_type = isset($_POST['cdek_delivery_type']) ? $_POST['cdek_delivery_type'] : 'cdek';
+        // Сохраняем тип доставки
+        update_post_meta($order_id, '_cdek_delivery_type', $delivery_type);
         
+        // Сохраняем данные пункта выдачи только для доставки СДЭК
         if ($delivery_type === 'cdek') {
             if (isset($_POST['cdek_selected_point_code']) && !empty($_POST['cdek_selected_point_code'])) {
                 update_post_meta($order_id, '_cdek_point_code', sanitize_text_field($_POST['cdek_selected_point_code']));
+            } else {
+                // Если в POST нет, берем из сессии
+                $session_point_code = WC()->session->get('cdek_selected_point_code');
+                if ($session_point_code) {
+                    update_post_meta($order_id, '_cdek_point_code', $session_point_code);
+                }
             }
             
             if (isset($_POST['cdek_selected_point_data']) && !empty($_POST['cdek_selected_point_data'])) {
@@ -468,8 +482,17 @@ class CdekDeliveryPlugin {
                 if ($point_data) {
                     update_post_meta($order_id, '_cdek_point_data', $point_data);
                 }
+            } else {
+                // Если в POST нет, берем из сессии
+                $session_point_data = WC()->session->get('cdek_selected_point_data');
+                if ($session_point_data) {
+                    update_post_meta($order_id, '_cdek_point_data', $session_point_data);
+                }
             }
         }
+        
+        // Логируем для отладки
+        error_log('СДЭК: Сохранен заказ #' . $order_id . ' с типом доставки: ' . $delivery_type);
     }
 
     public function display_cdek_point_in_admin($order) {
@@ -1470,17 +1493,34 @@ class CdekDeliveryPlugin {
             wp_die('Security check failed');
         }
         
-        // Сохраняем стоимость доставки СДЭК в сессии
-        if (isset($_POST['cdek_delivery_cost']) && !empty($_POST['cdek_delivery_cost'])) {
-            $cost = floatval($_POST['cdek_delivery_cost']);
-            WC()->session->set('cdek_delivery_cost', $cost);
-            error_log('СДЭК: Сохранена стоимость доставки в сессии: ' . $cost);
-        }
+        $cost = 0;
+        $delivery_type = isset($_POST['cdek_delivery_type']) ? sanitize_text_field($_POST['cdek_delivery_type']) : 'cdek';
         
-        if (isset($_POST['cdek_selected_point_code']) && !empty($_POST['cdek_selected_point_code'])) {
-            $point_code = sanitize_text_field($_POST['cdek_selected_point_code']);
-            WC()->session->set('cdek_selected_point_code', $point_code);
-            error_log('СДЭК: Сохранен код пункта в сессии: ' . $point_code);
+        // Сохраняем тип доставки в сессии
+        WC()->session->set('cdek_delivery_type', $delivery_type);
+        
+        // Обрабатываем стоимость доставки в зависимости от типа
+        if ($delivery_type === 'manager' || $delivery_type === 'pickup') {
+            // Для менеджера и самовывоза стоимость всегда 0
+            $cost = 0;
+            WC()->session->set('cdek_delivery_cost', $cost);
+            // Очищаем данные о пункте выдачи
+            WC()->session->__unset('cdek_selected_point_code');
+            WC()->session->__unset('cdek_selected_point_data');
+            error_log('СДЭК: Очищена стоимость доставки для типа: ' . $delivery_type);
+        } else {
+            // Для доставки СДЭК сохраняем переданную стоимость
+            if (isset($_POST['cdek_delivery_cost'])) {
+                $cost = floatval($_POST['cdek_delivery_cost']);
+                WC()->session->set('cdek_delivery_cost', $cost);
+                error_log('СДЭК: Сохранена стоимость доставки в сессии: ' . $cost);
+            }
+            
+            if (isset($_POST['cdek_selected_point_code']) && !empty($_POST['cdek_selected_point_code'])) {
+                $point_code = sanitize_text_field($_POST['cdek_selected_point_code']);
+                WC()->session->set('cdek_selected_point_code', $point_code);
+                error_log('СДЭК: Сохранен код пункта в сессии: ' . $point_code);
+            }
         }
         
         // Принудительно очищаем кеш доставки
@@ -1501,8 +1541,9 @@ class CdekDeliveryPlugin {
             'fragments' => array(
                 '.shop_table.woocommerce-checkout-review-order-table' => $order_review
             ),
-            'cost' => $cost ?? 0,
+            'cost' => $cost,
             'cart_total' => $cart_total,
+            'delivery_type' => $delivery_type,
             'refresh_checkout' => true
         ));
     }

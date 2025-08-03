@@ -1785,6 +1785,26 @@ jQuery(document).ready(function($) {
         hideCdekHint();
         // Обновляем отображение в чекауте
         updateClassicShippingCost({name: 'Самовывоз (г.Саратов, ул. Осипова, д. 18а)'}, 0);
+        
+        // Принудительно очищаем стоимость доставки СДЭК в сессии
+        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
+            $.ajax({
+                url: cdek_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'update_cdek_shipping_cost',
+                    cdek_delivery_cost: 0,
+                    cdek_delivery_type: 'pickup',
+                    nonce: cdek_ajax.nonce
+                },
+                success: function(response) {
+                    console.log('✅ Стоимость доставки очищена для самовывоза');
+                },
+                error: function() {
+                    console.log('❌ Ошибка при очистке стоимости доставки');
+                }
+            });
+        }
     };
     
     window.updateShippingTextForManager = function() {
@@ -1793,6 +1813,26 @@ jQuery(document).ready(function($) {
         hideCdekHint();
         // Обновляем отображение в чекауте
         updateClassicShippingCost({name: 'Обсудить доставку с менеджером'}, 0);
+        
+        // Принудительно очищаем стоимость доставки СДЭК в сессии
+        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
+            $.ajax({
+                url: cdek_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'update_cdek_shipping_cost',
+                    cdek_delivery_cost: 0,
+                    cdek_delivery_type: 'manager',
+                    nonce: cdek_ajax.nonce
+                },
+                success: function(response) {
+                    console.log('✅ Стоимость доставки очищена для менеджера');
+                },
+                error: function() {
+                    console.log('❌ Ошибка при очистке стоимости доставки');
+                }
+            });
+        }
     };
     
     // Инициализация при изменении метода доставки

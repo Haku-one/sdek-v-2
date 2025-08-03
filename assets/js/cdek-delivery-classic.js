@@ -385,11 +385,11 @@ jQuery(document).ready(function($) {
             var maxBoxVolume = standardBoxes[standardBoxes.length - 1].volume; // Самая большая коробка
             packagesCount = Math.ceil(packingVolume / maxBoxVolume);
             
-            // Ограничиваем максимальное количество коробок для разумности
-            if (packagesCount > 10) {
-                packagesCount = 10;
-                console.log('⚠️ Ограничиваем количество коробок до 10');
-            }
+                    // Ограничиваем максимальное количество коробок для API СДЭК
+        if (packagesCount > 5) {
+            packagesCount = 5;
+            console.log('⚠️ Ограничиваем количество коробок до 5 (ограничение API СДЭК)');
+        }
             
             // Объем на одну коробку
             var volumePerBox = packingVolume / packagesCount;
@@ -508,7 +508,29 @@ jQuery(document).ready(function($) {
                 if (response && response.success && response.data && response.data.delivery_sum) {
                     var deliveryCost = parseInt(response.data.delivery_sum);
                     
-                    if (cartData.packagesCount > 1) {
+                    // Проверяем, использовался ли fallback расчет
+                    if (response.data.fallback_used) {
+                        console.log('⚠️ Используется приблизительный расчет для большого заказа: ' + deliveryCost + ' руб.');
+                        
+                        // Показываем пользователю предупреждение
+                        if (cartData.packagesCount >= 5) {
+                            setTimeout(function() {
+                                var warningHtml = '<div class="cdek-fallback-warning" style="background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 10px; margin: 10px 0; border-radius: 4px; font-size: 14px;">' +
+                                    '<strong>ℹ️ Приблизительная стоимость</strong><br>' +
+                                    'Для большого заказа (' + cartData.packagesCount + ' коробок) показана приблизительная стоимость доставки. ' +
+                                    'Точная стоимость будет уточнена при обработке заказа.' +
+                                    '</div>';
+                                
+                                $('.cdek-fallback-warning').remove(); // Удаляем предыдущие предупреждения
+                                $('#cdek-delivery-content').prepend(warningHtml);
+                            }, 500);
+                        }
+                    } else {
+                        // Убираем предупреждение если расчет точный
+                        $('.cdek-fallback-warning').remove();
+                    }
+                    
+                    if (cartData.packagesCount > 1 && !response.data.fallback_used) {
                         deliveryCost = deliveryCost * cartData.packagesCount;
                     }
                     

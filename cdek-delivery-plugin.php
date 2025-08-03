@@ -76,6 +76,16 @@ class CdekDeliveryPlugin {
         add_action('woocommerce_order_details_after_order_table', array($this, 'display_cdek_info_in_order_details'));
         add_action('woocommerce_email_order_details', array($this, 'display_cdek_info_in_email'), 10, 4);
         
+        // Изменение текста доставки в таблице заказа
+        add_filter('woocommerce_order_shipping_to_display', array($this, 'modify_shipping_display_text'), 10, 2);
+        
+        // Изменение отображения метода доставки в таблице заказа
+        add_filter('woocommerce_order_get_formatted_shipping_full_name', array($this, 'modify_shipping_method_name'), 10, 2);
+        
+        // Дополнительная информация о доставке в админке и письмах
+        add_action('woocommerce_admin_order_data_after_order_details', array($this, 'display_cdek_info_in_admin_order'));
+        add_action('woocommerce_email_after_order_table', array($this, 'display_cdek_info_after_order_table'), 10, 4);
+        
         // Хуки для трекинга статуса заказа СДЭК
         add_action('woocommerce_order_status_changed', array($this, 'track_order_status_change'), 10, 4);
         add_action('wp', array($this, 'schedule_cdek_status_check'));
@@ -626,10 +636,7 @@ class CdekDeliveryPlugin {
             return;
         }
         
-        // Не показываем админам
-        if ($sent_to_admin) {
-            return;
-        }
+        // Показываем информацию и клиентам, и администраторам
         
         $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
         $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
@@ -1961,6 +1968,370 @@ class CdekAPI {
         } else {
             error_log('СДЭК API: HTTP ошибка при получении статуса заказа: ' . $response->get_error_message());
             return false;
+        }
+    }
+    
+    /**
+     * Изменение текста доставки в таблице заказа
+     */
+    public function modify_shipping_display_text($shipping_text, $order) {
+        if (!$order || !is_object($order)) {
+            return $shipping_text;
+        }
+        
+        $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
+        $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
+        $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
+        
+        // Проверяем, что это заказ с доставкой СДЭК
+        $shipping_methods = $order->get_shipping_methods();
+        $is_cdek_order = false;
+        
+        foreach ($shipping_methods as $item_id => $item) {
+            if (strpos($item->get_method_id(), 'cdek_delivery') !== false) {
+                $is_cdek_order = true;
+                break;
+            }
+        }
+        
+        if (!$is_cdek_order || !$delivery_type) {
+            return $shipping_text;
+        }
+        
+        switch ($delivery_type) {
+            case 'pickup':
+                return 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) — Бесплатно';
+                
+            case 'manager':
+                return 'Доставка по договоренности с менеджером — Бесплатно';
+                
+            case 'cdek':
+            default:
+                if ($point_code && $point_data && isset($point_data['name'])) {
+                    $address = isset($point_data['location']['address_full']) ? 
+                        $point_data['location']['address_full'] : 
+                        'Адрес уточняется';
+                    return 'Пункт выдачи СДЭК: ' . esc_html($point_data['name']) . ' (' . esc_html($address) . ')';
+                }
+                break;
+        }
+        
+        return $shipping_text;
+    }
+    
+    /**
+     * Изменение названия метода доставки в таблице заказа
+     */
+    public function modify_shipping_method_name($method_name, $order) {
+        if (!$order || !is_object($order)) {
+            return $method_name;
+        }
+        
+        $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
+        $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
+        $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
+        
+        // Проверяем, что это заказ с доставкой СДЭК
+        $shipping_methods = $order->get_shipping_methods();
+        $is_cdek_order = false;
+        
+        foreach ($shipping_methods as $item_id => $item) {
+            if (strpos($item->get_method_id(), 'cdek_delivery') !== false) {
+                $is_cdek_order = true;
+                break;
+            }
+        }
+        
+        if (!$is_cdek_order || !$delivery_type) {
+            return $method_name;
+        }
+        
+        switch ($delivery_type) {
+            case 'pickup':
+                return '📍 Самовывоз';
+                
+            case 'manager':
+                return '📞 Доставка с менеджером';
+                
+            case 'cdek':
+            default:
+                if ($point_code && $point_data && isset($point_data['name'])) {
+                    return '🚚 СДЭК: ' . esc_html($point_data['name']);
+                } else {
+                    return '🚚 СДЭК доставка';
+                }
+                break;
+        }
+        
+        return $method_name;
+    }
+    
+    /**
+     * Отображение информации о доставке в админке заказа
+     */
+    public function display_cdek_info_in_admin_order($order) {
+        if (!$order || !is_object($order)) {
+            return;
+        }
+        
+        $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
+        $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
+        $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
+        
+        // Проверяем, что это заказ с доставкой СДЭК
+        $shipping_methods = $order->get_shipping_methods();
+        $is_cdek_order = false;
+        
+        foreach ($shipping_methods as $item_id => $item) {
+            if (strpos($item->get_method_id(), 'cdek_delivery') !== false) {
+                $is_cdek_order = true;
+                break;
+            }
+        }
+        
+        if (!$is_cdek_order || !$delivery_type) {
+            return;
+        }
+        
+        echo '<div class="cdek-admin-info" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;">';
+        echo '<h4 style="margin-top: 0; color: #495057;">🚚 Информация о доставке СДЭК</h4>';
+        
+        switch ($delivery_type) {
+            case 'pickup':
+                echo '<p><strong>📍 Самовывоз</strong></p>';
+                echo '<p>Адрес: <strong>г.Саратов, ул. Осипова, д. 18а</strong></p>';
+                echo '<p>Стоимость: <strong>Бесплатно</strong></p>';
+                echo '<div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; margin-top: 10px;">';
+                echo '<strong>⚠️ Внимание:</strong> Клиент выбрал самовывоз. Свяжитесь с ним для уточнения времени получения.';
+                echo '</div>';
+                break;
+                
+            case 'manager':
+                echo '<p><strong>📞 Доставка по договоренности с менеджером</strong></p>';
+                echo '<p>Стоимость: <strong>Бесплатно</strong></p>';
+                echo '<div style="background: #d1ecf1; border: 1px solid #bee5eb; padding: 10px; border-radius: 4px; margin-top: 10px;">';
+                echo '<strong>📋 Задача:</strong> Свяжитесь с клиентом для уточнения деталей доставки.';
+                echo '</div>';
+                break;
+                
+            case 'cdek':
+            default:
+                if ($point_code && $point_data) {
+                    echo '<p><strong>🏪 Пункт выдачи СДЭК</strong></p>';
+                    echo '<div style="margin-left: 20px; background: white; padding: 10px; border-radius: 4px; border: 1px solid #e9ecef;">';
+                    echo '<p><strong>Название:</strong> ' . esc_html($point_data['name']) . '</p>';
+                    echo '<p><strong>Код пункта:</strong> ' . esc_html($point_code) . '</p>';
+                    
+                    if (isset($point_data['location']['address_full'])) {
+                        echo '<p><strong>Адрес:</strong> ' . esc_html($point_data['location']['address_full']) . '</p>';
+                    }
+                    
+                    // Режим работы
+                    if (isset($point_data['work_time_list']) && is_array($point_data['work_time_list'])) {
+                        echo '<p><strong>Режим работы:</strong></p>';
+                        echo '<ul style="margin: 5px 0 5px 20px;">';
+                        $days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+                        foreach ($point_data['work_time_list'] as $work_time) {
+                            if (isset($work_time['day']) && isset($work_time['time'])) {
+                                $day_index = intval($work_time['day']) - 1;
+                                if ($day_index >= 0 && $day_index < 7) {
+                                    echo '<li>' . $days[$day_index] . ': ' . esc_html($work_time['time']) . '</li>';
+                                }
+                            }
+                        }
+                        echo '</ul>';
+                    }
+                    
+                    // Телефоны
+                    if (isset($point_data['phones']) && is_array($point_data['phones']) && !empty($point_data['phones'])) {
+                        $phone_numbers = array();
+                        foreach ($point_data['phones'] as $phone) {
+                            if (is_array($phone) && isset($phone['number'])) {
+                                $phone_numbers[] = $phone['number'];
+                            } else {
+                                $phone_numbers[] = $phone;
+                            }
+                        }
+                        if (!empty($phone_numbers)) {
+                            echo '<p><strong>Телефоны:</strong> ' . esc_html(implode(', ', $phone_numbers)) . '</p>';
+                        }
+                    }
+                    echo '</div>';
+                } else {
+                    echo '<p style="color: #dc3545;"><strong>⚠️ Внимание:</strong> Пункт выдачи не выбран или данные не сохранены</p>';
+                }
+                break;
+        }
+        
+        echo '</div>';
+    }
+    
+    /**
+     * Отображение информации о доставке после таблицы заказа в письмах
+     */
+    public function display_cdek_info_after_order_table($order, $sent_to_admin, $plain_text, $email) {
+        if (!$order || !is_object($order)) {
+            return;
+        }
+        
+        $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
+        $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
+        $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
+        
+        // Проверяем, что это заказ с доставкой СДЭК
+        $shipping_methods = $order->get_shipping_methods();
+        $is_cdek_order = false;
+        
+        foreach ($shipping_methods as $item_id => $item) {
+            if (strpos($item->get_method_id(), 'cdek_delivery') !== false) {
+                $is_cdek_order = true;
+                break;
+            }
+        }
+        
+        if (!$is_cdek_order || !$delivery_type) {
+            return;
+        }
+        
+        if ($plain_text) {
+            // Версия для обычного текста
+            echo "\n" . "===========================================" . "\n";
+            echo "ИНФОРМАЦИЯ О ПОЛУЧЕНИИ ЗАКАЗА" . "\n";
+            echo "===========================================" . "\n";
+            
+            switch ($delivery_type) {
+                case 'pickup':
+                    echo "Способ получения: Самовывоз" . "\n";
+                    echo "Адрес: г.Саратов, ул. Осипова, д. 18а" . "\n";
+                    echo "Стоимость: Бесплатно" . "\n";
+                    echo "Примечание: Свяжитесь с нами для уточнения времени получения." . "\n";
+                    break;
+                    
+                case 'manager':
+                    echo "Способ получения: Доставка по договоренности с менеджером" . "\n";
+                    echo "Стоимость: Бесплатно" . "\n";
+                    echo "Примечание: Наш менеджер свяжется с вами для уточнения деталей." . "\n";
+                    break;
+                    
+                case 'cdek':
+                default:
+                    if ($point_code && $point_data) {
+                        echo "Способ получения: Пункт выдачи СДЭК" . "\n";
+                        echo "Название: " . $point_data['name'] . "\n";
+                        echo "Код пункта: " . $point_code . "\n";
+                        if (isset($point_data['location']['address_full'])) {
+                            echo "Адрес: " . $point_data['location']['address_full'] . "\n";
+                        }
+                        
+                        // Режим работы в текстовом формате
+                        if (isset($point_data['work_time_list']) && is_array($point_data['work_time_list'])) {
+                            echo "Режим работы:" . "\n";
+                            $days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+                            foreach ($point_data['work_time_list'] as $work_time) {
+                                if (isset($work_time['day']) && isset($work_time['time'])) {
+                                    $day_index = intval($work_time['day']) - 1;
+                                    if ($day_index >= 0 && $day_index < 7) {
+                                        echo "  " . $days[$day_index] . ': ' . $work_time['time'] . "\n";
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Телефоны в текстовом формате
+                        if (isset($point_data['phones']) && is_array($point_data['phones']) && !empty($point_data['phones'])) {
+                            $phone_numbers = array();
+                            foreach ($point_data['phones'] as $phone) {
+                                if (is_array($phone) && isset($phone['number'])) {
+                                    $phone_numbers[] = $phone['number'];
+                                } else {
+                                    $phone_numbers[] = $phone;
+                                }
+                            }
+                            if (!empty($phone_numbers)) {
+                                echo "Телефоны: " . implode(', ', $phone_numbers) . "\n";
+                            }
+                        }
+                    }
+                    break;
+            }
+            echo "===========================================" . "\n\n";
+        } else {
+            // HTML версия для красивых писем
+            echo '<table cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 20px 0; border-collapse: collapse;">';
+            echo '<tr><td style="background: #f8f9fa; padding: 20px; border: 2px solid #007cba; border-radius: 8px;">';
+            echo '<h2 style="margin: 0 0 15px 0; color: #007cba; font-size: 20px; text-align: center;">🚚 Информация о получении заказа</h2>';
+            
+            switch ($delivery_type) {
+                case 'pickup':
+                    echo '<div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 6px; margin: 10px 0;">';
+                    echo '<h3 style="margin: 0 0 10px 0; color: #155724;">📍 Самовывоз</h3>';
+                    echo '<p style="margin: 5px 0; font-size: 16px;"><strong>Адрес:</strong> г.Саратов, ул. Осипова, д. 18а</p>';
+                    echo '<p style="margin: 5px 0; font-size: 16px;"><strong>Стоимость:</strong> Бесплатно</p>';
+                    echo '<div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 4px; margin-top: 10px;">';
+                    echo '<p style="margin: 0; color: #856404;"><strong>📞 Важно:</strong> Пожалуйста, свяжитесь с нами для уточнения времени получения заказа.</p>';
+                    echo '</div>';
+                    echo '</div>';
+                    break;
+                    
+                case 'manager':
+                    echo '<div style="background: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 6px; margin: 10px 0;">';
+                    echo '<h3 style="margin: 0 0 10px 0; color: #0c5460;">📞 Доставка по договоренности с менеджером</h3>';
+                    echo '<p style="margin: 5px 0; font-size: 16px;">Наш менеджер свяжется с вами для уточнения деталей доставки.</p>';
+                    echo '<p style="margin: 5px 0; font-size: 16px;"><strong>Стоимость:</strong> Бесплатно</p>';
+                    echo '</div>';
+                    break;
+                    
+                case 'cdek':
+                default:
+                    if ($point_code && $point_data) {
+                        echo '<div style="background: #e3f2fd; border: 1px solid #2196f3; padding: 15px; border-radius: 6px; margin: 10px 0;">';
+                        echo '<h3 style="margin: 0 0 10px 0; color: #1565c0;">🏪 Пункт выдачи СДЭК</h3>';
+                        echo '<div style="background: white; padding: 15px; border-radius: 4px; border: 1px solid #e1e5e9;">';
+                        echo '<p style="margin: 5px 0; font-size: 16px;"><strong>Название:</strong> ' . esc_html($point_data['name']) . '</p>';
+                        echo '<p style="margin: 5px 0; font-size: 16px;"><strong>Код пункта:</strong> ' . esc_html($point_code) . '</p>';
+                        
+                        if (isset($point_data['location']['address_full'])) {
+                            echo '<p style="margin: 5px 0; font-size: 16px;"><strong>Адрес:</strong> ' . esc_html($point_data['location']['address_full']) . '</p>';
+                        }
+                        
+                        // Режим работы в HTML
+                        if (isset($point_data['work_time_list']) && is_array($point_data['work_time_list'])) {
+                            echo '<p style="margin: 10px 0 5px 0; font-size: 16px;"><strong>Режим работы:</strong></p>';
+                            echo '<ul style="margin: 5px 0 5px 20px; padding: 0;">';
+                            $days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+                            foreach ($point_data['work_time_list'] as $work_time) {
+                                if (isset($work_time['day']) && isset($work_time['time'])) {
+                                    $day_index = intval($work_time['day']) - 1;
+                                    if ($day_index >= 0 && $day_index < 7) {
+                                        echo '<li style="margin: 2px 0;">' . $days[$day_index] . ': ' . esc_html($work_time['time']) . '</li>';
+                                    }
+                                }
+                            }
+                            echo '</ul>';
+                        }
+                        
+                        // Телефоны в HTML
+                        if (isset($point_data['phones']) && is_array($point_data['phones']) && !empty($point_data['phones'])) {
+                            $phone_numbers = array();
+                            foreach ($point_data['phones'] as $phone) {
+                                if (is_array($phone) && isset($phone['number'])) {
+                                    $phone_numbers[] = $phone['number'];
+                                } else {
+                                    $phone_numbers[] = $phone;
+                                }
+                            }
+                            if (!empty($phone_numbers)) {
+                                echo '<p style="margin: 5px 0; font-size: 16px;"><strong>Телефоны:</strong> ' . esc_html(implode(', ', $phone_numbers)) . '</p>';
+                            }
+                        }
+                        echo '</div>';
+                        echo '</div>';
+                    }
+                    break;
+            }
+            
+            echo '</td></tr>';
+            echo '</table>';
         }
     }
 }

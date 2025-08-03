@@ -292,6 +292,11 @@ class CdekDeliveryPlugin {
     }
     
     public function display_product_dimensions_checkout() {
+        // Проверяем, что мы на странице чекаута и WooCommerce загружен
+        if (!is_checkout() || !WC()->cart) {
+            return;
+        }
+        
         // Получаем товары из корзины
         $cart_items = WC()->cart->get_cart();
         
@@ -416,7 +421,7 @@ class CdekDeliveryPlugin {
     
     public function hide_checkout_fields_css() {
         if (is_checkout()) {
-            echo '<style></style>';
+            // Убираем пустой style tag, который может вызывать проблемы с headers
         }
     }
     
@@ -517,6 +522,11 @@ class CdekDeliveryPlugin {
      * Отображение информации о доставке в личном кабинете клиента
      */
     public function display_cdek_info_in_order_details($order) {
+        // Проверяем, что заказ существует
+        if (!$order || !is_object($order)) {
+            return;
+        }
+        
         $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
         $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
         $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
@@ -611,6 +621,11 @@ class CdekDeliveryPlugin {
      * Отображение информации о доставке в email уведомлениях
      */
     public function display_cdek_info_in_email($order, $sent_to_admin, $plain_text, $email) {
+        // Проверяем, что заказ существует
+        if (!$order || !is_object($order)) {
+            return;
+        }
+        
         // Не показываем админам
         if ($sent_to_admin) {
             return;

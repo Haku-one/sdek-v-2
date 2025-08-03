@@ -13,7 +13,9 @@ if (isset($_POST['submit'])) {
         update_option('cdek_sender_city', sanitize_text_field($_POST['cdek_sender_city']));
         update_option('cdek_yandex_api_key', sanitize_text_field($_POST['cdek_yandex_api_key']));
         
-        echo '<div class="notice notice-success"><p>Настройки сохранены!</p></div>';
+        add_action('admin_notices', function() {
+            echo '<div class="notice notice-success"><p>Настройки сохранены!</p></div>';
+        });
     }
 }
 

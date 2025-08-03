@@ -139,10 +139,10 @@ class CdekDeliveryPlugin {
             wp_enqueue_script('cdek-delivery-classic-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery-classic.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
             
             // Добавляем скрипт для автозаполнения textarea полей
-            wp_enqueue_script('textarea-auto-fill', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/textarea-auto-fill.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
+         
             
             wp_enqueue_style('cdek-delivery-css', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css', array(), CDEK_DELIVERY_VERSION);
-            wp_enqueue_style('checkout-styles', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/checkout-styles.css', array(), CDEK_DELIVERY_VERSION);
+           
            
             wp_localize_script('cdek-delivery-classic-js', 'cdek_ajax', array(
                 'ajax_url' => admin_url('admin-ajax.php'),

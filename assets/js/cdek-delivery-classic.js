@@ -245,64 +245,22 @@ jQuery(document).ready(function($) {
         // Удаляем все символы кроме цифр, точек и запятых
         var cleanText = originalText.replace(/[^\d.,]/g, '');
         
-        // Определяем формат числа
+        if (!cleanText) return 0;
+        
         var result = 0;
         
-        // Если есть и точка и запятая, то последний символ - десятичный разделитель
-        if (cleanText.indexOf('.') !== -1 && cleanText.indexOf(',') !== -1) {
-            var lastDot = cleanText.lastIndexOf('.');
-            var lastComma = cleanText.lastIndexOf(',');
-            
-            if (lastDot > lastComma) {
-                // Точка - десятичный разделитель, запятые - разделители тысяч
-                cleanText = cleanText.replace(/,/g, '');
-                result = parseFloat(cleanText);
-            } else {
-                // Запятая - десятичный разделитель, точки - разделители тысяч
-                cleanText = cleanText.replace(/\./g, '').replace(',', '.');
-                result = parseFloat(cleanText);
-            }
-        }
-        // Если только точки
-        else if (cleanText.indexOf('.') !== -1) {
-            var dotCount = (cleanText.match(/\./g) || []).length;
-            if (dotCount === 1) {
-                var parts = cleanText.split('.');
-                // Если после точки 3 цифры, то это разделитель тысяч
-                if (parts[1] && parts[1].length === 3 && parts[1].match(/^\d{3}$/)) {
-                    result = parseInt(cleanText.replace('.', ''));
-                } else {
-                    // Иначе это десятичный разделитель
-                    result = parseFloat(cleanText);
-                }
-            } else {
-                // Множественные точки - разделители тысяч
-                result = parseInt(cleanText.replace(/\./g, ''));
-            }
-        }
-        // Если только запятые
-        else if (cleanText.indexOf(',') !== -1) {
-            var commaCount = (cleanText.match(/,/g) || []).length;
-            if (commaCount === 1) {
-                var parts = cleanText.split(',');
-                // Если после запятой 3 цифры, то это разделитель тысяч
-                if (parts[1] && parts[1].length === 3 && parts[1].match(/^\d{3}$/)) {
-                    result = parseInt(cleanText.replace(',', ''));
-                } else {
-                    // Иначе это десятичный разделитель
-                    result = parseFloat(cleanText.replace(',', '.'));
-                }
-            } else {
-                // Множественные запятые - разделители тысяч
-                result = parseInt(cleanText.replace(/,/g, ''));
-            }
-        }
-        // Если только цифры
-        else {
-            result = parseInt(cleanText);
-        }
+        // Простая логика: если число содержит точку или запятую с 3 цифрами после - это разделитель тысяч
+        // Если с 1-2 цифрами после - это десятичный разделитель
         
-        result = Math.round(result) || 0;
+        // Заменяем все точки и запятые, которые являются разделителями тысяч (за которыми следует ровно 3 цифры)
+        cleanText = cleanText.replace(/[.,](\d{3})(?=\d)/g, '$1'); // Убираем разделители тысяч
+        
+        // Теперь заменяем оставшуюся точку или запятую на точку (десятичный разделитель)
+        cleanText = cleanText.replace(/,([^,]*)$/, '.$1'); // Последняя запятая -> точка
+        
+        result = parseFloat(cleanText) || 0;
+        result = Math.round(result);
+        
         console.log('💰 Парсинг цены:', originalText, '→', cleanText, '→', result);
         return result;
     }

@@ -700,13 +700,13 @@ jQuery(document).ready(function($) {
         
         if (typeof cdek_ajax === 'undefined' || !cdek_ajax.ajax_url) {
             console.error('CDEK AJAX не инициализирован');
-            callback(calculateFallbackCost(point, cartData));
+            callback(0);
             return;
         }
         
         if (!point || !point.code) {
             console.error('Не указан пункт выдачи или его код');
-            callback(calculateFallbackCost(point, cartData));
+            callback(0);
             return;
         }
         
@@ -739,25 +739,19 @@ jQuery(document).ready(function($) {
                         deliveryCost = deliveryCost * cartData.packagesCount;
                     }
                     
-                    if (response.data.fallback) {
-                        console.log('Причина:', response.data.message);
-                    } else if (response.data.api_success) {
+                    if (response.data.api_success) {
                         if (response.data.alternative_tariff) {
+                            console.log('✅ Использован альтернативный тариф:', response.data.alternative_tariff);
                         }
-                    } else {
                     }
                     
                     callback(deliveryCost);
                 } else if (!response.success) {
-                    
-                    // Используем fallback вместо показа ошибки пользователю
-                    var fallbackCost = calculateFallbackCost(point, cartData);
-                    console.log('🔄 Используем резервный расчет стоимости:', fallbackCost, 'руб.');
-                    callback(fallbackCost);
+                    console.log('❌ API СДЭК не вернул стоимость');
+                    callback(0);
                 } else {
-                    
-                    var fallbackCost = calculateFallbackCost(point, cartData);
-                    callback(fallbackCost);
+                    console.log('❌ Неизвестная ошибка API СДЭК');
+                    callback(0);
                 }
             },
             error: function(xhr, status, error) {
@@ -768,49 +762,13 @@ jQuery(document).ready(function($) {
                     readyState: xhr.readyState
                 });
                 
-                // Используем fallback вместо показа ошибки
-                var fallbackCost = calculateFallbackCost(point, cartData);
-                console.log('🔄 Используем резервный расчет стоимости:', fallbackCost, 'руб.');
-                callback(fallbackCost);
+                console.log('❌ Ошибка запроса к API СДЭК');
+                callback(0);
             }
         });
     }
     
-    function calculateFallbackCost(point, cartData) {
-        var baseCost = 350; // Базовая стоимость
-        
-        if (!cartData) {
-            return baseCost;
-        }
-        
-        // Надбавка за вес
-        if (cartData.weight > 500) {
-            var extraWeight = Math.ceil((cartData.weight - 500) / 500);
-            baseCost += extraWeight * 40;
-        }
-        
-        // Надбавка за габариты
-        if (cartData.hasRealDimensions && cartData.dimensions) {
-            var volume = cartData.dimensions.length * cartData.dimensions.width * cartData.dimensions.height;
-            if (volume > 12000) {
-                var extraVolume = Math.ceil((volume - 12000) / 6000);
-                baseCost += extraVolume * 60;
-            }
-        }
-        
-        // Надбавка за стоимость
-        if (cartData.value > 3000) {
-            baseCost += Math.ceil((cartData.value - 3000) / 1000) * 25;
-        }
-        
-        // Умножаем на количество коробок
-        if (cartData.packagesCount > 1) {
-            baseCost = baseCost * cartData.packagesCount;
-            console.log('📦 Fallback стоимость пересчитана для', cartData.packagesCount, 'коробок:', baseCost, 'руб.');
-        }
-        
-        return baseCost;
-    }
+    // Fallback расчеты удалены - используем только API СДЭК
     
     // ========== ОСТАЛЬНЫЕ ФУНКЦИИ (УПРОЩЕННЫЕ ДЛЯ МОБИЛЬНЫХ) ==========
     

@@ -249,47 +249,60 @@ jQuery(document).ready(function($) {
         
         // Получаем данные из скрытых полей с информацией о товарах
         var cartItems = $('#wc-cart-data .cart-item-data');
-        var realItemsCount = 0;
         
-        if (cartItems.length > 0) {
-            cartItems.each(function() {
-                var $item = $(this);
-                var quantity = parseInt($item.data('quantity')) || 1;
-                var length = parseFloat($item.data('length')) || 0;
-                var width = parseFloat($item.data('width')) || 0;
-                var height = parseFloat($item.data('height')) || 0;
-                var weight = parseFloat($item.data('weight')) || 0;
-                var price = parseFloat($item.data('price')) || 0;
+        if (cartItems.length === 0) {
+            console.error('❌ Нет данных о товарах в корзине! Расчет невозможен.');
+            return null;
+        }
+        
+        cartItems.each(function() {
+            var $item = $(this);
+            var quantity = parseInt($item.data('quantity')) || 0;
+            var length = parseFloat($item.data('length')) || 0;
+            var width = parseFloat($item.data('width')) || 0;
+            var height = parseFloat($item.data('height')) || 0;
+            var weight = parseFloat($item.data('weight')) || 0;
+            var price = parseFloat($item.data('price')) || 0;
+            
+            console.log('📦 Обработка товара:', {
+                length: length,
+                width: width, 
+                height: height,
+                weight: weight,
+                quantity: quantity,
+                price: price
+            });
+            
+            // Проверяем, что у товара есть ВСЕ необходимые габариты
+            if (length > 0 && width > 0 && height > 0 && weight > 0) {
+                hasValidDimensions = true;
                 
                 // Собираем общий вес и стоимость
                 cartWeight += (weight * quantity);
                 cartValue += (price * quantity);
                 totalItems += quantity;
-                realItemsCount++;
                 
-                // Если у товара есть габариты, учитываем их
-                if (length > 0 && width > 0 && height > 0) {
-                    hasValidDimensions = true;
-                    
-                    // Рассчитываем объем одной единицы товара
-                    var itemVolume = (length * width * height) * quantity;
-                    totalVolume += itemVolume;
-                    
-                    // Обновляем максимальные размеры (для самого большого товара)
-                    maxLength = Math.max(maxLength, length);
-                    maxWidth = Math.max(maxWidth, width); 
-                    maxHeight = Math.max(maxHeight, height);
-                    
-                    console.log('📦 Товар:', {
-                        length: length,
-                        width: width, 
-                        height: height,
-                        weight: weight,
-                        quantity: quantity,
-                        volume: itemVolume
-                    });
-                }
-            });
+                // Рассчитываем объем товаров
+                var itemVolume = (length * width * height) * quantity;
+                totalVolume += itemVolume;
+                
+                // Обновляем максимальные размеры (для самого большого товара)
+                maxLength = Math.max(maxLength, length);
+                maxWidth = Math.max(maxWidth, width); 
+                maxHeight = Math.max(maxHeight, height);
+                
+                console.log('✅ Товар с полными габаритами добавлен');
+            } else {
+                console.error('❌ У товара отсутствуют габариты или вес! Товар пропущен.');
+                console.error('📋 Требуются: длина, ширина, высота И вес');
+            }
+        });
+        
+        // Проверяем, что у нас есть товары с габаритами
+        if (!hasValidDimensions || totalItems === 0) {
+            console.error('❌ В корзине нет товаров с полными габаритами! Расчет стоимости доставки невозможен.');
+            console.error('📋 Необходимо указать габариты (Д×Ш×В) и вес для всех товаров в WooCommerce.');
+            return null;
         }
         
         // Получаем общую стоимость заказа из элементов страницы
@@ -302,18 +315,8 @@ jQuery(document).ready(function($) {
             }
         }
         
-        // Определяем размеры коробки на основе реальных данных или используем стандартные
-        var dimensions = calculateOptimalBoxSize(totalVolume, maxLength, maxWidth, maxHeight, hasValidDimensions, totalItems);
-        
-        // Если вес не указан, оцениваем его
-        if (cartWeight === 0) {
-            cartWeight = Math.max(100, totalItems * 200); // 200г на товар минимум
-        }
-        
-        // Минимальная стоимость
-        if (cartValue === 0) {
-            cartValue = 1000;
-        }
+        // Определяем размеры коробки на основе ТОЛЬКО реальных данных
+        var dimensions = calculateOptimalBoxSize(totalVolume, maxLength, maxWidth, maxHeight, totalItems);
         
         console.log('📊 Итоговые данные корзины:', {
             weight: cartWeight,
@@ -334,78 +337,73 @@ jQuery(document).ready(function($) {
         };
     }
     
-    // Функция для расчета оптимального размера коробки
-    function calculateOptimalBoxSize(totalVolume, maxLength, maxWidth, maxHeight, hasValidDimensions, totalItems) {
-        var dimensions = {};
+    // Функция для расчета оптимального размера коробки на основе ТОЛЬКО реальных габаритов
+    function calculateOptimalBoxSize(totalVolume, maxLength, maxWidth, maxHeight, totalItems) {
+        console.log('📦 Расчет коробки на основе реальных габаритов товаров');
+        console.log('📏 Общий объем товаров:', totalVolume, 'см³');
+        console.log('📏 Максимальные размеры:', {length: maxLength, width: maxWidth, height: maxHeight});
         
-        if (hasValidDimensions && totalVolume > 0) {
-            console.log('📦 Расчет коробки на основе реальных габаритов товаров');
-            console.log('📏 Общий объем товаров:', totalVolume, 'см³');
+        // Добавляем 30% запас для упаковки
+        var packingVolume = totalVolume * 1.3;
+        
+        // Стандартные коробки (длина x ширина x высота в см)
+        var standardBoxes = [
+            { name: 'Маленькая', length: 20, width: 15, height: 10, volume: 3000 },
+            { name: 'Средняя', length: 30, width: 20, height: 15, volume: 9000 },
+            { name: 'Большая', length: 40, width: 30, height: 20, volume: 24000 },
+            { name: 'XL', length: 50, width: 40, height: 25, volume: 50000 },
+            { name: 'XXL', length: 60, width: 50, height: 30, volume: 90000 }
+        ];
+        
+        var selectedBox = null;
+        
+        // Находим подходящую коробку
+        for (var i = 0; i < standardBoxes.length; i++) {
+            var box = standardBoxes[i];
             
-            // Добавляем 30% запас для упаковки
-            var packingVolume = totalVolume * 1.3;
+            // Проверяем, что товары помещаются по размерам И по объему
+            var fitsSize = (maxLength <= box.length && maxWidth <= box.width && maxHeight <= box.height);
+            var fitsVolume = (packingVolume <= box.volume);
             
-            // Стандартные коробки (длина x ширина x высота в см)
-            var standardBoxes = [
-                { name: 'Маленькая', length: 20, width: 15, height: 10, volume: 3000 },
-                { name: 'Средняя', length: 30, width: 20, height: 15, volume: 9000 },
-                { name: 'Большая', length: 40, width: 30, height: 20, volume: 24000 },
-                { name: 'XL', length: 50, width: 40, height: 25, volume: 50000 },
-                { name: 'XXL', length: 60, width: 50, height: 30, volume: 90000 }
-            ];
+            console.log('🔍 Проверяем коробку ' + box.name + ':', {
+                fitsSize: fitsSize,
+                fitsVolume: fitsVolume,
+                requiredVolume: packingVolume,
+                boxVolume: box.volume
+            });
             
-            var selectedBox = null;
-            
-            // Находим подходящую коробку
-            for (var i = 0; i < standardBoxes.length; i++) {
-                var box = standardBoxes[i];
-                
-                // Проверяем, что товары помещаются по размерам И по объему
-                var fitsSize = (maxLength <= box.length && maxWidth <= box.width && maxHeight <= box.height);
-                var fitsVolume = (packingVolume <= box.volume);
-                
-                if (fitsSize && fitsVolume) {
-                    selectedBox = box;
-                    break;
-                }
+            if (fitsSize && fitsVolume) {
+                selectedBox = box;
+                break;
             }
-            
-            // Если не нашли подходящую коробку, берем самую большую
-            if (!selectedBox) {
-                selectedBox = standardBoxes[standardBoxes.length - 1];
-                console.log('⚠️ Товары не помещаются в стандартные коробки, используем максимальную');
-            }
-            
-            dimensions = {
-                length: selectedBox.length,
-                width: selectedBox.width,
-                height: selectedBox.height
-            };
-            
-            console.log('📦 Выбрана коробка:', selectedBox.name, dimensions);
-            
-        } else {
-            console.log('📦 Используем стандартную коробку (габариты товаров не указаны)');
-            
-            // Стандартная коробка на основе количества товаров
-            if (totalItems <= 1) {
-                dimensions = { length: 20, width: 15, height: 10 }; // Маленькая
-            } else if (totalItems <= 3) {
-                dimensions = { length: 30, width: 20, height: 15 }; // Средняя
-            } else if (totalItems <= 5) {
-                dimensions = { length: 40, width: 30, height: 20 }; // Большая
-            } else {
-                dimensions = { length: 50, width: 40, height: 25 }; // XL
-            }
-            
-            console.log('📦 Стандартная коробка для', totalItems, 'товаров:', dimensions);
         }
+        
+        // Если не нашли подходящую коробку, берем самую большую
+        if (!selectedBox) {
+            selectedBox = standardBoxes[standardBoxes.length - 1];
+            console.log('⚠️ Товары не помещаются в стандартные коробки, используем максимальную');
+        }
+        
+        var dimensions = {
+            length: selectedBox.length,
+            width: selectedBox.width,
+            height: selectedBox.height
+        };
+        
+        console.log('📦 Выбрана коробка:', selectedBox.name, dimensions);
         
         return dimensions;
     }
     
     function calculateDeliveryCost(point, callback) {
         var cartData = getCartDataForCalculation();
+        
+        // Проверяем, что данные корзины получены
+        if (!cartData) {
+            console.error('❌ Нет данных корзины с габаритами! Расчет невозможен.');
+            callback(0);
+            return;
+        }
         
         if (typeof cdek_ajax === 'undefined' || !cdek_ajax.ajax_url) {
             console.error('CDEK AJAX не инициализирован');
@@ -463,8 +461,6 @@ jQuery(document).ready(function($) {
             }
         });
     }
-    
-    // Fallback расчеты удалены - используем только API СДЭК
     
     // ========== ФУНКЦИИ ДЛЯ РАБОТЫ С АДРЕСАМИ ==========
     

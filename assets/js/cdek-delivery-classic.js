@@ -1,0 +1,1461 @@
+/**
+ * СДЭК Доставка - Версия для классического чекаута WooCommerce
+ * Адаптировано для работы с классическими элементами формы вместо блоков
+ */
+
+// Глобальная защита от создания нескольких карт
+window.cdekMapCreationLock = false;
+
+// ========== УТИЛИТЫ ДЛЯ ОПТИМИЗАЦИИ ==========
+
+// Утилиты для сокращения кода
+const Utils = {
+    log: (message, data) => {
+        if (data) console.log(message, data);
+        else console.log(message);
+    },
+    
+    delay: (fn, ms = 100) => setTimeout(fn, ms),
+    
+    select: (selector, all = false) => {
+        return all ? document.querySelectorAll(selector) : document.querySelector(selector);
+    },
+    
+    hide: (elements) => {
+        const els = Array.isArray(elements) ? elements : [elements];
+        els.forEach(el => el?.style?.setProperty('display', 'none', 'important'));
+    },
+    
+    show: (elements) => {
+        const els = Array.isArray(elements) ? elements : [elements];
+        els.forEach(el => {
+            if (el?.style) {
+                el.style.removeProperty('display');
+                el.style.removeProperty('visibility'); 
+                el.style.removeProperty('opacity');
+                el.style.setProperty('display', 'block', 'important');
+                el.style.setProperty('visibility', 'visible', 'important');
+                el.style.setProperty('opacity', '1', 'important');
+            }
+        });
+    },
+    
+    mapResize: () => {
+        if (window.cdekMap?.container) {
+            try {
+                window.cdekMap.container.fitToViewport();
+                Utils.log('✅ Размер карты обновлен');
+            } catch (e) {
+                Utils.log('🚨 Ошибка обновления размера карты:', e);
+            }
+        }
+    }
+};
+
+// Умный дебаунсер с приоритетами
+class SmartDebouncer {
+    constructor() {
+        this.timers = new Map();
+        this.priorities = new Map();
+    }
+    
+    debounce(key, fn, delay, priority = 0) {
+        if (priority > 5) {
+            this.cancel(key);
+            return fn();
+        }
+        
+        this.cancel(key);
+        
+        const timer = setTimeout(() => {
+            fn();
+            this.timers.delete(key);
+            this.priorities.delete(key);
+        }, delay);
+        
+        this.timers.set(key, timer);
+        this.priorities.set(key, priority);
+    }
+    
+    cancel(key) {
+        if (this.timers.has(key)) {
+            clearTimeout(this.timers.get(key));
+            this.timers.delete(key);
+            this.priorities.delete(key);
+        }
+    }
+}
+
+// Батчинг DOM операций
+class DOMBatcher {
+    constructor() {
+        this.operations = [];
+        this.scheduled = false;
+    }
+    
+    add(operation) {
+        this.operations.push(operation);
+        if (!this.scheduled) {
+            this.scheduled = true;
+            requestAnimationFrame(() => this.flush());
+        }
+    }
+    
+    flush() {
+        this.operations.forEach(op => {
+            try {
+                op();
+            } catch (error) {
+                console.error('DOM operation error:', error);
+            }
+        });
+        this.operations = [];
+        this.scheduled = false;
+    }
+}
+
+// ========== УМНЫЙ ПОИСК АДРЕСОВ ==========
+
+class SmartAddressSearch {
+    constructor() {
+        this.debouncer = new SmartDebouncer();
+        this.userLocation = null;
+        
+        // Список российских городов
+        this.popularCities = [
+            'Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань', 'Нижний Новгород',
+            'Челябинск', 'Самара', 'Уфа', 'Ростов-на-Дону', 'Краснодар', 'Пермь', 'Воронеж',
+            'Волгоград', 'Красноярск', 'Саратов', 'Тюмень', 'Тольятти', 'Ижевск', 'Барнаул',
+            'Ульяновск', 'Владивосток', 'Ярославль', 'Иркутск', 'Хабаровск', 'Махачкала', 'Томск',
+            'Оренбург', 'Кемерово', 'Новокузнецк', 'Рязань', 'Астрахань', 'Пенза', 'Липецк',
+            'Тула', 'Киров', 'Чебоксары', 'Калининград', 'Брянск', 'Курск', 'Иваново', 'Магнитогорск'
+        ];
+        
+        this.initUserLocation();
+    }
+    
+    async initUserLocation() {
+        try {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        this.userLocation = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
+                        };
+                    },
+                    () => this.setDefaultLocation(),
+                    { timeout: 5000, maximumAge: 30000 }
+                );
+            } else {
+                this.setDefaultLocation();
+            }
+        } catch (error) {
+            this.setDefaultLocation();
+        }
+    }
+    
+    setDefaultLocation() {
+        this.userLocation = {
+            lat: 55.7558,
+            lng: 37.6176,
+            city: 'Москва'
+        };
+    }
+    
+    search(query, callback) {
+        this.debouncer.debounce('address-search', () => {
+            this.performSearch(query, callback);
+        }, 100);
+    }
+    
+    performSearch(query, callback) {
+        if (!query || query.length < 2) {
+            callback([]);
+            return;
+        }
+        
+        const results = this.searchInCities(query);
+        callback(results);
+    }
+    
+    searchInCities(query) {
+        const queryLower = query.toLowerCase().trim();
+        const results = [];
+        const maxResults = 10;
+        
+        this.popularCities.forEach(city => {
+            if (results.length >= maxResults) return;
+            
+            const cityLower = city.toLowerCase();
+            let score = 0;
+            
+            if (cityLower === queryLower) {
+                score = 1000;
+            } else if (cityLower.startsWith(queryLower)) {
+                score = 500;
+            } else if (cityLower.includes(queryLower)) {
+                score = 200;
+            }
+            
+            if (score > 0) {
+                const popularityIndex = this.popularCities.indexOf(city);
+                const popularityBonus = (this.popularCities.length - popularityIndex) * 2;
+                score += popularityBonus;
+                
+                if (this.userLocation && this.userLocation.city === city) {
+                    score += 200;
+                }
+                
+                results.push({
+                    city: city,
+                    display: city,
+                    score: score,
+                    type: 'city'
+                });
+            }
+        });
+        
+        results.sort((a, b) => b.score - a.score);
+        return results.slice(0, maxResults);
+    }
+}
+
+// ========== ОСНОВНОЙ КОД СДЭК ДЛЯ КЛАССИЧЕСКОГО ЧЕКАУТА ==========
+
+jQuery(document).ready(function($) {
+    var cdekMap = null;
+    var cdekPoints = [];
+    var selectedPoint = null;
+    var isInitialized = false;
+    
+    // Инициализируем утилиты оптимизации
+    const debouncer = new SmartDebouncer();
+    const domBatcher = new DOMBatcher();
+    const addressSearch = new SmartAddressSearch();
+    
+    // ========== ФУНКЦИИ ДЛЯ РАСЧЕТА ГАБАРИТОВ И СТОИМОСТИ ==========
+    
+    function getCartDataForCalculation() {
+        var cartWeight = 0;
+        var cartValue = 0;
+        var totalVolume = 0;
+        var maxLength = 0, maxWidth = 0, maxHeight = 0;
+        var hasValidDimensions = false;
+        var totalItems = 0;
+        var packagesCount = 1;
+        
+        console.log('Получение данных корзины для классического чекаута...');
+        
+        // Получаем данные из корзины через WooCommerce REST API или скрытые поля
+        var cartData = window.wc_cart_fragments_params || {};
+        
+        // Получаем общую стоимость заказа
+        var orderTotalElement = $('.order-total .amount, .cart-subtotal .amount');
+        if (orderTotalElement.length > 0) {
+            var totalText = orderTotalElement.first().text().replace(/[^\d]/g, '');
+            cartValue = parseInt(totalText) || 1000;
+        }
+        
+        // Базовые размеры если не указаны
+        var dimensions = {
+            length: 30,
+            width: 20,
+            height: 15
+        };
+        
+        if (cartWeight === 0) {
+            cartWeight = 500; // Базовый вес 500г
+        }
+        
+        if (cartValue === 0) {
+            cartValue = 1000; // Базовая стоимость
+        }
+        
+        console.log('Данные корзины для классического чекаута:', {
+            weight: cartWeight,
+            value: cartValue,
+            dimensions: dimensions,
+            hasRealDimensions: hasValidDimensions,
+            packagesCount: packagesCount
+        });
+        
+        return {
+            weight: cartWeight,
+            value: cartValue,
+            dimensions: dimensions,
+            hasRealDimensions: hasValidDimensions,
+            packagesCount: packagesCount
+        };
+    }
+    
+    function calculateDeliveryCost(point, callback) {
+        var cartData = getCartDataForCalculation();
+        
+        if (typeof cdek_ajax === 'undefined' || !cdek_ajax.ajax_url) {
+            console.error('CDEK AJAX не инициализирован');
+            callback(calculateFallbackCost(point, cartData));
+            return;
+        }
+        
+        if (!point || !point.code) {
+            console.error('Не указан пункт выдачи или его код');
+            callback(calculateFallbackCost(point, cartData));
+            return;
+        }
+        
+        console.log('Запрос расчета стоимости доставки для пункта:', point.code);
+        console.log('Данные корзины:', cartData);
+        
+        $.ajax({
+            url: cdek_ajax.ajax_url,
+            type: 'POST',
+            dataType: 'json',
+            timeout: 30000,
+            data: {
+                action: 'calculate_cdek_delivery_cost',
+                point_code: point.code,
+                point_data: JSON.stringify(point),
+                cart_weight: cartData.weight,
+                cart_dimensions: JSON.stringify(cartData.dimensions),
+                cart_value: cartData.value,
+                has_real_dimensions: cartData.hasRealDimensions ? 1 : 0,
+                packages_count: cartData.packagesCount || 1,
+                nonce: cdek_ajax.nonce || ''
+            },
+            success: function(response) {
+                if (response && response.success && response.data && response.data.delivery_sum) {
+                    var deliveryCost = parseInt(response.data.delivery_sum);
+                    
+                    if (cartData.packagesCount > 1) {
+                        deliveryCost = deliveryCost * cartData.packagesCount;
+                    }
+                    
+                    callback(deliveryCost);
+                } else {
+                    var fallbackCost = calculateFallbackCost(point, cartData);
+                    console.log('🔄 Используем резервный расчет стоимости:', fallbackCost, 'руб.');
+                    callback(fallbackCost);
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('❌ Ошибка запроса к API СДЭК:', {
+                    status: status,
+                    error: error
+                });
+                
+                var fallbackCost = calculateFallbackCost(point, cartData);
+                console.log('🔄 Используем резервный расчет стоимости:', fallbackCost, 'руб.');
+                callback(fallbackCost);
+            }
+        });
+    }
+    
+    function calculateFallbackCost(point, cartData) {
+        var baseCost = 350; // Базовая стоимость
+        
+        if (!cartData) {
+            return baseCost;
+        }
+        
+        // Надбавка за вес
+        if (cartData.weight > 500) {
+            var extraWeight = Math.ceil((cartData.weight - 500) / 500);
+            baseCost += extraWeight * 40;
+        }
+        
+        // Надбавка за габариты
+        if (cartData.hasRealDimensions && cartData.dimensions) {
+            var volume = cartData.dimensions.length * cartData.dimensions.width * cartData.dimensions.height;
+            if (volume > 12000) {
+                var extraVolume = Math.ceil((volume - 12000) / 6000);
+                baseCost += extraVolume * 60;
+            }
+        }
+        
+        // Надбавка за стоимость
+        if (cartData.value > 3000) {
+            baseCost += Math.ceil((cartData.value - 3000) / 1000) * 25;
+        }
+        
+        // Умножаем на количество коробок
+        if (cartData.packagesCount > 1) {
+            baseCost = baseCost * cartData.packagesCount;
+        }
+        
+        return baseCost;
+    }
+    
+    // ========== ФУНКЦИИ ДЛЯ РАБОТЫ С АДРЕСАМИ ==========
+    
+    function parseAddress(address) {
+        var result = { city: '', street: '' };
+        
+        if (!address || address.trim() === '') {
+            return result;
+        }
+        
+        var parts = address.split(/[,\s]+/);
+        
+        for (var i = 0; i < parts.length; i++) {
+            var part = parts[i].trim();
+            if (!part) continue;
+            
+            if (!result.city && !result.street) {
+                result.city = part;
+            } else if (result.city && !result.street) {
+                result.street = parts.slice(i).join(' ');
+                break;
+            }
+        }
+        
+        return result;
+    }
+    
+    function initAddressAutocomplete() {
+        var cityInput = $('#cdek-city-input');
+        if (cityInput.length === 0) {
+            return;
+        }
+        
+        $('#cdek-city-suggestions').remove();
+        
+        setupSmartAutocomplete();
+    }
+    
+    function setupSmartAutocomplete() {
+        var cityInput = $('#cdek-city-input');
+        if (cityInput.length === 0) {
+            return;
+        }
+        
+        var suggestionsContainer = $(`
+            <div id="cdek-city-suggestions" class="smart-address-suggestions" style="display: none;">
+                <div class="suggestions-header">
+                    <span class="suggestions-title">Выберите город</span>
+                    <span class="suggestions-count"></span>
+                </div>
+                <div class="suggestions-list"></div>
+            </div>
+        `);
+        
+        cityInput.parent().css('position', 'relative');
+        cityInput.parent().append(suggestionsContainer);
+        
+        // Добавляем стили
+        if (!$('#smart-search-styles').length) {
+            $('head').append(`
+                <style id="smart-search-styles">
+                .smart-address-suggestions {
+                    position: absolute;
+                    top: 100%;
+                    left: 0;
+                    right: 0;
+                    background: white;
+                    border: 1px solid #e1e5e9;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+                    z-index: 1000;
+                    max-height: 250px;
+                    overflow-y: auto;
+                    margin-top: 4px;
+                }
+                
+                .suggestions-header {
+                    padding: 10px 12px;
+                    border-bottom: 1px solid #f0f0f0;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    background: #f8f9fa;
+                }
+                
+                .suggestions-title {
+                    font-weight: 600;
+                    color: #333;
+                    font-size: 13px;
+                }
+                
+                .suggestions-count {
+                    font-size: 11px;
+                    color: #666;
+                }
+                
+                .suggestion-item {
+                    display: flex;
+                    align-items: center;
+                    padding: 12px 14px;
+                    cursor: pointer;
+                    transition: background-color 0.15s ease;
+                    border-bottom: 1px solid #f5f5f5;
+                }
+                
+                .suggestion-item:hover {
+                    background-color: #f8f9fa;
+                }
+                
+                .suggestion-item:last-child {
+                    border-bottom: none;
+                }
+                
+                .suggestion-icon {
+                    font-size: 16px;
+                    margin-right: 10px;
+                    opacity: 0.7;
+                }
+                
+                .suggestion-content {
+                    flex: 1;
+                }
+                
+                .suggestion-title {
+                    font-weight: 500;
+                    color: #333;
+                    margin-bottom: 2px;
+                    font-size: 14px;
+                }
+                
+                .suggestion-title mark {
+                    background-color: #fff3cd;
+                    color: #856404;
+                    padding: 0 2px;
+                    border-radius: 2px;
+                }
+                
+                .suggestion-subtitle {
+                    font-size: 12px;
+                    color: #666;
+                }
+                </style>
+            `);
+        }
+        
+        var currentSuggestions = [];
+        
+        cityInput.on('input', function() {
+            var query = $(this).val().trim();
+            
+            if (query.length >= 2) {
+                addressSearch.search(query, function(suggestions) {
+                    currentSuggestions = suggestions;
+                    showAddressSuggestions(suggestions, query);
+                });
+            } else {
+                hideAddressSuggestions();
+            }
+        });
+        
+        function showAddressSuggestions(suggestions, query) {
+            var container = suggestionsContainer.find('.suggestions-list');
+            container.empty();
+            
+            if (suggestions.length === 0) {
+                container.html('<div class="suggestion-item"><div class="suggestion-content"><div class="suggestion-title">Ничего не найдено</div><div class="suggestion-subtitle">Попробуйте изменить запрос</div></div></div>');
+                suggestionsContainer.find('.suggestions-count').text('0 результатов');
+            } else {
+                suggestions.forEach(function(suggestion, index) {
+                    var highlightedCity = highlightQuery(suggestion.city, query);
+                    
+                    var item = $(`
+                        <div class="suggestion-item" data-index="${index}">
+                            <div class="suggestion-icon">🏙️</div>
+                            <div class="suggestion-content">
+                                <div class="suggestion-title">${highlightedCity}</div>
+                                <div class="suggestion-subtitle">Россия</div>
+                            </div>
+                        </div>
+                    `);
+                    
+                    item.on('click', function() {
+                        selectSuggestion(suggestion);
+                    });
+                    
+                    container.append(item);
+                });
+                
+                suggestionsContainer.find('.suggestions-count').text(`${suggestions.length} результатов`);
+            }
+            
+            suggestionsContainer.show();
+        }
+        
+        function highlightQuery(text, query) {
+            if (!query || !text) return text;
+            
+            var regex = new RegExp(`(${query})`, 'gi');
+            return text.replace(regex, '<mark>$1</mark>');
+        }
+        
+        function selectSuggestion(suggestion) {
+            cityInput.val(suggestion.city);
+            hideAddressSuggestions();
+            
+            // Запоминаем выбранный город
+            window.lastSelectedCity = suggestion.city;
+            
+            // Показываем индикатор загрузки ПВЗ
+            showPvzLoader();
+            
+            debouncer.debounce('cdek-search', () => {
+                searchCdekPoints(suggestion.city);
+            }, 50, 6);
+        }
+        
+        function hideAddressSuggestions() {
+            suggestionsContainer.hide();
+        }
+        
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('#cdek-city-suggestions, #cdek-city-input').length) {
+                hideAddressSuggestions();
+            }
+        });
+    }
+    
+    // ========== ФУНКЦИИ ДЛЯ РАБОТЫ С КАРТОЙ ==========
+    
+    function initYandexMap() {
+        const mapContainer = document.getElementById('cdek-map');
+        const mapExists = (window.cdekMap && window.cdekMap.container && typeof window.cdekMap.getCenter === 'function') || 
+                         (cdekMap && cdekMap.container && typeof cdekMap.getCenter === 'function');
+        
+        const isMapVisible = mapContainer && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0;
+        const hasMapContent = mapContainer && mapContainer.children.length > 0;
+        
+        if (!window.cdekNeedsReinit && mapExists && isMapVisible && hasMapContent && !window.cdekMapInitializing) {
+            console.log('✅ Карта уже существует и работает');
+            
+            if (mapContainer) {
+                mapContainer.style.setProperty('display', 'block', 'important');
+                mapContainer.style.setProperty('visibility', 'visible', 'important');
+                mapContainer.style.setProperty('opacity', '1', 'important');
+            }
+            
+            if ((window.cdekMap || cdekMap) && !window.cdekMapInitializing) {
+                setTimeout(() => {
+                    if ((window.cdekMap || cdekMap) && (window.cdekMap?.container || cdekMap?.container)) {
+                        try {
+                            const map = window.cdekMap || cdekMap;
+                            map.container.fitToViewport();
+                        } catch (e) {
+                            console.log('Ошибка обновления карты:', e);
+                        }
+                    }
+                }, 200);
+            }
+            
+            return;
+        }
+        
+        // ПРИНУДИТЕЛЬНАЯ ПЕРЕИНИЦИАЛИЗАЦИЯ если карта серая
+        if (window.cdekNeedsReinit || (mapExists && mapContainer && mapContainer.innerHTML === '')) {
+            console.log('🔄 ПРИНУДИТЕЛЬНАЯ переинициализация серой карты');
+            window.cdekMap = null;
+            window.cdekMapInitializing = false;
+            window.cdekNeedsReinit = false;
+            mapContainer.innerHTML = '';
+        }
+        
+        // Устанавливаем флаг инициализации
+        window.cdekMapInitializing = true;
+        
+        if (mapContainer) {
+            // Пытаемся правильно уничтожить старую карту
+            if (window.cdekMap && typeof window.cdekMap.destroy === 'function') {
+                try {
+                    console.log('🗑️ Уничтожаем старую карту через API');
+                    window.cdekMap.destroy();
+                } catch (e) {
+                    console.log('Ошибка уничтожения карты:', e);
+                }
+                window.cdekMap = null;
+            }
+            
+            if (cdekMap && typeof cdekMap.destroy === 'function') {
+                try {
+                    cdekMap.destroy();
+                } catch (e) {
+                    console.log('Ошибка уничтожения карты:', e);
+                }
+                cdekMap = null;
+            }
+            
+            // Уничтожаем все дочерние элементы Yandex Maps
+            const ymapsElements = mapContainer.querySelectorAll('ymaps');
+            ymapsElements.forEach(el => el.remove());
+            mapContainer.innerHTML = '';
+        }
+        
+        // Проверяем загрузку Яндекс.Карт
+        if (window.yandexMapsLoadError || typeof ymaps === 'undefined') {
+            console.warn('СДЭК: Яндекс.Карты не загрузились или недоступны');
+            
+            if (mapContainer) {
+                mapContainer.innerHTML = `
+                    <div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #f5f5f5; border-radius: 6px; flex-direction: column;">
+                        <div style="font-size: 18px; color: #666; margin-bottom: 10px;">📍 Карта временно недоступна</div>
+                        <div style="font-size: 14px; color: #999;">Введите город выше для поиска пунктов выдачи</div>
+                    </div>
+                `;
+                window.cdekMapInitializing = false;
+            }
+            return;
+        }
+        
+        // Проверяем доступность ymaps с таймаутом
+        var maxAttempts = 50;
+        var attempts = 0;
+        
+        function checkYmaps() {
+            attempts++;
+            console.log(`🔍 Проверка ymaps, попытка ${attempts}/${maxAttempts}`);
+            
+            if (typeof ymaps !== 'undefined' && ymaps.Map) {
+                initMapContainer();
+            } else if (attempts < maxAttempts) {
+                setTimeout(checkYmaps, 200);
+            } else {
+                console.warn('СДЭК: Яндекс.Карты не загрузились за 10 секунд');
+                showMapFallback();
+            }
+        }
+        
+        checkYmaps();
+    }
+    
+    function initMapContainer() {
+        var mapContainer = document.getElementById('cdek-map');
+        if (!mapContainer) {
+            setTimeout(initYandexMap, 500);
+            return;
+        }
+        
+        console.log('📦 Настраиваем контейнер карты:', mapContainer.id);
+        mapContainer.style.cssText = 'display: block !important; width: 100% !important; height: 450px !important; visibility: visible !important; position: relative !important;';
+        
+        var checkContainer = function() {
+            if (mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0) {
+                try {
+                    ymaps.ready(function() {
+                        try {
+                            // ДОПОЛНИТЕЛЬНАЯ проверка перед созданием карты
+                            if (window.cdekMap && typeof window.cdekMap.getCenter === 'function') {
+                                window.cdekMapInitializing = false;
+                                return;
+                            }
+                            
+                            // Проверяем блокировку создания карты
+                            if (window.cdekMapCreationLock) {
+                                window.cdekMapInitializing = false;
+                                return;
+                            }
+                            
+                            // Устанавливаем блокировку
+                            window.cdekMapCreationLock = true;
+                            
+                            console.log('🗺️ Создаем новую карту в контейнере:', mapContainer.id);
+                            
+                            cdekMap = new ymaps.Map(mapContainer, {
+                                center: [55.753994, 37.622093],
+                                zoom: 10,
+                                controls: ['zoomControl', 'searchControl']
+                            }, {
+                                suppressMapOpenBlock: true
+                            });
+                            
+                            // Также сохраняем в глобальной переменной для синхронизации
+                            window.cdekMap = cdekMap;
+                            
+                            // Очищаем флаги инициализации
+                            window.cdekMapInitializing = false;
+                            window.cdekMapCreationLock = false;
+                            
+                            // ПРИНУДИТЕЛЬНАЯ проверка что карта отображается
+                            cdekMap.events.add('ready', function() {
+                                console.log('🗺️ Карта готова');
+                                // Принудительный ресайз
+                                setTimeout(() => {
+                                    cdekMap.container.fitToViewport();
+                                }, 100);
+                            });
+                            
+                            // Принудительно обновляем размер карты
+                            setTimeout(() => {
+                                if (cdekMap && cdekMap.container) {
+                                    console.log('🔄 Обновляем размер карты');
+                                    cdekMap.container.fitToViewport();
+                                }
+                            }, 100);
+                            
+                        } catch (initError) {
+                            console.error('❌ Ошибка создания карты:', initError);
+                            window.cdekMapInitializing = false;
+                            window.cdekMapCreationLock = false;
+                            throw initError;
+                        }
+                        
+                        if (cdekPoints && cdekPoints.length > 0) {
+                            displayCdekPoints(cdekPoints);
+                        }
+                    });
+                } catch (error) {
+                    console.error('СДЭК: Ошибка инициализации карты:', error);
+                    window.cdekMapInitializing = false;
+                    window.cdekMapCreationLock = false;
+                    showMapFallback();
+                }
+            } else {
+                setTimeout(checkContainer, 300);
+            }
+        };
+        
+        setTimeout(checkContainer, 200);
+    }
+    
+    function showMapFallback() {
+        var mapContainer = document.getElementById('cdek-map');
+        if (!mapContainer) return;
+        
+        mapContainer.innerHTML = `
+            <div style="
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 450px;
+                background: #f8f9fa;
+                border: 2px dashed #dee2e6;
+                border-radius: 8px;
+                color: #6c757d;
+                text-align: center;
+                padding: 20px;
+            ">
+                <div style="font-size: 48px; margin-bottom: 20px;">🗺️</div>
+                <h4 style="margin: 0 0 10px 0; color: #495057;">Карта временно недоступна</h4>
+                <p style="margin: 0 0 15px 0; font-size: 14px;">Яндекс.Карты не загрузились, но вы можете выбрать пункт выдачи из списка ниже</p>
+                <div id="fallback-points-list"></div>
+            </div>
+        `;
+        
+        // Если есть пункты выдачи, показываем их списком
+        if (cdekPoints && cdekPoints.length > 0) {
+            displayPointsAsList();
+        }
+    }
+    
+    function displayPointsAsList() {
+        var listContainer = document.getElementById('fallback-points-list');
+        if (!listContainer || !cdekPoints) return;
+        
+        var html = '<h5 style="margin: 0 0 15px 0;">Доступные пункты выдачи:</h5>';
+        
+        cdekPoints.slice(0, 10).forEach(function(point, index) {
+            var pointName = point.name || 'Пункт выдачи';
+            var address = '';
+            
+            if (point.location && point.location.address_full) {
+                address = point.location.address_full;
+            } else if (point.location && point.location.address) {
+                address = point.location.address;
+            }
+            
+            html += `
+                <div class="fallback-point-item" style="
+                    padding: 10px;
+                    margin-bottom: 10px;
+                    border: 1px solid #e9ecef;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                " data-point-index="${index}" onclick="selectPointFromList(${index})">
+                    <div style="font-weight: bold; margin-bottom: 5px;">${pointName}</div>
+                    <div style="font-size: 12px; color: #6c757d;">${address}</div>
+                    <div style="font-size: 12px; color: #007cba;">Код: ${point.code}</div>
+                </div>
+            `;
+        });
+        
+        listContainer.innerHTML = html;
+        
+        // Добавляем стили при наведении
+        $(document).on('mouseenter', '.fallback-point-item', function() {
+            $(this).css('background-color', '#f8f9fa');
+        }).on('mouseleave', '.fallback-point-item', function() {
+            $(this).css('background-color', 'transparent');
+        });
+    }
+    
+    function selectPointFromList(index) {
+        if (cdekPoints && cdekPoints[index]) {
+            selectCdekPoint(cdekPoints[index]);
+        }
+    }
+    
+    // Делаем функцию глобальной для использования в onclick
+    window.selectPointFromList = selectPointFromList;
+    
+    // ========== ФУНКЦИИ ДЛЯ ПОИСКА И ОТОБРАЖЕНИЯ ПУНКТОВ ВЫДАЧИ ==========
+    
+    function searchCdekPoints(address) {
+        var parsedAddress = parseAddress(address);
+        
+        // Проверяем, не ищем ли мы тот же город повторно
+        if (window.currentSearchCity === parsedAddress.city && cdekPoints && cdekPoints.length > 0) {
+            hidePvzLoader();
+            displayCdekPoints(cdekPoints);
+            return;
+        }
+        
+        // Очищаем выбор ПВЗ только при смене города
+        if (window.currentSearchCity && window.currentSearchCity !== parsedAddress.city) {
+            clearSelectedPoint();
+        }
+        
+        window.currentSearchCity = parsedAddress.city;
+        
+        console.log('🔍 Поиск пунктов СДЭК для города:', parsedAddress.city);
+        
+        performCdekSearch();
+    }
+    
+    function performCdekSearch() {
+        if (typeof cdek_ajax === 'undefined') return;
+        
+        // Формируем адрес для поиска
+        var searchAddress = 'Россия';
+        if (window.currentSearchCity) {
+            searchAddress = window.currentSearchCity;
+        }
+        
+        console.log('📡 Запрос к API СДЭК для:', searchAddress);
+        
+        $.ajax({
+            url: cdek_ajax.ajax_url,
+            type: 'POST',
+            dataType: 'json',
+            timeout: 30000,
+            data: {
+                action: 'get_cdek_points',
+                address: searchAddress,
+                nonce: cdek_ajax.nonce
+            },
+            success: function(response) {
+                hidePvzLoader();
+                if (response.success && response.data) {
+                    console.log('✅ Получено пунктов выдачи:', response.data.length);
+                    displayCdekPoints(response.data);
+                } else {
+                    showPvzError('Не удалось загрузить пункты выдачи');
+                }
+            },
+            error: function(xhr, status, error) {
+                hidePvzLoader();
+                console.error('❌ Ошибка загрузки пунктов выдачи:', error);
+                showPvzError('Ошибка загрузки пунктов выдачи');
+            }
+        });
+    }
+    
+    function displayCdekPoints(points) {
+        cdekPoints = points;
+        
+        if (!cdekMap || typeof ymaps === 'undefined') {
+            Utils.delay(() => displayCdekPoints(points), 200);
+            return;
+        }
+        
+        cdekMap.geoObjects.removeAll();
+        
+        if (!points || points.length === 0) {
+            var cityInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
+            $('#cdek-points-count').text(`Пункты выдачи не найдены${cityInfo}`);
+            return;
+        }
+        
+        var filteredPoints = points.filter(function(point) {
+            if (window.currentSearchCity) {
+                var pointCity = '';
+                
+                if (point.location && point.location.city) {
+                    pointCity = point.location.city.trim();
+                }
+                
+                if (!pointCity && point.location && point.location.address) {
+                    var addressParts = point.location.address.split(',');
+                    if (addressParts.length > 0) {
+                        pointCity = addressParts[0].trim();
+                    }
+                }
+                
+                if (pointCity) {
+                    pointCity = pointCity.replace(/^(г\.?\s*|город\s+)/i, '').trim();
+                }
+                
+                var searchCityLower = window.currentSearchCity.toLowerCase().trim();
+                var pointCityLower = pointCity.toLowerCase().trim();
+                
+                if (pointCityLower && searchCityLower) {
+                    if (pointCityLower !== searchCityLower && 
+                        !pointCityLower.includes(searchCityLower) && 
+                        !searchCityLower.includes(pointCityLower)) {
+                        return false;
+                    }
+                }
+            }
+            
+            return true;
+        });
+        
+        console.log('📍 Отфильтровано пунктов:', filteredPoints.length);
+        
+        var maxPoints = 100;
+        var pointsToShow = filteredPoints.slice(0, maxPoints);
+        
+        var pointsInfo = '';
+        if (filteredPoints.length > 0) {
+            var locationInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
+            pointsInfo = `Найдено ${filteredPoints.length} пунктов выдачи${locationInfo}`;
+            if (filteredPoints.length > maxPoints) {
+                pointsInfo += ` (показано ${maxPoints})`;
+            }
+        } else {
+            var locationInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
+            pointsInfo = `Пункты выдачи не найдены${locationInfo}`;
+        }
+        $('#cdek-points-count').text(pointsInfo);
+        
+        // Также отображаем список пунктов
+        displayPointsList(pointsToShow);
+        
+        var bounds = [];
+        
+        pointsToShow.forEach(function(point, index) {
+            if (point.location && point.location.latitude && point.location.longitude) {
+                var coords = [point.location.latitude, point.location.longitude];
+                bounds.push(coords);
+                
+                var placemark = new ymaps.Placemark(coords, {
+                    balloonContent: formatPointInfo(point),
+                    hintContent: point.name
+                }, {
+                    preset: 'islands#redIcon'
+                });
+                
+                placemark.events.add('click', function() {
+                    selectCdekPoint(point);
+                });
+                
+                cdekMap.geoObjects.add(placemark);
+            }
+        });
+        
+        if (bounds.length > 0) {
+            if (bounds.length === 1) {
+                cdekMap.setCenter(bounds[0], 14);
+            } else {
+                var minLat = Math.min.apply(null, bounds.map(function(coord) { return coord[0]; }));
+                var maxLat = Math.max.apply(null, bounds.map(function(coord) { return coord[0]; }));
+                var minLon = Math.min.apply(null, bounds.map(function(coord) { return coord[1]; }));
+                var maxLon = Math.max.apply(null, bounds.map(function(coord) { return coord[1]; }));
+                
+                var centerLat = (minLat + maxLat) / 2;
+                var centerLon = (minLon + maxLon) / 2;
+                
+                var latDiff = maxLat - minLat;
+                var lonDiff = maxLon - minLon;
+                var maxDiff = Math.max(latDiff, lonDiff);
+                
+                var zoom = 12;
+                if (maxDiff < 0.01) zoom = 15;
+                else if (maxDiff < 0.05) zoom = 13;
+                else if (maxDiff < 0.1) zoom = 12;
+                else if (maxDiff < 0.5) zoom = 10;
+                else zoom = 8;
+                
+                cdekMap.setCenter([centerLat, centerLon], zoom);
+            }
+        }
+    }
+    
+    function displayPointsList(points) {
+        var listContainer = $('#cdek-points-list-content');
+        var listWrapper = $('#cdek-points-list');
+        
+        if (!points || points.length === 0) {
+            listWrapper.hide();
+            return;
+        }
+        
+        var html = '';
+        points.slice(0, 10).forEach(function(point, index) {
+            var pointName = point.name || 'Пункт выдачи';
+            var address = '';
+            
+            if (point.location && point.location.address_full) {
+                address = point.location.address_full;
+            } else if (point.location && point.location.address) {
+                address = point.location.address;
+            }
+            
+            html += `
+                <div class="cdek-point-item" style="
+                    padding: 12px;
+                    margin-bottom: 8px;
+                    border: 1px solid #e9ecef;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                " data-point-index="${index}">
+                    <div style="font-weight: 600; margin-bottom: 6px; color: #333;">${pointName}</div>
+                    <div style="font-size: 13px; color: #666; margin-bottom: 4px;">${address}</div>
+                    <div style="font-size: 12px; color: #007cba;">Код: ${point.code}</div>
+                </div>
+            `;
+        });
+        
+        listContainer.html(html);
+        listWrapper.show();
+        
+        // Обработчики кликов на элементы списка
+        $('.cdek-point-item').on('click', function() {
+            var index = $(this).data('point-index');
+            if (points[index]) {
+                selectCdekPoint(points[index]);
+            }
+        });
+        
+        // Стили при наведении
+        $('.cdek-point-item').on('mouseenter', function() {
+            $(this).css({
+                'background-color': '#f8f9fa',
+                'border-color': '#007cba',
+                'transform': 'translateY(-1px)',
+                'box-shadow': '0 2px 8px rgba(0,0,0,0.1)'
+            });
+        }).on('mouseleave', function() {
+            $(this).css({
+                'background-color': 'transparent',
+                'border-color': '#e9ecef',
+                'transform': 'translateY(0)',
+                'box-shadow': 'none'
+            });
+        });
+    }
+    
+    function selectCdekPoint(point) {
+        selectedPoint = point;
+        
+        console.log('✅ Выбран пункт выдачи:', point.code, point.name);
+        
+        // Сохраняем информацию о выбранном ПВЗ
+        window.selectedCdekPoint = {
+            code: point.code,
+            name: point.name,
+            address: point.location && point.location.address ? point.location.address : '',
+            city: point.location && point.location.city ? point.location.city : ''
+        };
+        
+        $('#cdek-point-info').html(formatPointInfo(point));
+        $('#cdek-selected-point').show();
+        
+        if (cdekMap && point.location) {
+            cdekMap.setCenter([point.location.latitude, point.location.longitude], 15);
+        }
+        
+        // Обновляем скрытые поля
+        $('#cdek-selected-point-code').val(point.code);
+        $('#cdek-selected-point-data').val(JSON.stringify(point));
+        
+        updateOrderSummary(point);
+    }
+    
+    function clearSelectedPoint() {
+        selectedPoint = null;
+        window.selectedCdekPoint = null;
+        
+        $('#cdek-selected-point').hide();
+        $('#cdek-point-info').html('');
+        
+        $('#cdek-selected-point-code').val('');
+        $('#cdek-selected-point-data').val('');
+        $('#cdek-delivery-cost').val('');
+        
+        console.log('🗑️ Очищен выбор пункта выдачи');
+    }
+    
+    function formatPointInfo(point) {
+        var pointName = point.name || 'Пункт выдачи';
+        if (pointName.includes(',')) {
+            pointName = pointName.split(',').slice(1).join(',').trim();
+        }
+        
+        var html = `<strong>${pointName}</strong><br>`;
+        
+        if (point.location && point.location.address_full) {
+            html += `Адрес: ${point.location.address_full}<br>`;
+        } else if (point.address) {
+            html += `Адрес: ${point.address}<br>`;
+        }
+        
+        if (point.phones && Array.isArray(point.phones) && point.phones.length > 0) {
+            var phoneNumbers = point.phones.map(function(phone) {
+                return phone.number || phone;
+            }).join(', ');
+            html += `Телефон: ${phoneNumbers}<br>`;
+        } else if (point.phone) {
+            html += `Телефон: ${point.phone}<br>`;
+        }
+        
+        html += `Режим работы: ${formatWorkTime(point.work_time, point.work_time_list)}<br>`;
+        
+        if (point.code) {
+            html += `Код: ${point.code}<br>`;
+        }
+        
+        return html;
+    }
+    
+    function formatWorkTime(workTime, workTimeList) {
+        if (workTimeList && Array.isArray(workTimeList) && workTimeList.length > 0) {
+            var days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+            var schedule = '';
+            
+            workTimeList.forEach(function(time) {
+                if (time.day !== undefined && time.time) {
+                    schedule += days[time.day - 1] + ': ' + time.time + ' ';
+                }
+            });
+            
+            return schedule || 'Не указан';
+        }
+        
+        if (workTime && typeof workTime === 'string') {
+            return workTime;
+        }
+        
+        return 'Не указан';
+    }
+    
+    function updateOrderSummary(point) {
+        showDeliveryCalculationLoader();
+        
+        calculateDeliveryCost(point, function(deliveryCost) {
+            hideDeliveryCalculationLoader();
+            
+            // Обновляем отображение стоимости доставки в классическом чекауте
+            updateClassicShippingCost(point, deliveryCost);
+            
+            // Сохраняем стоимость доставки в скрытое поле
+            $('#cdek-delivery-cost').val(deliveryCost);
+            
+            // Запускаем обновление чекаута
+            $('body').trigger('update_checkout');
+            
+            console.log('💰 Стоимость доставки обновлена:', deliveryCost, 'руб.');
+        });
+    }
+    
+    function updateClassicShippingCost(point, deliveryCost) {
+        // Обновляем текст в методе доставки СДЭК
+        var cdekShippingLabels = $('label[for*="shipping_method"]:contains("СДЭК"), label[for*="shipping_method"]:contains("cdek")');
+        
+        cdekShippingLabels.each(function() {
+            var $label = $(this);
+            var originalText = $label.text();
+            
+            // Очищаем от предыдущих цен
+            var cleanText = originalText.replace(/\d+\s*руб\.?/g, '').trim();
+            if (cleanText.endsWith(' -')) {
+                cleanText = cleanText.slice(0, -2).trim();
+            }
+            
+            // Добавляем новую цену
+            var newText = cleanText + ' - ' + deliveryCost + ' руб.';
+            $label.html(newText);
+        });
+        
+        // Обновляем в таблице заказа если есть
+        var orderTable = $('#order_review, .shop_table');
+        if (orderTable.length > 0) {
+            var shippingRow = orderTable.find('tr.shipping, tr:contains("Доставка"), tr:contains("СДЭК")');
+            shippingRow.each(function() {
+                var $row = $(this);
+                var $cell = $row.find('td:last');
+                if ($cell.length > 0) {
+                    $cell.html('<span class="amount">' + deliveryCost + ' руб.</span>');
+                }
+            });
+        }
+        
+        // Обновляем общую стоимость
+        updateTotalCost(deliveryCost);
+    }
+    
+    function updateTotalCost(deliveryCost) {
+        // Получаем текущую стоимость товаров
+        var subtotalElement = $('.cart-subtotal .amount, .order-subtotal .amount');
+        var subtotal = 0;
+        
+        if (subtotalElement.length > 0) {
+            var subtotalText = subtotalElement.first().text().replace(/[^\d]/g, '');
+            subtotal = parseInt(subtotalText) || 0;
+        }
+        
+        // Вычисляем новую общую стоимость
+        var newTotal = subtotal + deliveryCost;
+        
+        // Обновляем отображение общей стоимости
+        var totalElement = $('.order-total .amount');
+        if (totalElement.length > 0) {
+            totalElement.html(newTotal.toLocaleString('ru-RU') + ' руб.');
+        }
+    }
+    
+    // ========== ФУНКЦИИ ДЛЯ ЗАГРУЗЧИКОВ И ОШИБОК ==========
+    
+    function showDeliveryCalculationLoader() {
+        // Показываем лоадер в блоке выбранного пункта
+        $('#cdek-point-info').append('<div id="cost-loader" style="margin-top: 10px; color: #666;"><i>Расчет стоимости...</i></div>');
+    }
+    
+    function hideDeliveryCalculationLoader() {
+        $('#cost-loader').remove();
+    }
+    
+    function showPvzLoader() {
+        $('#cdek-points-count').html('🔄 Загружаем пункты выдачи...');
+        
+        // Показываем лоадер в контейнере карты
+        var mapContainer = $('#cdek-map-container');
+        if (mapContainer.length > 0 && $('#pvz-loader').length === 0) {
+            var loader = $(`
+                <div id="pvz-loader" style="
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: rgba(255, 255, 255, 0.95);
+                    padding: 20px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    z-index: 1000;
+                    text-align: center;
+                ">
+                    <div style="
+                        width: 30px;
+                        height: 30px;
+                        border: 3px solid #f3f3f3;
+                        border-top: 3px solid #007cba;
+                        border-radius: 50%;
+                        animation: spin 1s linear infinite;
+                        margin: 0 auto 10px;
+                    "></div>
+                    <div style="color: #666; font-size: 14px;">Загрузка пунктов выдачи...</div>
+                </div>
+            `);
+            mapContainer.css('position', 'relative').append(loader);
+            
+            // Добавляем CSS анимацию если её нет
+            if (!$('#pvz-loader-styles').length) {
+                $('head').append(`
+                    <style id="pvz-loader-styles">
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                    </style>
+                `);
+            }
+        }
+    }
+    
+    function hidePvzLoader() {
+        $('#pvz-loader').remove();
+    }
+    
+    function showPvzError(message) {
+        $('#cdek-points-count').html('❌ ' + message);
+        setTimeout(() => {
+            $('#cdek-points-count').html('Выберите город для поиска пунктов выдачи');
+        }, 3000);
+    }
+    
+    // ========== ИНИЦИАЛИЗАЦИЯ ДЛЯ КЛАССИЧЕСКОГО ЧЕКАУТА ==========
+    
+    function initCdekDelivery() {
+        console.log('🚀 Инициализация СДЭК доставки для классического чекаута');
+        
+        if (isInitialized) {
+            console.log('⏭️ СДЭК уже инициализирован');
+            return;
+        }
+        
+        // Инициализируем автокомплит для поиска городов
+        setTimeout(() => initAddressAutocomplete(), 200);
+        
+        // Инициализируем карту
+        setTimeout(() => initYandexMap(), 300);
+        
+        isInitialized = true;
+        
+        console.log('✅ СДЭК доставка инициализирована для классического чекаута');
+    }
+    
+    // ========== ОБРАБОТЧИКИ СОБЫТИЙ ==========
+    
+    // Инициализация при изменении метода доставки
+    $(document).on('change', 'input[name^="shipping_method"]', function() {
+        if ($(this).val().indexOf('cdek_delivery') !== -1) {
+            $('#cdek-map-container, #cdek-map-wrapper').show();
+            debouncer.debounce('init-cdek', () => initCdekDelivery(), 100);
+        } else {
+            $('#cdek-map-container, #cdek-map-wrapper').hide();
+            clearSelectedPoint();
+        }
+    });
+    
+    // Обработчик поиска по городу
+    $(document).on('input', '#cdek-city-input', function() {
+        var city = $(this).val().trim();
+        
+        if (city.length > 2) {
+            debouncer.debounce('city-search', () => searchCdekPoints(city), 300);
+        } else {
+            $('#cdek-points-list').hide();
+            if (cdekMap) {
+                cdekMap.geoObjects.removeAll();
+            }
+        }
+    });
+    
+    // Обработчик очистки выбора
+    $(document).on('click', '#cdek-clear-selection', function() {
+        clearSelectedPoint();
+        $('#cdek-points-list').hide();
+        if (cdekMap) {
+            cdekMap.geoObjects.removeAll();
+        }
+    });
+    
+    // Проверяем при загрузке страницы
+    $(document).ready(function() {
+        var selectedShippingMethod = $('input[name^="shipping_method"]:checked');
+        if (selectedShippingMethod.length > 0 && selectedShippingMethod.val().indexOf('cdek_delivery') !== -1) {
+            $('#cdek-map-container, #cdek-map-wrapper').show();
+            debouncer.debounce('init-cdek-load', () => initCdekDelivery(), 500);
+        }
+    });
+    
+    // Обновление чекаута при изменениях
+    $(document).on('updated_checkout', function() {
+        // Переинициализируем обработчики после обновления чекаута
+        setTimeout(() => {
+            var selectedShippingMethod = $('input[name^="shipping_method"]:checked');
+            if (selectedShippingMethod.length > 0 && selectedShippingMethod.val().indexOf('cdek_delivery') !== -1) {
+                $('#cdek-map-container, #cdek-map-wrapper').show();
+            }
+        }, 100);
+    });
+    
+    console.log('📋 СДЭК доставка для классического чекаута загружена');
+});

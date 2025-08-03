@@ -90,6 +90,20 @@ class CdekDeliveryPlugin {
         
         // Подключаем обработчик данных доставки
         add_action('plugins_loaded', array($this, 'load_delivery_data_handler'));
+        
+        // Хуки для классического чекаута
+        add_action('woocommerce_review_order_after_shipping', array($this, 'add_cdek_map_to_classic_checkout'));
+        add_action('woocommerce_checkout_after_customer_details', array($this, 'add_cdek_map_alternative_position'));
+        add_action('woocommerce_checkout_after_order_review', array($this, 'add_cdek_map_fallback_position'));
+        
+        // Шорткод для ручного размещения карты
+        add_shortcode('cdek_delivery_map', array($this, 'cdek_delivery_map_shortcode'));
+        
+        // Дополнительные хуки для классического чекаута
+        add_action('wp_head', array($this, 'add_classic_checkout_styles'));
+        add_action('woocommerce_checkout_process', array($this, 'validate_cdek_point_selection'));
+        add_filter('woocommerce_shipping_calculator_enable_city', '__return_false');
+        add_filter('woocommerce_shipping_calculator_enable_postcode', '__return_false');
     }
     
     public function init() {
@@ -98,6 +112,9 @@ class CdekDeliveryPlugin {
     
     public function enqueue_scripts() {
         if (is_checkout()) {
+            // Проверяем, используется ли блочный или классический чекаут
+            $is_block_checkout = has_block('woocommerce/checkout') || has_block('woocommerce/cart');
+            
             // Проверяем, не загружены ли уже Яндекс.Карты
             if (!wp_script_is('yandex-maps', 'enqueued') && !wp_script_is('yandex-maps', 'done')) {
                 // Получаем API ключ из настроек или используем по умолчанию
@@ -124,7 +141,12 @@ class CdekDeliveryPlugin {
                 ', 'before');
             }
             
-            wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
+            // Выбираем JS файл в зависимости от типа чекаута
+            if ($is_block_checkout) {
+                wp_enqueue_script('cdek-delivery-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
+            } else {
+                wp_enqueue_script('cdek-delivery-classic-js', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/cdek-delivery-classic.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
+            }
             
             // Добавляем скрипт для автозаполнения textarea полей
             wp_enqueue_script('textarea-auto-fill', CDEK_DELIVERY_PLUGIN_URL . 'assets/js/textarea-auto-fill.js', array('jquery'), CDEK_DELIVERY_VERSION, true);
@@ -132,10 +154,12 @@ class CdekDeliveryPlugin {
             wp_enqueue_style('cdek-delivery-css', CDEK_DELIVERY_PLUGIN_URL . 'assets/css/cdek-delivery.css', array(), CDEK_DELIVERY_VERSION);
            
             
-            wp_localize_script('cdek-delivery-js', 'cdek_ajax', array(
+            $script_name = $is_block_checkout ? 'cdek-delivery-js' : 'cdek-delivery-classic-js';
+            wp_localize_script($script_name, 'cdek_ajax', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('cdek_nonce'),
-                'yandex_api_key' => $yandex_api_key
+                'yandex_api_key' => $yandex_api_key,
+                'is_block_checkout' => $is_block_checkout
             ));
             
             wp_localize_script('textarea-auto-fill', 'textarea_auto_fill', array(
@@ -554,8 +578,12 @@ class CdekDeliveryPlugin {
     }
     
     public function load_blocks_integration() {
+        // Загружаем интеграцию с блоками только если используется блочный редактор
         if (class_exists('Automattic\WooCommerce\Blocks\Integrations\IntegrationInterface')) {
-            include_once plugin_dir_path(__FILE__) . 'includes/class-wc-blocks-integration.php';
+            // Проверяем, что это не классический чекаут
+            if (!is_checkout() || has_block('woocommerce/checkout')) {
+                include_once plugin_dir_path(__FILE__) . 'includes/class-wc-blocks-integration.php';
+            }
         }
     }
     
@@ -579,6 +607,309 @@ class CdekDeliveryPlugin {
             }
         } else {
            
+        }
+    }
+    
+    /**
+     * Добавление карты СДЭК в классический чекаут
+     */
+    public function add_cdek_map_to_classic_checkout() {
+        // Проверяем, что это не блочный чекаут
+        if (has_block('woocommerce/checkout')) {
+            return;
+        }
+        
+        echo $this->render_cdek_map_html();
+    }
+    
+    /**
+     * Альтернативная позиция для карты в классическом чекауте
+     */
+    public function add_cdek_map_alternative_position() {
+        // Проверяем, что это не блочный чекаут
+        if (has_block('woocommerce/checkout')) {
+            return;
+        }
+        
+        // Показываем карту только если выбран метод доставки СДЭК
+        ?>
+        <div id="cdek-map-wrapper" style="display: none;">
+            <?php echo $this->render_cdek_map_html(); ?>
+        </div>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            // Показываем карту при выборе СДЭК доставки
+            $('body').on('change', 'input[name^="shipping_method"]', function() {
+                if ($(this).val().indexOf('cdek_delivery') !== -1) {
+                    $('#cdek-map-wrapper').show();
+                } else {
+                    $('#cdek-map-wrapper').hide();
+                }
+            });
+            
+            // Проверяем при загрузке страницы
+            $('input[name^="shipping_method"]:checked').each(function() {
+                if ($(this).val().indexOf('cdek_delivery') !== -1) {
+                    $('#cdek-map-wrapper').show();
+                }
+            });
+        });
+        </script>
+        <?php
+    }
+    
+    /**
+     * Шорткод для карты СДЭК
+     */
+    public function cdek_delivery_map_shortcode($atts) {
+        $atts = shortcode_atts(array(
+            'height' => '450px',
+            'show_always' => 'false'
+        ), $atts);
+        
+        $style = $atts['show_always'] === 'true' ? '' : 'display: none;';
+        $wrapper_id = $atts['show_always'] === 'true' ? 'cdek-shortcode-map' : 'cdek-map-wrapper';
+        
+        return '<div id="' . $wrapper_id . '" style="' . $style . '">' . 
+               $this->render_cdek_map_html($atts['height']) . 
+               '</div>';
+    }
+    
+    /**
+     * Рендеринг HTML карты СДЭК
+     */
+    private function render_cdek_map_html($height = '450px') {
+        ob_start();
+        ?>
+        <div id="cdek-map-container" style="margin-top: 20px; display: block;">
+            <h4>Выберите пункт выдачи СДЭК:</h4>
+            
+            <div id="cdek-address-search" style="margin-bottom: 15px;">
+                <label for="cdek-city-input"><strong>Город доставки:</strong></label>
+                <input type="text" id="cdek-city-input" placeholder="Введите название города..." 
+                       style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                <div id="cdek-city-suggestions" style="display: none;"></div>
+            </div>
+            
+            <div id="cdek-points-info" style="margin-bottom: 10px; padding: 10px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 4px;">
+                <strong>Информация:</strong>
+                <div id="cdek-points-count">Введите город выше для поиска пунктов выдачи</div>
+            </div>
+            
+            <div id="cdek-selected-point" style="margin-bottom: 10px; padding: 10px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; display: none;">
+                <strong>Выбранный пункт выдачи:</strong>
+                <div id="cdek-point-info"></div>
+                <button type="button" id="cdek-clear-selection" style="margin-top: 10px; padding: 5px 10px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                    Очистить выбор
+                </button>
+            </div>
+            
+            <div id="cdek-map" style="width: 100%; height: <?php echo esc_attr($height); ?>; border: 1px solid #ddd; border-radius: 6px; display: block;"></div>
+            
+            <div id="cdek-points-list" style="margin-top: 15px; max-height: 300px; overflow-y: auto; display: none;">
+                <h5>Список пунктов выдачи:</h5>
+                <div id="cdek-points-list-content"></div>
+            </div>
+            
+            <p style="font-size: 14px; color: #666; margin-top: 10px;">
+                💡 Введите город в поле выше, затем выберите пункт выдачи на карте или в списке
+            </p>
+        </div>
+        
+        <!-- Скрытые поля для передачи данных -->
+        <input type="hidden" id="cdek-selected-point-code" name="cdek_selected_point_code" value="">
+        <input type="hidden" id="cdek-selected-point-data" name="cdek_selected_point_data" value="">
+        <input type="hidden" id="cdek-delivery-cost" name="cdek_delivery_cost" value="">
+        <?php
+        return ob_get_clean();
+    }
+    
+    /**
+     * Резервная позиция для карты СДЭК
+     */
+    public function add_cdek_map_fallback_position() {
+        // Проверяем, что это не блочный чекаут
+        if (has_block('woocommerce/checkout')) {
+            return;
+        }
+        
+        // Показываем карту только если выбран метод доставки СДЭК и карта еще не отображена
+        ?>
+        <script>
+        jQuery(document).ready(function($) {
+            if ($('#cdek-map-container').length === 0) {
+                // Карта еще не была добавлена, добавляем в резервную позицию
+                var mapHtml = '<?php echo str_replace(array("\n", "\r"), '', addslashes($this->render_cdek_map_html())); ?>';
+                
+                $('body').on('change', 'input[name^="shipping_method"]', function() {
+                    if ($(this).val().indexOf('cdek_delivery') !== -1) {
+                        if ($('#cdek-map-container').length === 0) {
+                            $('.woocommerce-checkout-review-order-table').after('<div id="cdek-map-fallback-wrapper">' + mapHtml + '</div>');
+                        }
+                        $('#cdek-map-fallback-wrapper, #cdek-map-container').show();
+                    } else {
+                        $('#cdek-map-fallback-wrapper, #cdek-map-container').hide();
+                    }
+                });
+                
+                // Проверяем при загрузке страницы
+                $('input[name^="shipping_method"]:checked').each(function() {
+                    if ($(this).val().indexOf('cdek_delivery') !== -1) {
+                        if ($('#cdek-map-container').length === 0) {
+                            $('.woocommerce-checkout-review-order-table').after('<div id="cdek-map-fallback-wrapper">' + mapHtml + '</div>');
+                        }
+                        $('#cdek-map-fallback-wrapper, #cdek-map-container').show();
+                    }
+                });
+            }
+        });
+        </script>
+        <?php
+    }
+    
+    /**
+     * Добавление стилей для классического чекаута
+     */
+    public function add_classic_checkout_styles() {
+        if (is_checkout() && !has_block('woocommerce/checkout')) {
+            ?>
+            <style>
+            /* Стили для классического чекаута СДЭК */
+            #cdek-map-container, #cdek-map-fallback-wrapper {
+                margin: 20px 0;
+                padding: 15px;
+                background: #f9f9f9;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+            }
+            
+            #cdek-map-container h4 {
+                margin-top: 0;
+                color: #333;
+                font-size: 18px;
+            }
+            
+            #cdek-address-search input {
+                width: 100%;
+                padding: 10px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            
+            #cdek-points-info {
+                background: #e3f2fd;
+                border: 1px solid #2196f3;
+                padding: 12px;
+                border-radius: 6px;
+                margin: 10px 0;
+            }
+            
+            #cdek-selected-point {
+                background: #d4edda;
+                border: 1px solid #c3e6cb;
+                padding: 12px;
+                border-radius: 6px;
+                margin: 10px 0;
+            }
+            
+            #cdek-clear-selection {
+                background: #dc3545;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                cursor: pointer;
+                margin-top: 10px;
+            }
+            
+            #cdek-clear-selection:hover {
+                background: #c82333;
+            }
+            
+            #cdek-map {
+                min-height: 400px;
+                border: 1px solid #ddd;
+                border-radius: 6px;
+            }
+            
+            #cdek-points-list {
+                max-height: 300px;
+                overflow-y: auto;
+                margin-top: 15px;
+            }
+            
+            .cdek-point-item {
+                padding: 12px;
+                margin-bottom: 8px;
+                border: 1px solid #e9ecef;
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                background: white;
+            }
+            
+            .cdek-point-item:hover {
+                background: #f8f9fa;
+                border-color: #007cba;
+                transform: translateY(-1px);
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            }
+            
+            /* Скрываем ненужные поля в классическом чекауте */
+            .woocommerce-checkout #billing_city_field,
+            .woocommerce-checkout #shipping_city_field,
+            .woocommerce-checkout #billing_postcode_field,
+            .woocommerce-checkout #shipping_postcode_field,
+            .woocommerce-checkout #billing_state_field,
+            .woocommerce-checkout #shipping_state_field {
+                display: none !important;
+            }
+            
+            /* Адаптивность для мобильных */
+            @media (max-width: 768px) {
+                #cdek-map-container {
+                    margin: 15px 0;
+                    padding: 10px;
+                }
+                
+                #cdek-map {
+                    min-height: 300px;
+                }
+                
+                .cdek-point-item {
+                    padding: 10px;
+                }
+            }
+            </style>
+            <?php
+        }
+    }
+    
+    /**
+     * Валидация выбора пункта выдачи СДЭК
+     */
+    public function validate_cdek_point_selection() {
+        // Проверяем только если выбран метод доставки СДЭК
+        $shipping_methods = WC()->session->get('chosen_shipping_methods');
+        $is_cdek_selected = false;
+        
+        if (!empty($shipping_methods)) {
+            foreach ($shipping_methods as $method) {
+                if (strpos($method, 'cdek_delivery') !== false) {
+                    $is_cdek_selected = true;
+                    break;
+                }
+            }
+        }
+        
+        if ($is_cdek_selected) {
+            $point_code = isset($_POST['cdek_selected_point_code']) ? sanitize_text_field($_POST['cdek_selected_point_code']) : '';
+            
+            if (empty($point_code)) {
+                wc_add_notice('Пожалуйста, выберите пункт выдачи СДЭК на карте или в списке.', 'error');
+            }
         }
     }
 }

@@ -1322,6 +1322,13 @@ jQuery(document).ready(function($) {
             return;
         }
         
+        // Проверяем на дублирование карт и удаляем лишние
+        var mapContainers = $('#cdek-map-container');
+        if (mapContainers.length > 1) {
+            console.log('🗑️ Найдено дублирование карт, удаляем лишние');
+            mapContainers.slice(1).remove(); // Оставляем только первую карту
+        }
+        
         // Инициализируем автокомплит для поиска городов
         setTimeout(() => initAddressAutocomplete(), 200);
         
@@ -1453,6 +1460,13 @@ jQuery(document).ready(function($) {
             }
         });
         
+        // Удаляем дублирующиеся карты при загрузке
+        var mapContainers = $('#cdek-map-container');
+        if (mapContainers.length > 1) {
+            console.log('🗑️ Найдено ' + mapContainers.length + ' карт при загрузке, удаляем лишние');
+            mapContainers.slice(1).remove(); // Оставляем только первую карту
+        }
+        
         // ВСЕГДА показываем карту при загрузке
         $('#cdek-map-container, #cdek-map-wrapper').show();
         
@@ -1470,6 +1484,13 @@ jQuery(document).ready(function($) {
     $(document).on('updated_checkout', function() {
         // Переинициализируем обработчики после обновления чекаута
         setTimeout(() => {
+            // Удаляем дублирующиеся карты после обновления
+            var mapContainers = $('#cdek-map-container');
+            if (mapContainers.length > 1) {
+                console.log('🗑️ После обновления чекаута найдено ' + mapContainers.length + ' карт, удаляем лишние');
+                mapContainers.slice(1).remove(); // Оставляем только первую карту
+            }
+            
             if ($('#cdek-map-wrapper').is(':visible')) {
                 // Восстанавливаем состояние кнопок
                 var deliveryType = $('#cdek-delivery-type').val() || 'cdek';

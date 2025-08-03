@@ -73,10 +73,8 @@ class CdekDeliveryPlugin {
         // Добавляем габариты в описание товара в корзине
         add_filter('woocommerce_get_item_data', array($this, 'add_dimensions_to_cart_item'), 10, 2);
         
-        // Хуки для классического чекаута
-        add_action('woocommerce_review_order_after_shipping', array($this, 'add_cdek_map_to_classic_checkout'));
+        // Хуки для классического чекаута - ТОЛЬКО ОДИН хук для избежания дублирования
         add_action('woocommerce_checkout_after_customer_details', array($this, 'add_cdek_map_alternative_position'));
-        add_action('woocommerce_checkout_after_order_review', array($this, 'add_cdek_map_fallback_position'));
         
         // Шорткод для ручного размещения карты
         add_shortcode('cdek_delivery_map', array($this, 'cdek_delivery_map_shortcode'));
@@ -461,12 +459,7 @@ class CdekDeliveryPlugin {
         }
     }
     
-    /**
-     * Добавление карты СДЭК в классический чекаут
-     */
-    public function add_cdek_map_to_classic_checkout() {
-        echo $this->render_cdek_map_html();
-    }
+    // Функция удалена - используем только add_cdek_map_alternative_position
     
     /**
      * Альтернативная позиция для карты в классическом чекауте
@@ -598,43 +591,7 @@ class CdekDeliveryPlugin {
         return ob_get_clean();
     }
     
-    /**
-     * Резервная позиция для карты СДЭК
-     */
-    public function add_cdek_map_fallback_position() {
-        // Показываем карту только если выбран метод доставки СДЭК и карта еще не отображена
-        ?>
-        <script>
-        jQuery(document).ready(function($) {
-            if ($('#cdek-map-container').length === 0) {
-                // Карта еще не была добавлена, добавляем в резервную позицию
-                var mapHtml = '<?php echo str_replace(array("\n", "\r"), '', addslashes($this->render_cdek_map_html())); ?>';
-                
-                $('body').on('change', 'input[name^="shipping_method"]', function() {
-                    if ($(this).val().indexOf('cdek_delivery') !== -1) {
-                        if ($('#cdek-map-container').length === 0) {
-                            $('.woocommerce-checkout-review-order-table').after('<div id="cdek-map-fallback-wrapper">' + mapHtml + '</div>');
-                        }
-                        $('#cdek-map-fallback-wrapper, #cdek-map-container').show();
-                    } else {
-                        $('#cdek-map-fallback-wrapper, #cdek-map-container').hide();
-                    }
-                });
-                
-                // Проверяем при загрузке страницы
-                $('input[name^="shipping_method"]:checked').each(function() {
-                    if ($(this).val().indexOf('cdek_delivery') !== -1) {
-                        if ($('#cdek-map-container').length === 0) {
-                            $('.woocommerce-checkout-review-order-table').after('<div id="cdek-map-fallback-wrapper">' + mapHtml + '</div>');
-                        }
-                        $('#cdek-map-fallback-wrapper, #cdek-map-container').show();
-                    }
-                });
-            }
-        });
-        </script>
-        <?php
-    }
+    // Функция удалена - используем только add_cdek_map_alternative_position
     
     /**
      * Добавление стилей для классического чекаута
@@ -748,15 +705,7 @@ class CdekDeliveryPlugin {
                 box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             }
             
-            /* Скрываем ненужные поля в классическом чекауте */
-            .woocommerce-checkout #billing_city_field,
-            .woocommerce-checkout #shipping_city_field,
-            .woocommerce-checkout #billing_postcode_field,
-            .woocommerce-checkout #shipping_postcode_field,
-            .woocommerce-checkout #billing_state_field,
-            .woocommerce-checkout #shipping_state_field {
-                display: none !important;
-            }
+            /* Поля адреса остаются видимыми */
             
             /* Адаптивность для мобильных */
             @media (max-width: 768px) {

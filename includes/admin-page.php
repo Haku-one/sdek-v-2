@@ -13,6 +13,11 @@ if (isset($_POST['submit'])) {
         update_option('cdek_sender_city', sanitize_text_field($_POST['cdek_sender_city']));
         update_option('cdek_yandex_api_key', sanitize_text_field($_POST['cdek_yandex_api_key']));
         
+        // Email уведомления
+        update_option('cdek_email_notifications_enabled', isset($_POST['cdek_email_notifications_enabled']) ? 1 : 0);
+        update_option('cdek_admin_notification_email', sanitize_email($_POST['cdek_admin_notification_email']));
+        update_option('cdek_email_from_name', sanitize_text_field($_POST['cdek_email_from_name']));
+        
         add_action('admin_notices', function() {
             echo '<div class="notice notice-success"><p>Настройки сохранены!</p></div>';
         });
@@ -25,6 +30,11 @@ $cdek_password = get_option('cdek_password', 'fzwKqoaKaTrwRjxVhf6csNzTefyHRHYM')
 $cdek_test_mode = get_option('cdek_test_mode', 0);
 $cdek_sender_city = get_option('cdek_sender_city', '354');
 $cdek_yandex_api_key = get_option('cdek_yandex_api_key', '4020b4d5-1d96-476c-a10e-8ab18f0f3702');
+
+// Email уведомления
+$cdek_email_notifications_enabled = get_option('cdek_email_notifications_enabled', 1);
+$cdek_admin_notification_email = get_option('cdek_admin_notification_email', get_option('admin_email'));
+$cdek_email_from_name = get_option('cdek_email_from_name', get_bloginfo('name'));
 
 ?>
 
@@ -79,6 +89,36 @@ $cdek_yandex_api_key = get_option('cdek_yandex_api_key', '4020b4d5-1d96-476c-a10
             </tr>
         </table>
         
+        <h2>📧 Настройки Email уведомлений</h2>
+        <table class="form-table">
+            <tr>
+                <th scope="row">Включить email уведомления</th>
+                <td>
+                    <label>
+                        <input type="checkbox" name="cdek_email_notifications_enabled" value="1" <?php checked($cdek_email_notifications_enabled, 1); ?> />
+                        Отправлять email уведомления о доставке
+                    </label>
+                    <p class="description">Включает отправку уведомлений клиентам и администратору при выборе способа доставки</p>
+                </td>
+            </tr>
+            
+            <tr>
+                <th scope="row">Email администратора</th>
+                <td>
+                    <input type="email" name="cdek_admin_notification_email" value="<?php echo esc_attr($cdek_admin_notification_email); ?>" class="regular-text" />
+                    <p class="description">Email для получения уведомлений о новых заказах (по умолчанию: email администратора сайта)</p>
+                </td>
+            </tr>
+            
+            <tr>
+                <th scope="row">Имя отправителя</th>
+                <td>
+                    <input type="text" name="cdek_email_from_name" value="<?php echo esc_attr($cdek_email_from_name); ?>" class="regular-text" />
+                    <p class="description">Имя, которое будет отображаться в поле "От кого" в письмах (по умолчанию: название сайта)</p>
+                </td>
+            </tr>
+        </table>
+        
         <?php submit_button('Сохранить настройки'); ?>
     </form>
     
@@ -92,6 +132,14 @@ $cdek_yandex_api_key = get_option('cdek_yandex_api_key', '4020b4d5-1d96-476c-a10
         <button type="button" id="test-cdek-api-detailed" class="button button-secondary" style="margin-left: 10px;">Детальное тестирование API</button>
         <button type="button" id="test-saratov-kursk" class="button button-secondary" style="margin-left: 10px;">🎯 Тест Саратов-Курск</button>
         <button type="button" id="test-super-debug" class="button button-secondary" style="margin-left: 10px; background: #d63384; color: white;">💥 СУПЕР ДЕБАГ</button>
+    </p>
+    
+    <h2>📧 Тестирование Email уведомлений</h2>
+    <p>Проверьте работу email уведомлений:</p>
+    <p>
+        <button type="button" id="test-email-pickup" class="button button-secondary">📍 Тест: Самовывоз</button>
+        <button type="button" id="test-email-manager" class="button button-secondary" style="margin-left: 10px;">📞 Тест: Менеджер</button>
+        <button type="button" id="test-email-cdek" class="button button-secondary" style="margin-left: 10px;">🚚 Тест: СДЭК</button>
     </p>
     <div id="connection-result" style="margin-top: 10px;"></div>
     <div id="calculation-result" style="margin-top: 10px;"></div>
@@ -202,6 +250,40 @@ $cdek_yandex_api_key = get_option('cdek_yandex_api_key', '4020b4d5-1d96-476c-a10
                 button.prop('disabled', false).text('💥 СУПЕР ДЕБАГ');
             });
         });
+        
+        // Тестирование email уведомлений
+        $('#test-email-pickup').on('click', function() {
+            testEmailNotification($(this), 'pickup', '📍 Тест: Самовывоз');
+        });
+        
+        $('#test-email-manager').on('click', function() {
+            testEmailNotification($(this), 'manager', '📞 Тест: Менеджер');
+        });
+        
+        $('#test-email-cdek').on('click', function() {
+            testEmailNotification($(this), 'cdek', '🚚 Тест: СДЭК');
+        });
+        
+        function testEmailNotification(button, type, originalText) {
+            var result = $('#calculation-result');
+            
+            button.prop('disabled', true).text('📧 Отправляем...');
+            result.html('');
+            
+            $.post(ajaxurl, {
+                action: 'test_cdek_email_notification',
+                type: type,
+                nonce: '<?php echo wp_create_nonce('test_cdek_email_notification'); ?>'
+            }, function(response) {
+                if (response.success) {
+                    result.html('<div class="notice notice-success inline"><p>📧 ' + response.data + '</p></div>');
+                } else {
+                    result.html('<div class="notice notice-error inline"><p>❌ ' + response.data + '</p></div>');
+                }
+                
+                button.prop('disabled', false).text(originalText);
+            });
+        }
     });
     </script>
     
@@ -234,5 +316,16 @@ $cdek_yandex_api_key = get_option('cdek_yandex_api_key', '4020b4d5-1d96-476c-a10
             <li>Екатеринбург: 49</li>
             <li>Саратов: 51 (по умолчанию)</li>
         </ul>
+        
+        <h3>📧 Email уведомления</h3>
+        <p>Плагин автоматически отправляет email уведомления:</p>
+        <ul>
+            <li><strong>Клиентам:</strong> Информация о выбранном способе доставки</li>
+            <li><strong>Администратору:</strong> Уведомления о новых заказах с инструкциями</li>
+            <li><strong>При самовывозе:</strong> Адрес и необходимость связаться с клиентом</li>
+            <li><strong>При выборе менеджера:</strong> Требуется обсуждение деталей доставки</li>
+            <li><strong>При доставке СДЭК:</strong> Информация о пункте выдачи</li>
+        </ul>
+        <p>Используйте кнопки тестирования выше для проверки работы email уведомлений.</p>
     </div>
 </div>

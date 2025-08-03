@@ -84,6 +84,9 @@ class CdekDeliveryPlugin {
         // AJAX для проверки подключения
         add_action('wp_ajax_test_cdek_connection', array($this, 'ajax_test_cdek_connection'));
         
+        // AJAX для тестирования email уведомлений
+        add_action('wp_ajax_test_cdek_email_notification', array($this, 'ajax_test_email_notification'));
+        
         // Вывод габаритов товаров в оформлении заказа
         add_action('woocommerce_checkout_after_order_review', array($this, 'display_product_dimensions_checkout'), 5);
         
@@ -188,6 +191,12 @@ class CdekDeliveryPlugin {
     public function init_cdek_shipping() {
         if (!class_exists('WC_Cdek_Shipping_Method')) {
             include_once plugin_dir_path(__FILE__) . 'includes/class-wc-cdek-shipping-method.php';
+        }
+        
+        // Инициализируем email уведомления
+        if (!class_exists('CdekEmailNotifications')) {
+            include_once plugin_dir_path(__FILE__) . 'includes/class-cdek-email-notifications.php';
+            new CdekEmailNotifications();
         }
     }
     
@@ -922,6 +931,228 @@ class CdekDeliveryPlugin {
         } else {
             wp_send_json_error('Не удалось подключиться к API СДЭК. Проверьте учетные данные.');
         }
+    }
+    
+    public function ajax_test_email_notification() {
+        if (!wp_verify_nonce($_POST['nonce'], 'test_cdek_email_notification')) {
+            wp_die('Security check failed');
+        }
+        
+        // Проверяем, включены ли email уведомления
+        if (!get_option('cdek_email_notifications_enabled', 1)) {
+            wp_send_json_error('Email уведомления отключены в настройках');
+            return;
+        }
+        
+        $type = sanitize_text_field($_POST['type']);
+        $admin_email = get_option('cdek_admin_notification_email', get_option('admin_email'));
+        $site_name = get_option('cdek_email_from_name', get_bloginfo('name'));
+        
+        // Создаем тестовые данные заказа
+        $test_data = array(
+            'order_id' => 'TEST-' . time(),
+            'order_number' => 'TEST-' . time(),
+            'customer_name' => 'Тестовый Клиент',
+            'customer_phone' => '+7 (999) 123-45-67',
+            'customer_email' => $admin_email, // Отправляем на email администратора
+            'order_total' => '1 500 ₽',
+            'site_name' => $site_name,
+            'order_date' => date('d.m.Y H:i'),
+            'pickup_address' => 'г.Саратов, ул. Осипова, д. 18а',
+            'delivery_address' => 'г.Москва, ул. Тестовая, д. 1'
+        );
+        
+        // Дополнительные данные для СДЭК
+        if ($type === 'cdek') {
+            $test_data['point_name'] = 'СДЭК Пункт выдачи (Тестовый)';
+            $test_data['point_code'] = 'MSK123';
+            $test_data['point_address'] = 'г.Москва, ул. Тестовая, д. 1, офис 101';
+            $test_data['point_info'] = '<p><strong>Режим работы:</strong><br>Пн-Пт: 09:00-18:00<br>Сб-Вс: 10:00-16:00</p><p><strong>Телефон:</strong> +7 (495) 123-45-67</p>';
+        }
+        
+        // Включаем email уведомления
+        include_once plugin_dir_path(__FILE__) . 'includes/class-cdek-email-notifications.php';
+        $email_notifications = new CdekEmailNotifications();
+        
+        try {
+            switch ($type) {
+                case 'pickup':
+                    $subject = sprintf('[%s] ТЕСТ - Заказ #%s - Самовывоз', $site_name, $test_data['order_number']);
+                    $message = $this->get_test_pickup_template($test_data);
+                    break;
+                    
+                case 'manager':
+                    $subject = sprintf('[%s] ТЕСТ - Заказ #%s - Обсуждение доставки', $site_name, $test_data['order_number']);
+                    $message = $this->get_test_manager_template($test_data);
+                    break;
+                    
+                case 'cdek':
+                    $subject = sprintf('[%s] ТЕСТ - Заказ #%s - Доставка СДЭК', $site_name, $test_data['order_number']);
+                    $message = $this->get_test_cdek_template($test_data);
+                    break;
+                    
+                default:
+                    wp_send_json_error('Неизвестный тип уведомления');
+                    return;
+            }
+            
+            $headers = array(
+                'Content-Type: text/html; charset=UTF-8',
+                'From: ' . $site_name . ' <' . get_option('admin_email') . '>'
+            );
+            
+            $result = wp_mail($admin_email, $subject, $message, $headers);
+            
+            if ($result) {
+                wp_send_json_success('Тестовое письмо отправлено на ' . $admin_email);
+            } else {
+                wp_send_json_error('Ошибка отправки письма. Проверьте настройки почты WordPress.');
+            }
+            
+        } catch (Exception $e) {
+            wp_send_json_error('Ошибка: ' . $e->getMessage());
+        }
+    }
+    
+    private function get_test_pickup_template($data) {
+        ob_start();
+        ?>
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>ТЕСТ - Заказ на самовывоз</title>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px; margin-bottom: 20px; border: 2px solid #dc3545; }
+                .content { background: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+                .pickup-info { background: #d4edda; padding: 15px; border-radius: 6px; margin: 15px 0; }
+                .test-notice { background: #dc3545; color: white; padding: 10px; text-align: center; border-radius: 4px; margin-bottom: 20px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="test-notice">
+                    <strong>🧪 ЭТО ТЕСТОВОЕ ПИСЬМО</strong>
+                </div>
+                
+                <div class="header">
+                    <h1>📍 Заказ оформлен на самовывоз</h1>
+                    <p>Заказ #<?php echo $data['order_number']; ?> от <?php echo $data['order_date']; ?></p>
+                </div>
+                
+                <div class="content">
+                    <p>Здравствуйте, <strong><?php echo $data['customer_name']; ?></strong>!</p>
+                    
+                    <p>Ваш заказ #<?php echo $data['order_number']; ?> успешно оформлен на <strong>самовывоз</strong>.</p>
+                    
+                    <div class="pickup-info">
+                        <h3>📍 Адрес для самовывоза:</h3>
+                        <p><strong><?php echo $data['pickup_address']; ?></strong></p>
+                        <p><strong>Стоимость:</strong> Бесплатно</p>
+                    </div>
+                    
+                    <p>Это тестовое письмо для проверки работы email уведомлений.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        <?php
+        return ob_get_clean();
+    }
+    
+    private function get_test_manager_template($data) {
+        ob_start();
+        ?>
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>ТЕСТ - Обсуждение доставки</title>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: #17a2b8; color: white; padding: 20px; text-align: center; border-radius: 8px; margin-bottom: 20px; border: 2px solid #dc3545; }
+                .content { background: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+                .manager-info { background: #d1ecf1; padding: 15px; border-radius: 6px; margin: 15px 0; }
+                .test-notice { background: #dc3545; color: white; padding: 10px; text-align: center; border-radius: 4px; margin-bottom: 20px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="test-notice">
+                    <strong>🧪 ЭТО ТЕСТОВОЕ ПИСЬМО</strong>
+                </div>
+                
+                <div class="header">
+                    <h1>📞 Обсуждение доставки с менеджером</h1>
+                    <p>Заказ #<?php echo $data['order_number']; ?> от <?php echo $data['order_date']; ?></p>
+                </div>
+                
+                <div class="content">
+                    <p>Здравствуйте, <strong><?php echo $data['customer_name']; ?></strong>!</p>
+                    
+                    <div class="manager-info">
+                        <h3>📞 Что происходит дальше:</h3>
+                        <p><strong>Наш менеджер свяжется с вами в ближайшее время</strong> для обсуждения деталей доставки.</p>
+                    </div>
+                    
+                    <p>Это тестовое письмо для проверки работы email уведомлений.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        <?php
+        return ob_get_clean();
+    }
+    
+    private function get_test_cdek_template($data) {
+        ob_start();
+        ?>
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>ТЕСТ - Доставка СДЭК</title>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: #007cba; color: white; padding: 20px; text-align: center; border-radius: 8px; margin-bottom: 20px; border: 2px solid #dc3545; }
+                .content { background: #fff; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+                .cdek-info { background: #e3f2fd; padding: 15px; border-radius: 6px; margin: 15px 0; }
+                .test-notice { background: #dc3545; color: white; padding: 10px; text-align: center; border-radius: 4px; margin-bottom: 20px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="test-notice">
+                    <strong>🧪 ЭТО ТЕСТОВОЕ ПИСЬМО</strong>
+                </div>
+                
+                <div class="header">
+                    <h1>🚚 Доставка СДЭК</h1>
+                    <p>Заказ #<?php echo $data['order_number']; ?> от <?php echo $data['order_date']; ?></p>
+                </div>
+                
+                <div class="content">
+                    <p>Здравствуйте, <strong><?php echo $data['customer_name']; ?></strong>!</p>
+                    
+                    <div class="cdek-info">
+                        <h3>🚚 Информация о доставке:</h3>
+                        <p><strong>Пункт выдачи:</strong> <?php echo $data['point_name']; ?></p>
+                        <p><strong>Код пункта:</strong> <?php echo $data['point_code']; ?></p>
+                        <p><strong>Адрес:</strong> <?php echo $data['point_address']; ?></p>
+                        <?php echo $data['point_info']; ?>
+                    </div>
+                    
+                    <p>Это тестовое письмо для проверки работы email уведомлений.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        <?php
+        return ob_get_clean();
     }
     
     public function activate_plugin() {

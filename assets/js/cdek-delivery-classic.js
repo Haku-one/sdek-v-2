@@ -1170,46 +1170,62 @@ jQuery(document).ready(function($) {
             console.log('🔄 Запускаем обновление чекаута...');
             $('body').trigger('update_checkout');
             
-            // Обновляем стоимость доставки через AJAX
+            // Используем только стандартное обновление WooCommerce
+            console.log('🔄 Используем только стандартное обновление WooCommerce...');
+            
+            // Сохраняем данные в скрытые поля
+            $('#cdek-selected-point-code').val(point.code);
+            $('#cdek-delivery-cost').val(deliveryCost);
+            
+            // Обновляем чекаут стандартным способом
+            $(document.body).trigger('update_checkout');
+            
+            // Обновляем итог через нашу функцию с задержкой
             setTimeout(() => {
-                var ajaxUrl = cdek_ajax.ajax_url || '/wp-admin/admin-ajax.php';
-                var nonce = cdek_ajax.nonce || '';
+                updateTotalCost(deliveryCost);
                 
-                console.log('🔄 Отправляем AJAX запрос для обновления стоимости...');
-                
-                $.ajax({
-                    url: ajaxUrl,
-                    type: 'POST',
-                    data: {
-                        action: 'update_cdek_shipping_cost',
-                        nonce: nonce,
-                        cdek_delivery_cost: deliveryCost,
-                        cdek_selected_point_code: point.code
-                    },
-                    success: function(response) {
-                        console.log('✅ AJAX обновление завершено:', response);
-                        
-                        if (response.success && response.data.fragments) {
-                            // Обновляем таблицу заказа
-                            Object.keys(response.data.fragments).forEach(function(selector) {
-                                $(selector).replaceWith(response.data.fragments[selector]);
-                            });
-                            
-                            console.log('📊 Таблица заказа обновлена');
-                        }
-                        
-                        // Дополнительно обновляем чекаут
-                        $(document.body).trigger('update_checkout');
-                    },
-                    error: function(xhr, status, error) {
-                        console.error('❌ Ошибка AJAX:', status, error);
-                        console.error('Response:', xhr.responseText);
-                        
-                        // В случае ошибки все равно пытаемся обновить чекаут
-                        $(document.body).trigger('update_checkout');
+                // Агрессивно перезапускаем Т-Банк
+                setTimeout(() => {
+                    console.log('🔄 АГРЕССИВНЫЙ перезапуск Т-Банка...');
+                    
+                    // 1. Полностью удаляем и пересоздаем виджет Т-Банка
+                    $('.payment_method_tbank .payment_box').remove();
+                    
+                    // 2. Перезапускаем radio кнопку несколько раз
+                    var $tbankRadio = $('input[name="payment_method"][value="tbank"]');
+                    if ($tbankRadio.length > 0) {
+                        $tbankRadio.prop('checked', false);
+                        setTimeout(() => {
+                            $tbankRadio.prop('checked', true).trigger('change').trigger('click');
+                            console.log('✅ Т-Банк radio перезапущен');
+                        }, 100);
                     }
-                });
-            }, 300);
+                    
+                    // 3. Попытка через глобальные функции
+                    if (typeof window.tbank_init === 'function') {
+                        window.tbank_init();
+                        console.log('✅ Перезапущен через tbank_init');
+                    }
+                    
+                    if (typeof window.TinkoffPayRow !== 'undefined') {
+                        window.TinkoffPayRow.init();
+                        console.log('✅ Перезапущен TinkoffPayRow');
+                    }
+                    
+                    // 4. Принудительный клик по методу оплаты
+                    setTimeout(() => {
+                        $('label[for="payment_method_tbank"]').click();
+                        console.log('✅ Принудительный клик по Т-Банк');
+                    }, 200);
+                    
+                    // 5. Еще один полный перезапуск чекаута
+                    setTimeout(() => {
+                        $(document.body).trigger('update_checkout');
+                        console.log('✅ Дополнительное обновление чекаута');
+                    }, 500);
+                    
+                }, 100);
+            }, 500);
         });
     }
     
@@ -1314,9 +1330,188 @@ jQuery(document).ready(function($) {
             console.log('✅ Обновлена итоговая сумма (.order-total td strong)');
         }
         
+        // Вариант 4: Более широкий поиск итоговой суммы
+        if (!totalUpdated) {
+            var totalElement4 = $('.order-total strong, .order-total .amount, .woocommerce-checkout-review-order-table .order-total .amount');
+            if (totalElement4.length > 0) {
+                totalElement4.each(function() {
+                    $(this).html('<span class="woocommerce-Price-amount amount">' + newTotal + ' руб.</span>');
+                });
+                totalUpdated = true;
+                console.log('✅ Обновлена итоговая сумма (широкий поиск)');
+            }
+        }
+        
+        // Вариант 5: Попытка обновить через data-атрибуты
+        if (!totalUpdated) {
+            var totalElement5 = $('[data-total], .total, .checkout-total');
+            if (totalElement5.length > 0) {
+                totalElement5.html(newTotal + ' руб.');
+                totalUpdated = true;
+                console.log('✅ Обновлена итоговая сумма (data-атрибуты)');
+            }
+        }
+        
         if (!totalUpdated) {
             console.warn('⚠️ Не удалось найти элемент для обновления итоговой суммы');
+            console.log('🔍 Доступные элементы на странице:');
+            console.log('order-total elements:', $('.order-total').length);
+            console.log('amount elements:', $('.amount').length);
+            console.log('total elements:', $('[class*="total"]').length);
         }
+        
+        // Принудительно уведомляем о изменении цены для интеграций
+        $(document).trigger('cdek_price_updated', {
+            newTotal: newTotal,
+            deliveryCost: deliveryCost,
+            subtotal: subtotal
+        });
+        
+        // Дополнительные события для платежных систем
+        $(document).trigger('checkout_updated');
+        $(document).trigger('woocommerce_checkout_updated');
+        $(document).trigger('payment_method_updated');
+        
+        // Специальные события для Т-Банка
+        $(document).trigger('tbank_amount_updated', { amount: newTotal });
+        
+        // АГРЕССИВНОЕ обновление платежных форм
+        setTimeout(() => {
+            console.log('🔄 АГРЕССИВНО обновляем платежные формы...');
+            
+            // 1. Специальная обработка для Т-Банка
+            var $tbankMethod = $('input[name="payment_method"][value="tbank"]');
+            if ($tbankMethod.length > 0 && $tbankMethod.is(':checked')) {
+                console.log('🎯 Найден активный Т-Банк, перезапускаем...');
+                
+                // Удаляем виджет полностью
+                $('.payment_method_tbank .payment_box').html('');
+                
+                // Сброс и повторный выбор
+                $tbankMethod.prop('checked', false);
+                
+                setTimeout(() => {
+                    $tbankMethod.prop('checked', true);
+                    $tbankMethod.trigger('change');
+                    $tbankMethod.trigger('click');
+                    
+                    // Принудительный клик по label
+                    $('label[for="payment_method_tbank"]').trigger('click');
+                    
+                    console.log('🔄 Т-Банк агрессивно перезапущен');
+                }, 50);
+            }
+            
+            // 2. Обновляем все остальные платежные методы
+            $('input[name="payment_method"]').each(function() {
+                var $this = $(this);
+                if ($this.is(':checked') && $this.val() !== 'tbank') {
+                    $this.prop('checked', false).prop('checked', true).trigger('change');
+                    console.log('🔄 Перезапущен платежный метод:', $this.val());
+                }
+            });
+            
+            // 3. Дополнительно обновляем чекаут
+            $(document.body).trigger('update_checkout');
+            
+        }, 100);
+        
+        // Уведомляем window для внешних скриптов (включая Т-Банк)
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+                type: 'checkout_total_updated',
+                total: newTotal,
+                delivery: deliveryCost
+            }, '*');
+        }
+        
+        // Уведомляем и основное окно
+        window.postMessage({
+            type: 'checkout_total_updated',
+            total: newTotal,
+            delivery: deliveryCost,
+            currency: 'RUB'
+        }, '*');
+        
+        // Принудительно обновляем все поля с суммой
+        setTimeout(() => {
+            $('*').filter(function() {
+                return $(this).text().includes('180') && $(this).text().includes('₽');
+            }).each(function() {
+                var currentText = $(this).text();
+                var newText = currentText.replace(/180\s*₽/g, newTotal + ' ₽');
+                if (currentText !== newText) {
+                    $(this).text(newText);
+                    console.log('🔄 Обновлен текст с 180₽ на', newTotal + '₽');
+                }
+            });
+            
+            // Ищем и обновляем iframe Т-Банка
+            $('iframe').each(function() {
+                try {
+                    var iframe = this;
+                    if (iframe.contentWindow) {
+                        iframe.contentWindow.postMessage({
+                            type: 'amount_updated',
+                            amount: newTotal,
+                            currency: 'RUB'
+                        }, '*');
+                        console.log('🔄 Отправлено сообщение в iframe');
+                    }
+                } catch (e) {
+                    console.log('⚠️ Не удалось отправить сообщение в iframe:', e.message);
+                }
+            });
+            
+        }, 500);
+        
+        // Попытка прямого изменения данных Т-Банка в DOM
+        setTimeout(() => {
+            console.log('🔧 Попытка прямого изменения данных Т-Банка...');
+            
+            // Ищем все элементы, которые могут содержать сумму
+            $('*').each(function() {
+                var $elem = $(this);
+                var text = $elem.text();
+                
+                // Если элемент содержит старую сумму 180₽
+                if (text.includes('180') && (text.includes('₽') || text.includes('руб'))) {
+                    var newText = text.replace(/180\s*[₽руб]/g, newTotal + ' ₽');
+                    if (newText !== text) {
+                        $elem.text(newText);
+                        console.log('🔧 Прямое изменение:', text, '→', newText);
+                    }
+                }
+            });
+            
+            // Попытка изменить data-атрибуты и скрытые поля
+            $('input[type="hidden"]').each(function() {
+                var $input = $(this);
+                if ($input.val() == '180' || $input.val() == '18000') { // сумма в копейках
+                    $input.val(newTotal);
+                    console.log('🔧 Изменен скрытый input:', $input.attr('name'), '→', newTotal);
+                }
+            });
+            
+        }, 200);
+        
+        // Еще одно обновление через секунду для упрямых платежных систем
+        setTimeout(() => {
+            console.log('🔄 Финальное обновление чекаута...');
+            $(document.body).trigger('update_checkout');
+            
+            // Последняя попытка перезапуска Т-Банка
+            if (typeof window.TinkoffPayment !== 'undefined') {
+                try {
+                    window.TinkoffPayment.destroy();
+                    window.TinkoffPayment.init();
+                    console.log('✅ TinkoffPayment перезапущен');
+                } catch (e) {
+                    console.log('⚠️ Ошибка перезапуска TinkoffPayment:', e);
+                }
+            }
+            
+        }, 1000);
     }
     
     // ========== ФУНКЦИИ ДЛЯ ЗАГРУЗЧИКОВ И ОШИБОК ==========

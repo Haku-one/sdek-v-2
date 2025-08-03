@@ -53,6 +53,16 @@ class CdekDeliveryPlugin {
         add_action('wp_ajax_update_cdek_shipping_cost', array($this, 'ajax_update_shipping_cost'));
         add_action('wp_ajax_nopriv_update_cdek_shipping_cost', array($this, 'ajax_update_shipping_cost'));
         
+        // Хук для обработки стандартного обновления чекаута
+        add_action('woocommerce_checkout_update_order_review', array($this, 'handle_checkout_update_order_review'));
+        
+        // Хук для обновления суммы заказа ПЕРЕД инициализацией платежа
+        add_action('woocommerce_checkout_process', array($this, 'update_order_total_before_payment'), 5);
+        add_filter('woocommerce_calculated_total', array($this, 'filter_calculated_total'), 10, 2);
+        
+        // Хук для обновления заказа после создания, но до платежа
+        add_action('woocommerce_checkout_order_processed', array($this, 'update_order_after_creation'), 10, 3);
+        
         // Регистрация настроек плагина
         add_action('admin_menu', array($this, 'add_admin_menu'));
         
@@ -762,7 +772,7 @@ class CdekDeliveryPlugin {
     
     public function ajax_update_shipping_cost() {
         // Проверяем nonce для безопасности
-        if (!wp_verify_nonce($_POST['nonce'], 'cdek_ajax_nonce')) {
+        if (!wp_verify_nonce($_POST['nonce'], 'cdek_nonce')) {
             wp_die('Security check failed');
         }
         
@@ -790,12 +800,104 @@ class CdekDeliveryPlugin {
         woocommerce_order_review();
         $order_review = ob_get_clean();
         
+        // Получаем общую сумму заказа для передачи в JavaScript
+        $cart_total = WC()->cart->get_total();
+        
         wp_send_json_success(array(
             'fragments' => array(
                 '.shop_table.woocommerce-checkout-review-order-table' => $order_review
             ),
-            'cost' => $cost ?? 0
+            'cost' => $cost ?? 0,
+            'cart_total' => $cart_total,
+            'refresh_checkout' => true
         ));
+    }
+    
+    public function handle_checkout_update_order_review($posted_data) {
+        // Парсим данные из POST
+        $post_data = array();
+        if ($posted_data) {
+            parse_str($posted_data, $post_data);
+        }
+        
+        // Если есть данные СДЭК в POST, сохраняем их в сессию
+        if (isset($post_data['cdek_delivery_cost']) && !empty($post_data['cdek_delivery_cost'])) {
+            $cost = floatval($post_data['cdek_delivery_cost']);
+            WC()->session->set('cdek_delivery_cost', $cost);
+            error_log('СДЭК: Сохранена стоимость доставки из чекаута: ' . $cost);
+        }
+        
+        if (isset($post_data['cdek_selected_point_code']) && !empty($post_data['cdek_selected_point_code'])) {
+            $point_code = sanitize_text_field($post_data['cdek_selected_point_code']);
+            WC()->session->set('cdek_selected_point_code', $point_code);
+            error_log('СДЭК: Сохранен код пункта из чекаута: ' . $point_code);
+        }
+        
+        // Принудительно очищаем кеш доставки
+        WC()->shipping()->reset_shipping();
+        
+        // Принудительно пересчитываем корзину
+        WC()->cart->calculate_totals();
+        
+        // Логируем для отладки
+        error_log('СДЭК: Итого в корзине после пересчета: ' . WC()->cart->get_total());
+    }
+    
+    public function update_order_total_before_payment() {
+        // Обновляем сумму заказа ПЕРЕД созданием платежа в Т-Банке
+        $cdek_cost = WC()->session->get('cdek_delivery_cost');
+        
+        if (!empty($cdek_cost) && $cdek_cost > 0) {
+            error_log('СДЭК: Обновляем сумму заказа перед платежом. Доставка: ' . $cdek_cost);
+            
+            // Принудительно пересчитываем корзину с учетом доставки
+            WC()->shipping()->reset_shipping();
+            WC()->cart->calculate_totals();
+            
+            error_log('СДЭК: Новая сумма заказа: ' . WC()->cart->get_total());
+        }
+    }
+    
+    public function filter_calculated_total($total, $cart) {
+        // Фильтр для корректировки итоговой суммы при расчетах
+        $cdek_cost = WC()->session->get('cdek_delivery_cost');
+        
+        if (!empty($cdek_cost) && $cdek_cost > 0) {
+            // Получаем сумму без доставки
+            $subtotal = $cart->get_subtotal() + $cart->get_subtotal_tax();
+            $new_total = $subtotal + $cdek_cost;
+            
+            error_log('СДЭК: Фильтр суммы. Подытог: ' . $subtotal . ', Доставка: ' . $cdek_cost . ', Итого: ' . $new_total);
+            
+            return $new_total;
+        }
+        
+        return $total;
+    }
+    
+    public function update_order_after_creation($order_id, $posted_data, $order) {
+        // Обновляем заказ сразу после создания, но до отправки в платежную систему
+        $cdek_cost = WC()->session->get('cdek_delivery_cost');
+        
+        if (!empty($cdek_cost) && $cdek_cost > 0) {
+            error_log('СДЭК: Корректируем сумму заказа #' . $order_id . ' с доставкой: ' . $cdek_cost);
+            
+            // Пересчитываем общую сумму с учетом доставки СДЭК
+            $original_total = $order->get_total();
+            $subtotal = $order->get_subtotal();
+            $new_total = $subtotal + $cdek_cost;
+            
+            // Обновляем total в заказе
+            $order->set_total($new_total);
+            $order->save();
+            
+            error_log('СДЭК: Заказ #' . $order_id . ' обновлен. Было: ' . $original_total . ', Стало: ' . $new_total);
+            
+            // Сохраняем информацию о доставке в мета-данных заказа
+            $order->update_meta_data('_cdek_delivery_cost', $cdek_cost);
+            $order->update_meta_data('_cdek_point_code', WC()->session->get('cdek_selected_point_code'));
+            $order->save_meta_data();
+        }
     }
     
     public function update_cdek_shipping_rates($rates, $package) {

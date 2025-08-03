@@ -1050,7 +1050,7 @@ jQuery(document).ready(function($) {
                         console.log('🚫 Пункт отфильтрован:', pointCity, '(искали:', window.currentSearchCity + ')');
                         return false;
                     } else {
-                        console.log('✅ Пункт прошел фильтр:', pointCity, '(искали:', window.currentSearchCity + ')');
+                       
                     }
                 }
             }
@@ -1058,7 +1058,6 @@ jQuery(document).ready(function($) {
             return true;
         });
         
-        console.log('📍 Отфильтровано пунктов:', filteredPoints.length);
         
         // ПОКАЗЫВАЕМ ВСЕ ПУНКТЫ БЕЗ ОГРАНИЧЕНИЙ
         var pointsToShow = filteredPoints;

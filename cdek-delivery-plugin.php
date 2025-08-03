@@ -795,9 +795,7 @@ class CdekDeliveryPlugin {
         
         wp_send_json_success(array(
             'fragments' => array(
-                '.shop_table.woocommerce-checkout-review-order-table' => $order_review,
-                '.woocommerce-checkout-review-order-table' => $order_review,
-                'form.checkout' => '<form class="checkout woocommerce-checkout" method="post" name="checkout" action="' . esc_url( wc_get_checkout_url() ) . '" enctype="multipart/form-data" novalidate="novalidate">' . $order_review . '</form>'
+                '.shop_table.woocommerce-checkout-review-order-table' => $order_review
             ),
             'cost' => $cost ?? 0,
             'cart_total' => $cart_total,

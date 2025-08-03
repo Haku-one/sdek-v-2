@@ -50,8 +50,8 @@ class CdekDeliveryPlugin {
         add_action('wp_ajax_nopriv_get_address_suggestions', array($this, 'ajax_get_address_suggestions'));
         
         // Обработчик для обновления стоимости доставки
-        add_action('wp_ajax_woocommerce_update_order_review', array($this, 'update_order_review_with_cdek_cost'));
-        add_action('wp_ajax_nopriv_woocommerce_update_order_review', array($this, 'update_order_review_with_cdek_cost'));
+        add_action('wp_ajax_update_cdek_shipping_cost', array($this, 'ajax_update_shipping_cost'));
+        add_action('wp_ajax_nopriv_update_cdek_shipping_cost', array($this, 'ajax_update_shipping_cost'));
         
         // Регистрация настроек плагина
         add_action('admin_menu', array($this, 'add_admin_menu'));
@@ -88,6 +88,9 @@ class CdekDeliveryPlugin {
         add_action('woocommerce_checkout_process', array($this, 'validate_cdek_point_selection'));
         add_filter('woocommerce_shipping_calculator_enable_city', '__return_false');
         add_filter('woocommerce_shipping_calculator_enable_postcode', '__return_false');
+        
+        // Хук для обновления стоимости доставки
+        add_filter('woocommerce_package_rates', array($this, 'update_cdek_shipping_rates'), 10, 2);
     }
     
     public function init() {
@@ -757,7 +760,12 @@ class CdekDeliveryPlugin {
         }
     }
     
-    public function update_order_review_with_cdek_cost() {
+    public function ajax_update_shipping_cost() {
+        // Проверяем nonce для безопасности
+        if (!wp_verify_nonce($_POST['nonce'], 'cdek_ajax_nonce')) {
+            wp_die('Security check failed');
+        }
+        
         // Сохраняем стоимость доставки СДЭК в сессии
         if (isset($_POST['cdek_delivery_cost']) && !empty($_POST['cdek_delivery_cost'])) {
             $cost = floatval($_POST['cdek_delivery_cost']);
@@ -771,10 +779,41 @@ class CdekDeliveryPlugin {
             error_log('СДЭК: Сохранен код пункта в сессии: ' . $point_code);
         }
         
-        // Вызываем стандартный обработчик WooCommerce
-        if (function_exists('woocommerce_ajax_update_order_review')) {
-            woocommerce_ajax_update_order_review();
+        // Принудительно очищаем кеш доставки
+        WC()->shipping()->reset_shipping();
+        
+        // Пересчитываем корзину
+        WC()->cart->calculate_totals();
+        
+        // Возвращаем обновленные данные
+        ob_start();
+        woocommerce_order_review();
+        $order_review = ob_get_clean();
+        
+        wp_send_json_success(array(
+            'fragments' => array(
+                '.shop_table.woocommerce-checkout-review-order-table' => $order_review
+            ),
+            'cost' => $cost ?? 0
+        ));
+    }
+    
+    public function update_cdek_shipping_rates($rates, $package) {
+        // Получаем стоимость доставки из сессии
+        $cdek_cost = WC()->session->get('cdek_delivery_cost');
+        
+        if (!empty($cdek_cost) && $cdek_cost > 0) {
+            // Обновляем стоимость для методов доставки СДЭК
+            foreach ($rates as $rate_key => $rate) {
+                if (strpos($rate_key, 'cdek_delivery') !== false) {
+                    $rates[$rate_key]->cost = floatval($cdek_cost);
+                    $rates[$rate_key]->label = 'СДЭК доставка';
+                    error_log('СДЭК: Обновлена стоимость метода доставки: ' . $cdek_cost);
+                }
+            }
         }
+        
+        return $rates;
     }
 }
 

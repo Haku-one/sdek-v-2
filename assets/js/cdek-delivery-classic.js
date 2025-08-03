@@ -1170,24 +1170,46 @@ jQuery(document).ready(function($) {
             console.log('🔄 Запускаем обновление чекаута...');
             $('body').trigger('update_checkout');
             
-            // Дополнительно обновляем через AJAX
+            // Обновляем стоимость доставки через AJAX
             setTimeout(() => {
                 var ajaxUrl = cdek_ajax.ajax_url || '/wp-admin/admin-ajax.php';
                 var nonce = cdek_ajax.nonce || '';
                 
-                $.post(ajaxUrl, {
-                    action: 'woocommerce_update_order_review',
-                    security: nonce,
-                    cdek_delivery_cost: deliveryCost,
-                    cdek_selected_point_code: point.code
-                }, function(response) {
-                    console.log('✅ AJAX обновление завершено');
-                    // Принудительно обновляем страницу чекаута
-                    if (response) {
+                console.log('🔄 Отправляем AJAX запрос для обновления стоимости...');
+                
+                $.ajax({
+                    url: ajaxUrl,
+                    type: 'POST',
+                    data: {
+                        action: 'update_cdek_shipping_cost',
+                        nonce: nonce,
+                        cdek_delivery_cost: deliveryCost,
+                        cdek_selected_point_code: point.code
+                    },
+                    success: function(response) {
+                        console.log('✅ AJAX обновление завершено:', response);
+                        
+                        if (response.success && response.data.fragments) {
+                            // Обновляем таблицу заказа
+                            Object.keys(response.data.fragments).forEach(function(selector) {
+                                $(selector).replaceWith(response.data.fragments[selector]);
+                            });
+                            
+                            console.log('📊 Таблица заказа обновлена');
+                        }
+                        
+                        // Дополнительно обновляем чекаут
+                        $(document.body).trigger('update_checkout');
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('❌ Ошибка AJAX:', status, error);
+                        console.error('Response:', xhr.responseText);
+                        
+                        // В случае ошибки все равно пытаемся обновить чекаут
                         $(document.body).trigger('update_checkout');
                     }
                 });
-            }, 200);
+            }, 300);
         });
     }
     
@@ -1235,13 +1257,22 @@ jQuery(document).ready(function($) {
             shippingRow.html('<span class="amount">' + deliveryCost + ' руб.</span>');
         }
         
+        // Обновляем общую стоимость напрямую
+        updateTotalCost(deliveryCost);
+        
         // ПРИНУДИТЕЛЬНО обновляем WooCommerce
         setTimeout(() => {
+            console.log('🔄 Принудительное обновление чекаута...');
             $('body').trigger('update_checkout');
+            
+            // Дополнительно обновляем методы доставки
+            $('input[name^="shipping_method"]').trigger('change');
         }, 100);
     }
     
     function updateTotalCost(deliveryCost) {
+        console.log('💰 Обновляем итоговую стоимость с доставкой:', deliveryCost, 'руб.');
+        
         // Получаем текущую стоимость товаров
         var subtotalElement = $('.cart-subtotal .amount, .order-subtotal .amount');
         var subtotal = 0;
@@ -1249,15 +1280,42 @@ jQuery(document).ready(function($) {
         if (subtotalElement.length > 0) {
             var subtotalText = subtotalElement.first().text().replace(/[^\d]/g, '');
             subtotal = parseInt(subtotalText) || 0;
+            console.log('📊 Подытог без доставки:', subtotal, 'руб.');
         }
         
         // Вычисляем новую общую стоимость
         var newTotal = subtotal + deliveryCost;
+        console.log('🧮 Новая общая сумма:', newTotal, 'руб.');
         
-        // Обновляем отображение общей стоимости
+        // Обновляем отображение общей стоимости - несколько вариантов селекторов
+        var totalUpdated = false;
+        
+        // Вариант 1: .order-total .amount
         var totalElement = $('.order-total .amount');
         if (totalElement.length > 0) {
-            totalElement.html(newTotal.toLocaleString('ru-RU') + ' руб.');
+            totalElement.html(newTotal + ' руб.');
+            totalUpdated = true;
+            console.log('✅ Обновлена итоговая сумма (.order-total .amount)');
+        }
+        
+        // Вариант 2: .order-total .woocommerce-Price-amount
+        var totalElement2 = $('.order-total .woocommerce-Price-amount');
+        if (totalElement2.length > 0) {
+            totalElement2.html(newTotal + ' руб.');
+            totalUpdated = true;
+            console.log('✅ Обновлена итоговая сумма (.order-total .woocommerce-Price-amount)');
+        }
+        
+        // Вариант 3: .order-total td strong
+        var totalElement3 = $('.order-total td strong');
+        if (totalElement3.length > 0) {
+            totalElement3.html('<span class="woocommerce-Price-amount amount">' + newTotal + ' руб.</span>');
+            totalUpdated = true;
+            console.log('✅ Обновлена итоговая сумма (.order-total td strong)');
+        }
+        
+        if (!totalUpdated) {
+            console.warn('⚠️ Не удалось найти элемент для обновления итоговой суммы');
         }
     }
     

@@ -53,6 +53,9 @@ class CdekDeliveryPlugin {
         add_action('wp_ajax_update_cdek_shipping_cost', array($this, 'ajax_update_shipping_cost'));
         add_action('wp_ajax_nopriv_update_cdek_shipping_cost', array($this, 'ajax_update_shipping_cost'));
         
+        // Хук для обработки стандартного обновления чекаута
+        add_action('woocommerce_checkout_update_order_review', array($this, 'handle_checkout_update_order_review'));
+        
         // Регистрация настроек плагина
         add_action('admin_menu', array($this, 'add_admin_menu'));
         
@@ -801,6 +804,30 @@ class CdekDeliveryPlugin {
             'cart_total' => $cart_total,
             'refresh_checkout' => true
         ));
+    }
+    
+    public function handle_checkout_update_order_review($posted_data) {
+        // Парсим данные из POST
+        $post_data = array();
+        if ($posted_data) {
+            parse_str($posted_data, $post_data);
+        }
+        
+        // Если есть данные СДЭК в POST, сохраняем их в сессию
+        if (isset($post_data['cdek_delivery_cost']) && !empty($post_data['cdek_delivery_cost'])) {
+            $cost = floatval($post_data['cdek_delivery_cost']);
+            WC()->session->set('cdek_delivery_cost', $cost);
+            error_log('СДЭК: Сохранена стоимость доставки из чекаута: ' . $cost);
+        }
+        
+        if (isset($post_data['cdek_selected_point_code']) && !empty($post_data['cdek_selected_point_code'])) {
+            $point_code = sanitize_text_field($post_data['cdek_selected_point_code']);
+            WC()->session->set('cdek_selected_point_code', $point_code);
+            error_log('СДЭК: Сохранен код пункта из чекаута: ' . $point_code);
+        }
+        
+        // Принудительно очищаем кеш доставки
+        WC()->shipping()->reset_shipping();
     }
     
     public function update_cdek_shipping_rates($rates, $package) {

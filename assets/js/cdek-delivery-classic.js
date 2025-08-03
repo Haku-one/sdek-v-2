@@ -1170,60 +1170,20 @@ jQuery(document).ready(function($) {
             console.log('🔄 Запускаем обновление чекаута...');
             $('body').trigger('update_checkout');
             
-            // Обновляем стоимость доставки через AJAX
+            // Используем только стандартное обновление WooCommerce
+            console.log('🔄 Используем только стандартное обновление WooCommerce...');
+            
+            // Сохраняем данные в скрытые поля
+            $('#cdek-selected-point-code').val(point.code);
+            $('#cdek-delivery-cost').val(deliveryCost);
+            
+            // Обновляем чекаут стандартным способом
+            $(document.body).trigger('update_checkout');
+            
+            // Обновляем итог через нашу функцию с задержкой
             setTimeout(() => {
-                var ajaxUrl = cdek_ajax.ajax_url || '/wp-admin/admin-ajax.php';
-                var nonce = cdek_ajax.nonce || '';
-                
-                console.log('🔄 Отправляем AJAX запрос для обновления стоимости...');
-                
-                $.ajax({
-                    url: ajaxUrl,
-                    type: 'POST',
-                    data: {
-                        action: 'update_cdek_shipping_cost',
-                        nonce: nonce,
-                        cdek_delivery_cost: deliveryCost,
-                        cdek_selected_point_code: point.code
-                    },
-                    success: function(response) {
-                        console.log('✅ AJAX обновление завершено:', response);
-                        
-                        // Не обновляем фрагменты, чтобы не сломать форму
-                        // Используем стандартный механизм WooCommerce
-                        console.log('🔄 Используем стандартное обновление WooCommerce...');
-                        
-                        // Если сервер вернул общую сумму, выводим её
-                        if (response.data && response.data.cart_total) {
-                            console.log('💰 Сервер вернул общую сумму:', response.data.cart_total);
-                        }
-                        
-                        // Принудительное обновление через стандартный механизм
-                        setTimeout(() => {
-                            console.log('🔄 Стандартное обновление чекаута...');
-                            $(document.body).trigger('update_checkout');
-                            
-                            // Обновляем итог через нашу функцию
-                            setTimeout(() => {
-                                updateTotalCost(deliveryCost);
-                            }, 300);
-                            
-                        }, 100);
-                    },
-                    error: function(xhr, status, error) {
-                        console.error('❌ Ошибка AJAX:', status, error);
-                        console.error('Response:', xhr.responseText);
-                        
-                        // В случае ошибки все равно пытаемся обновить чекаут стандартным способом
-                        $(document.body).trigger('update_checkout');
-                        
-                        // И принудительно обновляем итог
-                        setTimeout(() => {
-                            updateTotalCost(deliveryCost);
-                        }, 300);
-                    }
-                });
-            }, 300);
+                updateTotalCost(deliveryCost);
+            }, 500);
         });
     }
     

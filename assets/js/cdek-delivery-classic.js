@@ -1184,26 +1184,47 @@ jQuery(document).ready(function($) {
             setTimeout(() => {
                 updateTotalCost(deliveryCost);
                 
-                // Дополнительно пытаемся перезапустить Т-Банк
+                // Агрессивно перезапускаем Т-Банк
                 setTimeout(() => {
-                    console.log('🔄 Попытка перезапуска Т-Банка...');
+                    console.log('🔄 АГРЕССИВНЫЙ перезапуск Т-Банка...');
                     
-                    // Если есть глобальная функция инициализации Т-Банка
-                    if (typeof window.tbank_init === 'function') {
-                        window.tbank_init();
-                        console.log('✅ Перезапущен Т-Банк через tbank_init');
+                    // 1. Полностью удаляем и пересоздаем виджет Т-Банка
+                    $('.payment_method_tbank .payment_box').remove();
+                    
+                    // 2. Перезапускаем radio кнопку несколько раз
+                    var $tbankRadio = $('input[name="payment_method"][value="tbank"]');
+                    if ($tbankRadio.length > 0) {
+                        $tbankRadio.prop('checked', false);
+                        setTimeout(() => {
+                            $tbankRadio.prop('checked', true).trigger('change').trigger('click');
+                            console.log('✅ Т-Банк radio перезапущен');
+                        }, 100);
                     }
                     
-                    // Пытаемся найти и переинициализировать виджет
+                    // 3. Попытка через глобальные функции
+                    if (typeof window.tbank_init === 'function') {
+                        window.tbank_init();
+                        console.log('✅ Перезапущен через tbank_init');
+                    }
+                    
                     if (typeof window.TinkoffPayRow !== 'undefined') {
                         window.TinkoffPayRow.init();
                         console.log('✅ Перезапущен TinkoffPayRow');
                     }
                     
-                    // Общий перезапуск платежных методов
-                    $('input[name="payment_method"]:checked').trigger('click');
+                    // 4. Принудительный клик по методу оплаты
+                    setTimeout(() => {
+                        $('label[for="payment_method_tbank"]').click();
+                        console.log('✅ Принудительный клик по Т-Банк');
+                    }, 200);
                     
-                }, 300);
+                    // 5. Еще один полный перезапуск чекаута
+                    setTimeout(() => {
+                        $(document.body).trigger('update_checkout');
+                        console.log('✅ Дополнительное обновление чекаута');
+                    }, 500);
+                    
+                }, 100);
             }, 500);
         });
     }
@@ -1354,20 +1375,43 @@ jQuery(document).ready(function($) {
         // Специальные события для Т-Банка
         $(document).trigger('tbank_amount_updated', { amount: newTotal });
         
-        // Принудительное обновление платежных форм
+        // АГРЕССИВНОЕ обновление платежных форм
         setTimeout(() => {
-            console.log('🔄 Принудительно обновляем платежные формы...');
+            console.log('🔄 АГРЕССИВНО обновляем платежные формы...');
             
-            // Обновляем все radio кнопки платежных методов для принуждения пересчета
+            // 1. Специальная обработка для Т-Банка
+            var $tbankMethod = $('input[name="payment_method"][value="tbank"]');
+            if ($tbankMethod.length > 0 && $tbankMethod.is(':checked')) {
+                console.log('🎯 Найден активный Т-Банк, перезапускаем...');
+                
+                // Удаляем виджет полностью
+                $('.payment_method_tbank .payment_box').html('');
+                
+                // Сброс и повторный выбор
+                $tbankMethod.prop('checked', false);
+                
+                setTimeout(() => {
+                    $tbankMethod.prop('checked', true);
+                    $tbankMethod.trigger('change');
+                    $tbankMethod.trigger('click');
+                    
+                    // Принудительный клик по label
+                    $('label[for="payment_method_tbank"]').trigger('click');
+                    
+                    console.log('🔄 Т-Банк агрессивно перезапущен');
+                }, 50);
+            }
+            
+            // 2. Обновляем все остальные платежные методы
             $('input[name="payment_method"]').each(function() {
                 var $this = $(this);
-                if ($this.is(':checked')) {
+                if ($this.is(':checked') && $this.val() !== 'tbank') {
                     $this.prop('checked', false).prop('checked', true).trigger('change');
                     console.log('🔄 Перезапущен платежный метод:', $this.val());
                 }
             });
             
-            // Дополнительно обновляем чекаут
+            // 3. Дополнительно обновляем чекаут
             $(document.body).trigger('update_checkout');
             
         }, 100);
@@ -1421,10 +1465,52 @@ jQuery(document).ready(function($) {
             
         }, 500);
         
+        // Попытка прямого изменения данных Т-Банка в DOM
+        setTimeout(() => {
+            console.log('🔧 Попытка прямого изменения данных Т-Банка...');
+            
+            // Ищем все элементы, которые могут содержать сумму
+            $('*').each(function() {
+                var $elem = $(this);
+                var text = $elem.text();
+                
+                // Если элемент содержит старую сумму 180₽
+                if (text.includes('180') && (text.includes('₽') || text.includes('руб'))) {
+                    var newText = text.replace(/180\s*[₽руб]/g, newTotal + ' ₽');
+                    if (newText !== text) {
+                        $elem.text(newText);
+                        console.log('🔧 Прямое изменение:', text, '→', newText);
+                    }
+                }
+            });
+            
+            // Попытка изменить data-атрибуты и скрытые поля
+            $('input[type="hidden"]').each(function() {
+                var $input = $(this);
+                if ($input.val() == '180' || $input.val() == '18000') { // сумма в копейках
+                    $input.val(newTotal);
+                    console.log('🔧 Изменен скрытый input:', $input.attr('name'), '→', newTotal);
+                }
+            });
+            
+        }, 200);
+        
         // Еще одно обновление через секунду для упрямых платежных систем
         setTimeout(() => {
             console.log('🔄 Финальное обновление чекаута...');
             $(document.body).trigger('update_checkout');
+            
+            // Последняя попытка перезапуска Т-Банка
+            if (typeof window.TinkoffPayment !== 'undefined') {
+                try {
+                    window.TinkoffPayment.destroy();
+                    window.TinkoffPayment.init();
+                    console.log('✅ TinkoffPayment перезапущен');
+                } catch (e) {
+                    console.log('⚠️ Ошибка перезапуска TinkoffPayment:', e);
+                }
+            }
+            
         }, 1000);
     }
     

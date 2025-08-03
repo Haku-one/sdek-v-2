@@ -254,10 +254,16 @@ class CdekDeliveryPlugin {
             $cost_data['api_success'] = true;
             wp_send_json_success($cost_data);
         } else {
-            // API не смог рассчитать стоимость
+            // API не смог рассчитать стоимость - возвращаем детальную информацию для отладки
             wp_send_json_error(array(
                 'message' => 'API СДЭК недоступен, расчет стоимости невозможен',
-                'api_response' => $cost_data
+                'api_response' => $cost_data,
+                'debug_info' => array(
+                    'packages_count' => isset($_POST['packages_count']) ? intval($_POST['packages_count']) : 1,
+                    'cart_weight' => $cart_weight,
+                    'cart_value' => $cart_value,
+                    'point_code' => $point_code
+                )
             ));
         }
     }

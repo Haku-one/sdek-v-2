@@ -597,8 +597,25 @@ jQuery(document).ready(function($) {
             error: function(xhr, status, error) {
                 console.error('❌ Ошибка запроса к API СДЭК:', {
                     status: status,
-                    error: error
+                    error: error,
+                    response: xhr.responseText
                 });
+                
+                // Пытаемся парсить ответ для получения деталей ошибки
+                try {
+                    var errorResponse = JSON.parse(xhr.responseText);
+                    if (errorResponse.data) {
+                        console.error('📋 Детали ошибки API СДЭК:', errorResponse.data);
+                        if (errorResponse.data.debug_info) {
+                            console.error('🔍 Отладочная информация:', errorResponse.data.debug_info);
+                        }
+                        if (errorResponse.data.api_response) {
+                            console.error('🌐 Ответ API СДЭК:', errorResponse.data.api_response);
+                        }
+                    }
+                } catch (e) {
+                    console.error('❌ Не удалось парсить ответ об ошибке');
+                }
                 
                 console.log('❌ Расчет стоимости невозможен');
                 callback(0);

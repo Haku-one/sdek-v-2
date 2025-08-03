@@ -1,0 +1,700 @@
+/* ==========================================================================
+   WooCommerce Checkout Styles
+   Стили для чекаута WooCommerce (от купона до габаритов)
+   ========================================================================== */
+
+/* Основные переменные */
+:root {
+    --primary-color: #0073aa;
+    --secondary-color: #005a87;
+    --success-color: #46b450;
+    --warning-color: #ffb900;
+    --error-color: #dc3232;
+    --text-color: #333;
+    --text-muted: #666;
+    --border-color: #ddd;
+    --border-radius: 6px;
+    --box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    --box-shadow-hover: 0 4px 8px rgba(0,0,0,0.15);
+    --transition: all 0.3s ease;
+    --spacing-sm: 10px;
+    --spacing-md: 15px;
+    --spacing-lg: 20px;
+    --spacing-xl: 30px;
+}
+
+/* ==========================================================================
+   Купон
+   ========================================================================== */
+
+.woocommerce-form-coupon-toggle {
+    margin-bottom: var(--spacing-lg);
+}
+
+.woocommerce-info {
+    background: linear-gradient(135deg, #e3f2fd, #f1f8e9);
+    border: 2px solid var(--primary-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    position: relative;
+    overflow: hidden;
+}
+
+.woocommerce-info::before {
+    content: '🎫';
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 24px;
+    opacity: 0.7;
+}
+
+.woocommerce-info a {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 600;
+    transition: var(--transition);
+}
+
+.woocommerce-info a:hover {
+    color: var(--secondary-color);
+    text-decoration: underline;
+}
+
+.checkout_coupon {
+    background: #f8f9fa;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+    box-shadow: var(--box-shadow);
+}
+
+.checkout_coupon .form-row {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: flex-end;
+}
+
+.checkout_coupon .form-row-first {
+    flex: 1;
+}
+
+.checkout_coupon .form-row-last {
+    flex-shrink: 0;
+}
+
+.checkout_coupon input[type="text"] {
+    width: 100%;
+    padding: 12px var(--spacing-md);
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: 16px;
+    transition: var(--transition);
+}
+
+.checkout_coupon input[type="text"]:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(0, 115, 170, 0.1);
+    outline: none;
+}
+
+.checkout_coupon .button {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 12px var(--spacing-lg);
+    border-radius: var(--border-radius);
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+}
+
+.checkout_coupon .button:hover {
+    background: var(--secondary-color);
+    transform: translateY(-1px);
+    box-shadow: var(--box-shadow-hover);
+}
+
+/* ==========================================================================
+   Форма чекаута - основная структура
+   ========================================================================== */
+
+.checkout.woocommerce-checkout {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    overflow: hidden;
+}
+
+.col2-set {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-xl);
+    margin-bottom: var(--spacing-xl);
+}
+
+.col-1, .col-2 {
+    background: #fafafa;
+    padding: var(--spacing-lg);
+    border-radius: var(--border-radius);
+    border: 1px solid #eee;
+}
+
+/* ==========================================================================
+   Поля формы
+   ========================================================================== */
+
+.woocommerce-billing-fields h3,
+.woocommerce-additional-fields h3 {
+    color: var(--text-color);
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: var(--spacing-lg);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 3px solid var(--primary-color);
+    position: relative;
+}
+
+.woocommerce-billing-fields h3::before {
+    content: '💳';
+    margin-right: var(--spacing-sm);
+}
+
+.woocommerce-additional-fields h3::before {
+    content: '📝';
+    margin-right: var(--spacing-sm);
+}
+
+.form-row {
+    margin-bottom: var(--spacing-md);
+}
+
+.form-row label {
+    display: block;
+    font-weight: 600;
+    color: var(--text-color);
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.form-row label .required {
+    color: var(--error-color);
+    font-weight: bold;
+}
+
+.woocommerce-input-wrapper {
+    position: relative;
+}
+
+.form-row input[type="text"],
+.form-row input[type="email"],
+.form-row input[type="tel"],
+.form-row textarea,
+.form-row select {
+    width: 100%;
+    padding: 12px var(--spacing-md);
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: 16px;
+    transition: var(--transition);
+    background: white;
+}
+
+.form-row input:focus,
+.form-row textarea:focus,
+.form-row select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(0, 115, 170, 0.1);
+    outline: none;
+}
+
+.form-row textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* Чекбоксы */
+.woocommerce-form__label-for-checkbox {
+    display: flex !important;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-weight: normal !important;
+    cursor: pointer;
+}
+
+.woocommerce-form__input-checkbox {
+    width: auto !important;
+    margin: 0 !important;
+    transform: scale(1.2);
+}
+
+/* ==========================================================================
+   Заказ (Order Review)
+   ========================================================================== */
+
+#order_review_heading {
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    color: white;
+    font-size: 22px;
+    font-weight: 700;
+    padding: var(--spacing-lg);
+    margin: 0 0 var(--spacing-lg) 0;
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+    position: relative;
+}
+
+#order_review_heading::before {
+    content: '🛒';
+    margin-right: var(--spacing-sm);
+}
+
+.woocommerce-checkout-review-order {
+    border: 1px solid var(--border-color);
+    border-radius: 0 0 var(--border-radius) var(--border-radius);
+    overflow: hidden;
+    box-shadow: var(--box-shadow);
+}
+
+.shop_table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+}
+
+.shop_table thead th {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    padding: var(--spacing-md);
+    font-weight: 600;
+    text-align: left;
+    border-bottom: 2px solid var(--border-color);
+    color: var(--text-color);
+}
+
+.shop_table tbody td,
+.shop_table tfoot th,
+.shop_table tfoot td {
+    padding: var(--spacing-md);
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: top;
+}
+
+.shop_table .cart_item:hover {
+    background: #f8f9fa;
+}
+
+.product-name {
+    font-weight: 600;
+}
+
+.product-quantity {
+    color: var(--primary-color);
+    font-weight: 700;
+}
+
+.variation dt {
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.variation dd {
+    margin: 0 0 8px 0;
+    color: var(--text-color);
+}
+
+/* Подытоги и итого */
+.shop_table tfoot th {
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.cart-subtotal th,
+.cart-subtotal td {
+    background: #f8f9fa;
+}
+
+.order-total th,
+.order-total td {
+    background: linear-gradient(135deg, #e8f5e8, #f0f8f0);
+    font-weight: 700 !important;
+    font-size: 18px;
+    color: var(--success-color);
+}
+
+.woocommerce-Price-amount {
+    font-weight: 700;
+}
+
+/* Доставка */
+.woocommerce-shipping-totals {
+    background: #fff3cd;
+}
+
+.woocommerce-shipping-methods {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.woocommerce-shipping-methods li {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.woocommerce-shipping-methods label {
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+/* ==========================================================================
+   Способы оплаты
+   ========================================================================== */
+
+#payment {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    box-shadow: var(--box-shadow);
+    margin-top: var(--spacing-lg);
+}
+
+.wc_payment_methods {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.wc_payment_method {
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.wc_payment_method:last-child {
+    border-bottom: none;
+}
+
+.wc_payment_method label {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    background: #fafafa;
+}
+
+.wc_payment_method label:hover {
+    background: #f0f0f0;
+}
+
+.wc_payment_method input[type="radio"]:checked + label {
+    background: linear-gradient(135deg, #e3f2fd, #f1f8e9);
+    border-left: 4px solid var(--primary-color);
+}
+
+.wc_payment_method img {
+    max-height: 24px;
+    width: auto;
+}
+
+.payment_box {
+    padding: var(--spacing-md);
+    background: #f8f9fa;
+    border-top: 1px solid #eee;
+    color: var(--text-muted);
+}
+
+/* ==========================================================================
+   Кнопка заказа и условия
+   ========================================================================== */
+
+.place-order {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    padding: var(--spacing-lg);
+    border-top: 1px solid var(--border-color);
+}
+
+.woocommerce-terms-and-conditions-wrapper {
+    margin-bottom: var(--spacing-md);
+}
+
+.woocommerce-privacy-policy-text {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    background: #f8f9fa;
+    padding: var(--spacing-sm);
+    border-radius: var(--border-radius);
+    border-left: 3px solid var(--primary-color);
+}
+
+.woocommerce-privacy-policy-link {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.woocommerce-privacy-policy-link:hover {
+    text-decoration: underline;
+}
+
+#place_order {
+    width: 100%;
+    background: linear-gradient(135deg, var(--success-color), #2e7d32);
+    color: white;
+    border: none;
+    padding: var(--spacing-md) var(--spacing-xl);
+    border-radius: var(--border-radius);
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+}
+
+#place_order::before {
+    content: '🔒';
+    margin-right: var(--spacing-sm);
+}
+
+#place_order:hover {
+    background: linear-gradient(135deg, #2e7d32, var(--success-color));
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(46, 125, 50, 0.3);
+}
+
+#place_order:active {
+    transform: translateY(0);
+}
+
+/* ==========================================================================
+   Габариты товаров
+   ========================================================================== */
+
+#product-dimensions-info {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-lg);
+    margin: var(--spacing-lg) 0;
+    box-shadow: var(--box-shadow);
+}
+
+#product-dimensions-info h4 {
+    color: var(--text-color);
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: var(--spacing-md);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.dimensions-list {
+    margin-bottom: var(--spacing-md);
+}
+
+.product-dimensions {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-sm);
+    transition: var(--transition);
+}
+
+.product-dimensions:hover {
+    border-color: var(--primary-color);
+    box-shadow: var(--box-shadow);
+}
+
+.product-dimensions strong {
+    color: var(--text-color);
+    display: block;
+    margin-bottom: 6px;
+}
+
+.product-dimensions span {
+    color: var(--text-muted);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+/* ==========================================================================
+   Адаптивность
+   ========================================================================== */
+
+@media (max-width: 768px) {
+    :root {
+        --spacing-sm: 8px;
+        --spacing-md: 12px;
+        --spacing-lg: 16px;
+        --spacing-xl: 20px;
+    }
+
+    .col2-set {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-lg);
+    }
+
+    .checkout_coupon .form-row {
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+
+    .checkout_coupon .form-row-first,
+    .checkout_coupon .form-row-last {
+        flex: none;
+    }
+
+    .shop_table thead {
+        display: none;
+    }
+
+    .shop_table,
+    .shop_table tbody,
+    .shop_table tr,
+    .shop_table td {
+        display: block;
+    }
+
+    .shop_table tr {
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        margin-bottom: var(--spacing-sm);
+        padding: var(--spacing-sm);
+        background: white;
+    }
+
+    .shop_table td {
+        border: none;
+        padding: 6px 0;
+        text-align: left !important;
+    }
+
+    .shop_table td::before {
+        content: attr(data-title) ": ";
+        font-weight: 600;
+        color: var(--text-muted);
+    }
+
+    .product-total::before {
+        content: "Сумма: ";
+    }
+
+    .cart-subtotal td::before {
+        content: "Подытог: ";
+    }
+
+    .order-total td::before {
+        content: "Итого: ";
+    }
+
+    #order_review_heading {
+        font-size: 18px;
+        padding: var(--spacing-md);
+    }
+
+    #place_order {
+        font-size: 16px;
+        padding: var(--spacing-md);
+    }
+}
+
+@media (max-width: 480px) {
+    .col-1, .col-2 {
+        padding: var(--spacing-md);
+    }
+
+    .form-row input,
+    .form-row textarea {
+        font-size: 16px; /* Предотвращает зум на iOS */
+    }
+
+    .shop_table tr {
+        padding: var(--spacing-sm);
+    }
+
+    #product-dimensions-info {
+        padding: var(--spacing-md);
+    }
+
+    .product-dimensions {
+        padding: var(--spacing-sm);
+    }
+}
+
+/* ==========================================================================
+   Улучшения UX
+   ========================================================================== */
+
+/* Анимация загрузки для кнопки заказа */
+#place_order.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 20px;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: translateY(-50%) rotate(0deg); }
+    100% { transform: translateY(-50%) rotate(360deg); }
+}
+
+/* Состояния ошибок */
+.woocommerce-invalid .form-row input,
+.woocommerce-invalid .form-row textarea {
+    border-color: var(--error-color);
+    box-shadow: 0 0 0 3px rgba(220, 50, 50, 0.1);
+}
+
+.woocommerce-error {
+    background: #ffebee;
+    border-left: 4px solid var(--error-color);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius);
+    margin-bottom: var(--spacing-md);
+    color: var(--error-color);
+}
+
+/* Состояния успеха */
+.woocommerce-message {
+    background: #e8f5e8;
+    border-left: 4px solid var(--success-color);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius);
+    margin-bottom: var(--spacing-md);
+    color: var(--success-color);
+}
+
+/* Скрытые элементы */
+.screen-reader-text {
+    position: absolute !important;
+    clip: rect(1px, 1px, 1px, 1px);
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden;
+}
+
+/* Плавные переходы для всех интерактивных элементов */
+input, textarea, select, button, .button, a {
+    transition: var(--transition);
+}

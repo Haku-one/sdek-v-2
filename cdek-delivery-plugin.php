@@ -828,6 +828,12 @@ class CdekDeliveryPlugin {
         
         // Принудительно очищаем кеш доставки
         WC()->shipping()->reset_shipping();
+        
+        // Принудительно пересчитываем корзину
+        WC()->cart->calculate_totals();
+        
+        // Логируем для отладки
+        error_log('СДЭК: Итого в корзине после пересчета: ' . WC()->cart->get_total());
     }
     
     public function update_cdek_shipping_rates($rates, $package) {

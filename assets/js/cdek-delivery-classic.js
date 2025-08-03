@@ -1183,6 +1183,27 @@ jQuery(document).ready(function($) {
             // Обновляем итог через нашу функцию с задержкой
             setTimeout(() => {
                 updateTotalCost(deliveryCost);
+                
+                // Дополнительно пытаемся перезапустить Т-Банк
+                setTimeout(() => {
+                    console.log('🔄 Попытка перезапуска Т-Банка...');
+                    
+                    // Если есть глобальная функция инициализации Т-Банка
+                    if (typeof window.tbank_init === 'function') {
+                        window.tbank_init();
+                        console.log('✅ Перезапущен Т-Банк через tbank_init');
+                    }
+                    
+                    // Пытаемся найти и переинициализировать виджет
+                    if (typeof window.TinkoffPayRow !== 'undefined') {
+                        window.TinkoffPayRow.init();
+                        console.log('✅ Перезапущен TinkoffPayRow');
+                    }
+                    
+                    // Общий перезапуск платежных методов
+                    $('input[name="payment_method"]:checked').trigger('click');
+                    
+                }, 300);
             }, 500);
         });
     }
@@ -1330,7 +1351,28 @@ jQuery(document).ready(function($) {
         $(document).trigger('woocommerce_checkout_updated');
         $(document).trigger('payment_method_updated');
         
-        // Уведомляем window для внешних скриптов
+        // Специальные события для Т-Банка
+        $(document).trigger('tbank_amount_updated', { amount: newTotal });
+        
+        // Принудительное обновление платежных форм
+        setTimeout(() => {
+            console.log('🔄 Принудительно обновляем платежные формы...');
+            
+            // Обновляем все radio кнопки платежных методов для принуждения пересчета
+            $('input[name="payment_method"]').each(function() {
+                var $this = $(this);
+                if ($this.is(':checked')) {
+                    $this.prop('checked', false).prop('checked', true).trigger('change');
+                    console.log('🔄 Перезапущен платежный метод:', $this.val());
+                }
+            });
+            
+            // Дополнительно обновляем чекаут
+            $(document.body).trigger('update_checkout');
+            
+        }, 100);
+        
+        // Уведомляем window для внешних скриптов (включая Т-Банк)
         if (window.parent && window.parent !== window) {
             window.parent.postMessage({
                 type: 'checkout_total_updated',
@@ -1338,6 +1380,14 @@ jQuery(document).ready(function($) {
                 delivery: deliveryCost
             }, '*');
         }
+        
+        // Уведомляем и основное окно
+        window.postMessage({
+            type: 'checkout_total_updated',
+            total: newTotal,
+            delivery: deliveryCost,
+            currency: 'RUB'
+        }, '*');
         
         // Принудительно обновляем все поля с суммой
         setTimeout(() => {
@@ -1351,7 +1401,31 @@ jQuery(document).ready(function($) {
                     console.log('🔄 Обновлен текст с 180₽ на', newTotal + '₽');
                 }
             });
+            
+            // Ищем и обновляем iframe Т-Банка
+            $('iframe').each(function() {
+                try {
+                    var iframe = this;
+                    if (iframe.contentWindow) {
+                        iframe.contentWindow.postMessage({
+                            type: 'amount_updated',
+                            amount: newTotal,
+                            currency: 'RUB'
+                        }, '*');
+                        console.log('🔄 Отправлено сообщение в iframe');
+                    }
+                } catch (e) {
+                    console.log('⚠️ Не удалось отправить сообщение в iframe:', e.message);
+                }
+            });
+            
         }, 500);
+        
+        // Еще одно обновление через секунду для упрямых платежных систем
+        setTimeout(() => {
+            console.log('🔄 Финальное обновление чекаута...');
+            $(document.body).trigger('update_checkout');
+        }, 1000);
     }
     
     // ========== ФУНКЦИИ ДЛЯ ЗАГРУЗЧИКОВ И ОШИБОК ==========

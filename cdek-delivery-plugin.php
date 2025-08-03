@@ -250,16 +250,117 @@ class CdekDeliveryPlugin {
         $cost_data = $cdek_api->calculate_delivery_cost_to_point($point_code, $point_data, $cart_weight, $cart_dimensions, $cart_value, $has_real_dimensions);
         
         if ($cost_data && isset($cost_data['delivery_sum']) && $cost_data['delivery_sum'] > 0) {
-            // Только API расчет, никаких fallback
+            // API расчет успешен
             $cost_data['api_success'] = true;
             wp_send_json_success($cost_data);
         } else {
-            // Только API, без резервных расчетов
-            wp_send_json_error(array(
-                'message' => 'API СДЭК недоступен, расчет стоимости невозможен',
-                'api_response' => $cost_data
-            ));
+            // API не смог рассчитать - проверяем, не слишком ли большой заказ
+            $packages_count = isset($_POST['packages_count']) ? intval($_POST['packages_count']) : 1;
+            
+            if ($packages_count >= 5) {
+                // Для больших заказов используем приблизительный расчет
+                error_log('СДЭК расчет: API не справился с большим заказом (' . $packages_count . ' коробок). Используем приблизительный расчет.');
+                
+                $fallback_cost = $this->calculate_fallback_cost($cart_weight, $cart_value, $packages_count, $point_data);
+                
+                if ($fallback_cost > 0) {
+                    wp_send_json_success(array(
+                        'delivery_sum' => $fallback_cost,
+                        'api_success' => false,
+                        'fallback_used' => true,
+                        'message' => 'Приблизительная стоимость для большого заказа'
+                    ));
+                } else {
+                    wp_send_json_error(array(
+                        'message' => 'Не удалось рассчитать стоимость доставки для большого заказа',
+                        'api_response' => $cost_data
+                    ));
+                }
+            } else {
+                // Для обычных заказов - ошибка API
+                wp_send_json_error(array(
+                    'message' => 'API СДЭК недоступен, расчет стоимости невозможен',
+                    'api_response' => $cost_data
+                ));
+            }
         }
+    }
+    
+    /**
+     * Приблизительный расчет стоимости доставки для больших заказов
+     */
+    private function calculate_fallback_cost($cart_weight, $cart_value, $packages_count, $point_data) {
+        error_log('СДЭК fallback: Расчет для веса: ' . $cart_weight . 'г, стоимости: ' . $cart_value . 'руб, коробок: ' . $packages_count);
+        
+        // Базовая стоимость за первую коробку (примерно как 1 коробка через API)
+        $base_cost = 350; // Базовая стоимость доставки в рублях
+        
+        // Дополнительная стоимость за каждую дополнительную коробку
+        $additional_cost_per_package = 150;
+        
+        // Коэффициент в зависимости от региона
+        $region_multiplier = 1.0;
+        
+        // Определяем регион по данным пункта
+        if (isset($point_data['location']['city'])) {
+            $city = strtolower($point_data['location']['city']);
+            
+            // Москва и область
+            if (strpos($city, 'москв') !== false) {
+                $region_multiplier = 1.2;
+            }
+            // Санкт-Петербург и область  
+            elseif (strpos($city, 'петербург') !== false || strpos($city, 'спб') !== false) {
+                $region_multiplier = 1.3;
+            }
+            // Дальние регионы
+            elseif (strpos($city, 'владивосток') !== false || strpos($city, 'хабаровск') !== false || 
+                    strpos($city, 'магадан') !== false || strpos($city, 'южно-сахалинск') !== false) {
+                $region_multiplier = 2.5;
+            }
+            // Сибирь
+            elseif (strpos($city, 'новосибирск') !== false || strpos($city, 'красноярск') !== false || 
+                    strpos($city, 'иркутск') !== false || strpos($city, 'омск') !== false) {
+                $region_multiplier = 1.8;
+            }
+            // Урал
+            elseif (strpos($city, 'екатеринбург') !== false || strpos($city, 'челябинск') !== false || 
+                    strpos($city, 'пермь') !== false || strpos($city, 'уфа') !== false) {
+                $region_multiplier = 1.4;
+            }
+            // Юг России
+            elseif (strpos($city, 'ростов') !== false || strpos($city, 'краснодар') !== false || 
+                    strpos($city, 'волгоград') !== false || strpos($city, 'астрахань') !== false) {
+                $region_multiplier = 1.3;
+            }
+        }
+        
+        // Рассчитываем базовую стоимость
+        $total_cost = $base_cost;
+        
+        // Добавляем стоимость за дополнительные коробки
+        if ($packages_count > 1) {
+            $total_cost += ($packages_count - 1) * $additional_cost_per_package;
+        }
+        
+        // Применяем региональный коэффициент
+        $total_cost = round($total_cost * $region_multiplier);
+        
+        // Коэффициент за большой вес (свыше 10 кг)
+        if ($cart_weight > 10000) { // 10 кг в граммах
+            $weight_multiplier = 1 + (($cart_weight - 10000) / 50000); // +1% за каждые 500г свыше 10кг
+            $total_cost = round($total_cost * $weight_multiplier);
+        }
+        
+        // Минимальная стоимость
+        $total_cost = max($total_cost, 300);
+        
+        // Максимальная стоимость (разумное ограничение)
+        $total_cost = min($total_cost, 5000);
+        
+        error_log('СДЭК fallback: Рассчитанная стоимость: ' . $total_cost . ' руб. (регион: x' . $region_multiplier . ', коробок: ' . $packages_count . ')');
+        
+        return $total_cost;
     }
     
     public function ajax_get_address_suggestions() {
@@ -2037,6 +2138,10 @@ class CdekAPI {
         
         error_log('СДЭК расчет: Коробки: ' . print_r($packages, true));
         
+        // Проверяем ограничения API СДЭК для большого количества коробок
+        if ($packages_count > 5) {
+            error_log('СДЭК расчет: ВНИМАНИЕ! Большое количество коробок (' . $packages_count . '). API может не справиться.');
+        }
         
         // Определяем тариф для доставки ИЗ САРАТОВА до пункта выдачи
         // 136 - Посылка склад-постамат/пункт выдачи (ПРАВИЛЬНЫЙ для ПВЗ)
@@ -2073,6 +2178,7 @@ class CdekAPI {
         
         
         // Делаем запрос к API СДЭК
+        error_log('СДЭК расчет: Отправляем запрос к API: ' . json_encode($data, JSON_UNESCAPED_UNICODE));
         
         $response = wp_remote_post($this->base_url . '/calculator/tariff', array(
             'headers' => array(
@@ -2092,6 +2198,7 @@ class CdekAPI {
         $body = wp_remote_retrieve_body($response);
         $headers = wp_remote_retrieve_headers($response);
         
+        error_log('СДЭК расчет: Ответ API (код: ' . $response_code . '): ' . $body);
         
         $parsed_body = json_decode($body, true);
         

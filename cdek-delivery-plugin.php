@@ -76,11 +76,11 @@ class CdekDeliveryPlugin {
         add_action('woocommerce_order_details_after_order_table', array($this, 'display_cdek_info_in_order_details'));
         add_action('woocommerce_email_order_details', array($this, 'display_cdek_info_in_email'), 10, 4);
         
-        // Изменение текста доставки в таблице заказа
-        add_filter('woocommerce_order_shipping_to_display', array($this, 'modify_shipping_display_text'), 10, 2);
+        // Изменение текста доставки в таблице заказа (добавляем позже)
+        add_action('init', array($this, 'add_shipping_display_filters'), 20);
         
         // Изменение отображения метода доставки в таблице заказа
-        add_filter('woocommerce_order_get_formatted_shipping_full_name', array($this, 'modify_shipping_method_name'), 10, 2);
+        // add_filter('woocommerce_order_get_formatted_shipping_full_name', array($this, 'modify_shipping_method_name'), 10, 2);
         
         // Дополнительная информация о доставке в админке и письмах
         add_action('woocommerce_admin_order_data_after_order_details', array($this, 'display_cdek_info_in_admin_order'));
@@ -1392,9 +1392,6 @@ class CdekDeliveryPlugin {
     }
 }
 
-// Инициализация плагина
-new CdekDeliveryPlugin();
-
 // Класс для работы с СДЭК API
 class CdekAPI {
     
@@ -1972,48 +1969,67 @@ class CdekAPI {
     }
     
     /**
+     * Добавление фильтров для отображения доставки (вызывается после полной загрузки)
+     */
+    public function add_shipping_display_filters() {
+        add_filter('woocommerce_order_shipping_to_display', array($this, 'modify_shipping_display_text'), 10, 2);
+        add_filter('woocommerce_order_get_formatted_shipping_full_name', array($this, 'modify_shipping_method_name'), 10, 2);
+    }
+    
+    /**
      * Изменение текста доставки в таблице заказа
      */
     public function modify_shipping_display_text($shipping_text, $order) {
+        // Простая проверка для отладки
         if (!$order || !is_object($order)) {
             return $shipping_text;
         }
         
-        $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
-        $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
-        $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
-        
-        // Проверяем, что это заказ с доставкой СДЭК
-        $shipping_methods = $order->get_shipping_methods();
-        $is_cdek_order = false;
-        
-        foreach ($shipping_methods as $item_id => $item) {
-            if (strpos($item->get_method_id(), 'cdek_delivery') !== false) {
-                $is_cdek_order = true;
-                break;
+        try {
+            $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
+            
+            if (!$delivery_type) {
+                return $shipping_text;
             }
-        }
-        
-        if (!$is_cdek_order || !$delivery_type) {
-            return $shipping_text;
-        }
-        
-        switch ($delivery_type) {
-            case 'pickup':
-                return 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) — Бесплатно';
-                
-            case 'manager':
-                return 'Доставка по договоренности с менеджером — Бесплатно';
-                
-            case 'cdek':
-            default:
-                if ($point_code && $point_data && isset($point_data['name'])) {
-                    $address = isset($point_data['location']['address_full']) ? 
-                        $point_data['location']['address_full'] : 
-                        'Адрес уточняется';
-                    return 'Пункт выдачи СДЭК: ' . esc_html($point_data['name']) . ' (' . esc_html($address) . ')';
+            
+            // Проверяем, что это заказ с доставкой СДЭК
+            $shipping_methods = $order->get_shipping_methods();
+            $is_cdek_order = false;
+            
+            foreach ($shipping_methods as $item_id => $item) {
+                if (strpos($item->get_method_id(), 'cdek_delivery') !== false) {
+                    $is_cdek_order = true;
+                    break;
                 }
-                break;
+            }
+            
+            if (!$is_cdek_order) {
+                return $shipping_text;
+            }
+            
+            $point_code = get_post_meta($order->get_id(), '_cdek_point_code', true);
+            $point_data = get_post_meta($order->get_id(), '_cdek_point_data', true);
+            
+            switch ($delivery_type) {
+                case 'pickup':
+                    return 'Самовывоз (г.Саратов, ул. Осипова, д. 18а) — Бесплатно';
+                    
+                case 'manager':
+                    return 'Доставка по договоренности с менеджером — Бесплатно';
+                    
+                case 'cdek':
+                default:
+                    if ($point_code && $point_data && isset($point_data['name'])) {
+                        $address = isset($point_data['location']['address_full']) ? 
+                            $point_data['location']['address_full'] : 
+                            'Адрес уточняется';
+                        return 'Пункт выдачи СДЭК: ' . esc_html($point_data['name']) . ' (' . esc_html($address) . ')';
+                    }
+                    break;
+            }
+        } catch (Exception $e) {
+            // В случае ошибки возвращаем оригинальный текст
+            error_log('CDEK Plugin Error in modify_shipping_display_text: ' . $e->getMessage());
         }
         
         return $shipping_text;
@@ -2335,3 +2351,13 @@ class CdekAPI {
         }
     }
 }
+
+// Инициализация плагина
+function init_cdek_delivery_plugin() {
+    if (class_exists('WooCommerce') && class_exists('CdekDeliveryPlugin')) {
+        new CdekDeliveryPlugin();
+    }
+}
+
+// Инициализируем плагин после загрузки всех плагинов
+add_action('plugins_loaded', 'init_cdek_delivery_plugin');

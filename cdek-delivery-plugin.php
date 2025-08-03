@@ -2058,7 +2058,7 @@ class CdekAPI {
         $data = array(
             'date' => date('Y-m-d\TH:i:sO'), // Правильный формат даты с часовым поясом
             'type' => 1, // Тип заказа: интернет-магазин
-            'currency' => 1, // Валюта RUB
+            'currency' => 1, // Валюта RUB (1 = рубли)
             'lang' => 'rus', // Язык ответа
             'tariff_code' => $tariff_code,
             'from_location' => $from_location,

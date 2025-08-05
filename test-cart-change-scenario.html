@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест сценария изменения корзины</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .scenario { margin: 20px 0; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .step { margin: 15px 0; padding: 15px; border-left: 4px solid #007cba; background: #f8f9fa; }
+        .step-title { font-weight: bold; color: #007cba; margin-bottom: 10px; }
+        .step-status { margin: 10px 0; padding: 8px; border-radius: 4px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .cart-state { background: #e9ecef; padding: 10px; margin: 10px 0; border-radius: 4px; font-family: monospace; }
+        .action-button { padding: 10px 20px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .action-button:hover { background: #005a8c; }
+        .log { background: #f8f9fa; padding: 15px; height: 200px; overflow-y: scroll; font-family: monospace; font-size: 12px; margin: 15px 0; border: 1px solid #dee2e6; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Тест сценария: Изменение корзины после оформления заказа СДЭК</h1>
+    
+    <div class="scenario">
+        <h2>📋 Описание сценария</h2>
+        <p><strong>Проблема:</strong> Пользователь оформил заказ со СДЭК, затем добавил новые товары в корзину и хочет оформить новый заказ с "обсуждением с менеджером". Очищаются ли старые данные СДЭК?</p>
+        
+        <div class="step">
+            <div class="step-title">Шаг 1: Первоначальное состояние</div>
+            <div class="cart-state" id="initial-state">
+                Корзина: 2 товара, сумма 500 руб.
+                СДЭК: не выбран
+                Hash корзины: cart_hash_1
+            </div>
+        </div>
+        
+        <div class="step">
+            <div class="step-title">Шаг 2: Выбор СДЭК доставки</div>
+            <button class="action-button" onclick="selectCdekDelivery()">🚚 Выбрать СДЭК доставку</button>
+            <div class="step-status" id="step2-status"></div>
+        </div>
+        
+        <div class="step">
+            <div class="step-title">Шаг 3: Оформление заказа 1 (симуляция)</div>
+            <button class="action-button" onclick="completeOrder1()">✅ Оформить заказ 1</button>
+            <div class="step-status" id="step3-status"></div>
+        </div>
+        
+        <div class="step">
+            <div class="step-title">Шаг 4: Добавление новых товаров</div>
+            <button class="action-button" onclick="addNewItems()">➕ Добавить новые товары</button>
+            <div class="step-status" id="step4-status"></div>
+        </div>
+        
+        <div class="step">
+            <div class="step-title">Шаг 5: Попытка выбрать "Обсудить с менеджером"</div>
+            <button class="action-button" onclick="selectManagerDiscussion()">📞 Выбрать "Обсудить с менеджером"</button>
+            <div class="step-status" id="step5-status"></div>
+        </div>
+    </div>
+    
+    <div class="scenario">
+        <h3>🔍 Текущее состояние системы</h3>
+        <div id="current-state" class="cart-state">
+            <!-- Будет заполнено JavaScript -->
+        </div>
+        
+        <h3>📊 Лог операций</h3>
+        <div id="operation-log" class="log"></div>
+        
+        <button class="action-button" onclick="resetScenario()">🔄 Сбросить сценарий</button>
+    </div>
+
+    <script>
+        // Симуляция состояния системы
+        let systemState = {
+            cartItems: ['Товар 1', 'Товар 2'],
+            cartTotal: 500,
+            cartHash: 'cart_hash_1',
+            cdekDeliveryType: null,
+            cdekPointCode: null,
+            cdekDeliveryCost: 0,
+            lastSavedCartHash: null,
+            orderCount: 0
+        };
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('operation-log');
+            const typeIcon = {
+                'info': 'ℹ️',
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️'
+            }[type] || 'ℹ️';
+            
+            logDiv.innerHTML += `[${timestamp}] ${typeIcon} ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+        
+        function updateCurrentState() {
+            const stateDiv = document.getElementById('current-state');
+            stateDiv.innerHTML = `
+                <strong>Корзина:</strong> ${systemState.cartItems.join(', ')} (${systemState.cartTotal} руб.)<br>
+                <strong>Hash корзины:</strong> ${systemState.cartHash}<br>
+                <strong>Последний сохраненный hash:</strong> ${systemState.lastSavedCartHash || '(не сохранен)'}<br>
+                <strong>Тип доставки СДЭК:</strong> ${systemState.cdekDeliveryType || '(не выбран)'}<br>
+                <strong>Код пункта СДЭК:</strong> ${systemState.cdekPointCode || '(не выбран)'}<br>
+                <strong>Стоимость СДЭК:</strong> ${systemState.cdekDeliveryCost} руб.<br>
+                <strong>Заказов оформлено:</strong> ${systemState.orderCount}
+            `;
+        }
+        
+        function checkIfCdekDataShouldBeCleaned() {
+            // Логика очистки из PHP кода
+            const cartChanged = systemState.cartHash !== systemState.lastSavedCartHash;
+            const hasCdekData = systemState.cdekDeliveryType || systemState.cdekPointCode || systemState.cdekDeliveryCost > 0;
+            
+            if (cartChanged && hasCdekData) {
+                log('🧹 Обнаружено изменение корзины - очищаем данные СДЭК', 'warning');
+                
+                // Очищаем данные СДЭК
+                systemState.cdekDeliveryType = null;
+                systemState.cdekPointCode = null;
+                systemState.cdekDeliveryCost = 0;
+                
+                log('✅ Данные СДЭК очищены', 'success');
+                return true;
+            }
+            
+            return false;
+        }
+        
+        function selectCdekDelivery() {
+            log('🚚 === ШАГ 2: Выбор СДЭК доставки ===');
+            
+            systemState.cdekDeliveryType = 'cdek';
+            systemState.cdekPointCode = 'MSK123';
+            systemState.cdekDeliveryCost = 366;
+            systemState.lastSavedCartHash = systemState.cartHash; // Сохраняем hash при выборе СДЭК
+            
+            log('Выбран пункт выдачи СДЭК: MSK123');
+            log('Стоимость доставки: 366 руб.');
+            log('Сохранен hash корзины: ' + systemState.cartHash);
+            
+            document.getElementById('step2-status').innerHTML = 
+                '<div class="success">✅ СДЭК доставка выбрана (366 руб.)</div>';
+            
+            updateCurrentState();
+        }
+        
+        function completeOrder1() {
+            log('📦 === ШАГ 3: Оформление заказа 1 ===');
+            
+            systemState.orderCount++;
+            
+            log('Заказ #' + systemState.orderCount + ' оформлен со СДЭК доставкой');
+            log('Данные СДЭК остаются в сессии (заказ завершен, но сессия активна)');
+            
+            document.getElementById('step3-status').innerHTML = 
+                '<div class="success">✅ Заказ #' + systemState.orderCount + ' оформлен</div>';
+            
+            updateCurrentState();
+        }
+        
+        function addNewItems() {
+            log('➕ === ШАГ 4: Добавление новых товаров ===');
+            
+            // Симулируем добавление товаров
+            systemState.cartItems.push('Товар 3', 'Товар 4');
+            systemState.cartTotal += 300;
+            systemState.cartHash = 'cart_hash_2'; // Новый hash после изменения
+            
+            log('Добавлены товары: Товар 3, Товар 4');
+            log('Новая сумма корзины: ' + systemState.cartTotal + ' руб.');
+            log('Новый hash корзины: ' + systemState.cartHash);
+            
+            // Проверяем, нужно ли очищать данные СДЭК
+            const wasCleared = checkIfCdekDataShouldBeCleaned();
+            
+            if (wasCleared) {
+                document.getElementById('step4-status').innerHTML = 
+                    '<div class="warning">⚠️ Товары добавлены. Данные СДЭК автоматически очищены!</div>';
+            } else {
+                document.getElementById('step4-status').innerHTML = 
+                    '<div class="error">❌ Товары добавлены, но данные СДЭК НЕ очищены!</div>';
+            }
+            
+            updateCurrentState();
+        }
+        
+        function selectManagerDiscussion() {
+            log('📞 === ШАГ 5: Выбор "Обсудить с менеджером" ===');
+            
+            // Проверяем, есть ли старые данные СДЭК
+            const hadOldCdekData = systemState.cdekDeliveryType || systemState.cdekPointCode || systemState.cdekDeliveryCost > 0;
+            
+            if (hadOldCdekData) {
+                log('❌ ПРОБЛЕМА: Найдены старые данные СДЭК!', 'error');
+                log('  - Тип доставки: ' + (systemState.cdekDeliveryType || 'нет'));
+                log('  - Код пункта: ' + (systemState.cdekPointCode || 'нет'));
+                log('  - Стоимость: ' + systemState.cdekDeliveryCost + ' руб.');
+                
+                document.getElementById('step5-status').innerHTML = 
+                    '<div class="error">❌ ТЕСТ НЕ ПРОЙДЕН: Старые данные СДЭК не очищены!</div>';
+            } else {
+                log('✅ Старых данных СДЭК нет - можно выбрать менеджера', 'success');
+                
+                // Устанавливаем новый тип доставки
+                systemState.cdekDeliveryType = 'manager';
+                systemState.cdekDeliveryCost = 0;
+                
+                log('Выбран тип доставки: обсуждение с менеджером');
+                log('Стоимость доставки: 0 руб. (бесплатно)');
+                
+                document.getElementById('step5-status').innerHTML = 
+                    '<div class="success">✅ ТЕСТ ПРОЙДЕН: Менеджер выбран, данные СДЭК очищены!</div>';
+            }
+            
+            updateCurrentState();
+        }
+        
+        function resetScenario() {
+            log('🔄 === СБРОС СЦЕНАРИЯ ===');
+            
+            systemState = {
+                cartItems: ['Товар 1', 'Товар 2'],
+                cartTotal: 500,
+                cartHash: 'cart_hash_1',
+                cdekDeliveryType: null,
+                cdekPointCode: null,
+                cdekDeliveryCost: 0,
+                lastSavedCartHash: null,
+                orderCount: 0
+            };
+            
+            // Очищаем статусы шагов
+            ['step2-status', 'step3-status', 'step4-status', 'step5-status'].forEach(id => {
+                document.getElementById(id).innerHTML = '';
+            });
+            
+            log('Сценарий сброшен к начальному состоянию');
+            updateCurrentState();
+        }
+        
+        // Инициализация при загрузке
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🎯 Тестовый сценарий загружен');
+            log('📋 Инструкция:');
+            log('1. Выберите СДЭК доставку');
+            log('2. Оформите заказ 1');
+            log('3. Добавьте новые товары (корзина изменится)');
+            log('4. Попробуйте выбрать "Обсудить с менеджером"');
+            log('5. Проверьте, очистились ли данные СДЭК');
+            log('');
+            updateCurrentState();
+        });
+    </script>
+</body>
+</html>

@@ -57,6 +57,10 @@ class CdekDeliveryPlugin {
         add_action('wp_ajax_update_cdek_shipping_cost', array($this, 'ajax_update_shipping_cost'));
         add_action('wp_ajax_nopriv_update_cdek_shipping_cost', array($this, 'ajax_update_shipping_cost'));
         
+        // Обработчик для сохранения hash корзины
+        add_action('wp_ajax_save_cart_hash_for_cdek', array($this, 'ajax_save_cart_hash'));
+        add_action('wp_ajax_nopriv_save_cart_hash_for_cdek', array($this, 'ajax_save_cart_hash'));
+        
         // Хук для обработки стандартного обновления чекаута
         add_action('woocommerce_checkout_update_order_review', array($this, 'handle_checkout_update_order_review'));
         
@@ -2017,6 +2021,32 @@ class CdekDeliveryPlugin {
             }
             
             error_log('СДЭК: Данные очищены после изменения корзины');
+        }
+    }
+    
+    /**
+     * AJAX функция для сохранения hash корзины при выборе СДЭК
+     */
+    public function ajax_save_cart_hash() {
+        // Проверяем nonce для безопасности
+        if (!wp_verify_nonce($_POST['nonce'], 'cdek_nonce')) {
+            wp_die('Security check failed');
+        }
+        
+        // Получаем текущий hash корзины
+        $current_cart_hash = WC()->cart ? WC()->cart->get_cart_hash() : '';
+        
+        if (!empty($current_cart_hash)) {
+            // Сохраняем hash корзины в сессии
+            WC()->session->set('cdek_last_cart_hash', $current_cart_hash);
+            error_log('СДЭК: Сохранен hash корзины для отслеживания изменений: ' . $current_cart_hash);
+            
+            wp_send_json_success(array(
+                'message' => 'Hash корзины сохранен',
+                'cart_hash' => $current_cart_hash
+            ));
+        } else {
+            wp_send_json_error('Не удалось получить hash корзины');
         }
     }
     

@@ -194,6 +194,13 @@ class SmartAddressSearch {
             return;
         }
         
+        // Проверяем наличие jQuery
+        if (typeof $ === 'undefined' || typeof jQuery === 'undefined') {
+            console.log('❌ jQuery не загружен, используем локальный поиск');
+            callback([]);
+            return;
+        }
+        
         $.ajax({
             url: cdek_ajax.ajax_url,
             type: 'POST',
@@ -202,12 +209,21 @@ class SmartAddressSearch {
             data: {
                 action: 'get_dadata_suggestions',
                 search: query,
+                search_type: 'address', // Ищем адреса, а не только города
                 nonce: cdek_ajax.nonce
             },
             success: function(response) {
                 if (response.success && response.data) {
-                    console.log('✅ DaData API: Получено городов:', response.data.length);
-                    callback(response.data);
+                    console.log('✅ DaData API: Получено адресов:', response.data.length);
+                    
+                    // Фильтруем результаты - показываем только те, где есть пункты СДЭК
+                    var filteredResults = response.data.filter(function(item) {
+                        // Показываем города и улицы в городах где есть СДЭК
+                        return item.type === 'city' || (item.type === 'street' && item.cdek_available);
+                    });
+                    
+                    console.log('🎯 Отфильтровано адресов с СДЭК:', filteredResults.length);
+                    callback(filteredResults);
                 } else {
                     console.log('⚠️ DaData API: Пустой ответ, используем локальный поиск');
                     callback([]);
@@ -532,6 +548,12 @@ jQuery(document).ready(function($) {
             return;
         }
         
+        if (typeof $ === 'undefined' || typeof jQuery === 'undefined') {
+            console.error('❌ jQuery не загружен для расчета стоимости');
+            callback(0);
+            return;
+        }
+        
         if (!point || !point.code) {
             console.error('Не указан пункт выдачи или его код');
             callback(0);
@@ -672,12 +694,12 @@ jQuery(document).ready(function($) {
         var suggestionsContainer = $(`
             <div id="address-suggestions" class="smart-address-suggestions" style="display: none;">
                 <div class="suggestions-header">
-                    <span class="suggestions-title">Выберите город</span>
+                    <span class="suggestions-title">Выберите адрес</span>
                     <span class="suggestions-count"></span>
                 </div>
                 <div class="suggestions-list"></div>
                 <div class="suggestions-footer">
-                    <small>💡 Начните вводить название города</small>
+                    <small>💡 Начните вводить город или улицу</small>
                 </div>
             </div>
         `);
@@ -813,8 +835,8 @@ jQuery(document).ready(function($) {
                 <div class="suggestion-item">
                     <div class="suggestion-icon">🔄</div>
                     <div class="suggestion-content">
-                        <div class="suggestion-title">Поиск городов...</div>
-                        <div class="suggestion-subtitle">Подождите несколько секунд</div>
+                        <div class="suggestion-title">Поиск адресов...</div>
+                        <div class="suggestion-subtitle">Ищем города и улицы с пунктами СДЭК</div>
                     </div>
                 </div>
             `);
@@ -835,13 +857,19 @@ jQuery(document).ready(function($) {
                 suggestionsContainer.find('.suggestions-count').text('0 результатов');
             } else {
                 suggestions.forEach(function(suggestion, index) {
-                    var highlightedCity = highlightQuery(suggestion.city, query);
+                    var displayText = suggestion.city;
+                    var highlightedText = highlightQuery(displayText, query);
                     
-                    // Определяем иконку и подпись в зависимости от источника
+                    // Определяем иконку и подпись в зависимости от типа
                     var icon = '🏙️';
                     var subtitle = 'Россия';
                     
-                    if (suggestion.source === 'dadata') {
+                    if (suggestion.type === 'street') {
+                        icon = '🛣️';
+                        displayText = suggestion.street || suggestion.address_full;
+                        highlightedText = highlightQuery(displayText, query);
+                        subtitle = suggestion.city + ' • улица с пунктами СДЭК';
+                    } else if (suggestion.source === 'dadata') {
                         icon = '🎯';
                         subtitle = 'Точный адрес';
                         if (suggestion.cdek_code) {
@@ -853,7 +881,7 @@ jQuery(document).ready(function($) {
                         <div class="suggestion-item" data-index="${index}">
                             <div class="suggestion-icon">${icon}</div>
                             <div class="suggestion-content">
-                                <div class="suggestion-title">${highlightedCity}</div>
+                                <div class="suggestion-title">${highlightedText}</div>
                                 <div class="suggestion-subtitle">${subtitle}</div>
                             </div>
                         </div>
@@ -880,7 +908,15 @@ jQuery(document).ready(function($) {
         }
         
         function selectSuggestion(suggestion) {
-            addressInput.val(suggestion.city);
+            // Если выбираем улицу, добавляем её к городу
+            var fullAddress = suggestion.city;
+            if (suggestion.type === 'street' && suggestion.street) {
+                fullAddress = suggestion.city + ', ' + suggestion.street;
+            } else if (suggestion.address_full) {
+                fullAddress = suggestion.address_full;
+            }
+            
+            addressInput.val(fullAddress);
             hideAddressSuggestions();
             
             saveRecentSearch(suggestion);
@@ -909,6 +945,11 @@ jQuery(document).ready(function($) {
         
         function saveCdekCodeToSession(cdekCode, city) {
             if (typeof cdek_ajax === 'undefined' || !cdek_ajax.ajax_url) {
+                return;
+            }
+            
+            if (typeof $ === 'undefined' || typeof jQuery === 'undefined') {
+                console.log('❌ jQuery не загружен для сохранения СДЭК кода');
                 return;
             }
             
@@ -1129,6 +1170,7 @@ jQuery(document).ready(function($) {
         
         // Очищаем выбор ПВЗ только при смене города
         if (window.currentSearchCity && window.currentSearchCity !== parsedAddress.city) {
+            console.log('🔄 Смена города с', window.currentSearchCity, 'на', parsedAddress.city, '- очищаем данные');
             clearSelectedPoint();
         }
         
@@ -1145,6 +1187,12 @@ jQuery(document).ready(function($) {
     
     function performCdekSearch() {
         if (typeof cdek_ajax === 'undefined') return;
+        
+        if (typeof $ === 'undefined' || typeof jQuery === 'undefined') {
+            console.error('❌ jQuery не загружен для поиска пунктов СДЭК');
+            showPvzError('jQuery не загружен');
+            return;
+        }
         
         // Формируем адрес для поиска
         var searchAddress = 'Россия';
@@ -1453,7 +1501,56 @@ jQuery(document).ready(function($) {
         $('#cdek-selected-point-data').val('');
         $('#cdek-delivery-cost').val('');
         
+        // Очищаем отображение стоимости доставки в HTML
+        clearShippingCostDisplay();
+        
         console.log('🗑️ Очищен выбор пункта выдачи');
+    }
+    
+    function clearShippingCostDisplay() {
+        // Очищаем отображение стоимости доставки в таблице
+        var shippingRow = $('.woocommerce-shipping-totals.shipping td');
+        if (shippingRow.length > 0) {
+            console.log('🧹 Очищаем строку доставки в таблице');
+            shippingRow.html('<span class="amount">0 руб.</span>');
+        }
+        
+        // Сбрасываем labels методов доставки
+        var cdekShippingLabels = $('label[for*="shipping_method"]:contains("СДЭК"), label[for*="shipping_method"]:contains("cdek")');
+        cdekShippingLabels.each(function() {
+            var $label = $(this);
+            $label.html('СДЭК доставка: <span class="woocommerce-Price-amount amount"><bdi>0&nbsp;<span class="woocommerce-Price-currencySymbol">руб.</span></bdi></span>');
+        });
+        
+        // Сбрасываем общую стоимость на стоимость товаров
+        resetTotalToSubtotal();
+    }
+    
+    function resetTotalToSubtotal() {
+        // Получаем стоимость товаров
+        var subtotalElement = $('.cart-subtotal .amount, .order-subtotal .amount');
+        var subtotal = 0;
+        
+        if (subtotalElement.length > 0) {
+            var subtotalText = subtotalElement.first().text();
+            subtotal = parsePrice(subtotalText);
+            console.log('📊 Сбрасываем итог на стоимость товаров:', subtotal, 'руб.');
+        }
+        
+        // Обновляем итоговую стоимость
+        var totalElements = [
+            $('.order-total .amount'),
+            $('.order-total .woocommerce-Price-amount'),
+            $('.order-total td strong')
+        ];
+        
+        totalElements.forEach(function(elements) {
+            if (elements.length > 0) {
+                elements.html('<bdi>' + subtotal + '&nbsp;<span class="woocommerce-Price-currencySymbol">руб.</span></bdi>');
+            }
+        });
+        
+        console.log('✅ Итоговая стоимость сброшена на:', subtotal, 'руб.');
     }
     
     function formatPointInfo(point) {
@@ -1954,7 +2051,7 @@ jQuery(document).ready(function($) {
         window.currentCityData = null;
         
         // Принудительно очищаем стоимость доставки СДЭК в сессии
-        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
+        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url && typeof $ !== 'undefined') {
             $.ajax({
                 url: cdek_ajax.ajax_url,
                 type: 'POST',
@@ -1991,7 +2088,7 @@ jQuery(document).ready(function($) {
         window.currentCityData = null;
         
         // Принудительно очищаем стоимость доставки СДЭК в сессии
-        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
+        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url && typeof $ !== 'undefined') {
             $.ajax({
                 url: cdek_ajax.ajax_url,
                 type: 'POST',

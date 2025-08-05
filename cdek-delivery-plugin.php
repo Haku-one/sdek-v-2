@@ -37,6 +37,13 @@ class CdekDeliveryPlugin {
         add_filter('woocommerce_checkout_fields', array($this, 'customize_checkout_fields'));
         add_filter('woocommerce_default_address_fields', array($this, 'customize_address_fields'));
         
+        // Дополнительные хуки для удаления полей
+        add_filter('woocommerce_billing_fields', array($this, 'remove_billing_fields'));
+        add_filter('woocommerce_shipping_fields', array($this, 'remove_shipping_fields'));
+        
+        // Отключаем валидацию удаленных полей
+        add_action('woocommerce_checkout_process', array($this, 'disable_removed_fields_validation'), 1);
+        
         // Хуки для СДЭК
         add_action('woocommerce_shipping_init', array($this, 'init_cdek_shipping'));
         add_filter('woocommerce_shipping_methods', array($this, 'add_cdek_shipping_method'));
@@ -202,6 +209,16 @@ class CdekDeliveryPlugin {
         $fields['shipping']['shipping_address_1']['placeholder'] = 'Например: Москва';
         $fields['shipping']['shipping_address_1']['required'] = true;
         
+        // Удаляем ненужные поля доставки
+        unset($fields['shipping']['shipping_city']);        // Населённый пункт
+        unset($fields['shipping']['shipping_state']);       // Область / район
+        unset($fields['shipping']['shipping_postcode']);    // Почтовый индекс
+        
+        // Также удаляем для биллинга
+        unset($fields['billing']['billing_city']);          // Населённый пункт
+        unset($fields['billing']['billing_state']);         // Область / район  
+        unset($fields['billing']['billing_postcode']);      // Почтовый индекс
+        
         return $fields;
     }
     
@@ -211,7 +228,56 @@ class CdekDeliveryPlugin {
         $fields['address_1']['placeholder'] = 'Например: Москва';
         $fields['address_1']['required'] = true;
         
+        // Удаляем ненужные поля адреса
+        unset($fields['city']);        // Населённый пункт
+        unset($fields['state']);       // Область / район
+        unset($fields['postcode']);    // Почтовый индекс
+        
         return $fields;
+    }
+    
+    public function remove_billing_fields($fields) {
+        // Удаляем ненужные поля биллинга
+        unset($fields['billing_city']);        // Населённый пункт
+        unset($fields['billing_state']);       // Область / район  
+        unset($fields['billing_postcode']);    // Почтовый индекс
+        
+        return $fields;
+    }
+    
+    public function remove_shipping_fields($fields) {
+        // Удаляем ненужные поля доставки
+        unset($fields['shipping_city']);       // Населённый пункт
+        unset($fields['shipping_state']);      // Область / район
+        unset($fields['shipping_postcode']);   // Почтовый индекс
+        
+        return $fields;
+    }
+    
+    public function disable_removed_fields_validation() {
+        // Отключаем валидацию для удаленных полей
+        // Очищаем ошибки валидации для этих полей если они есть
+        $notices = WC()->session->get('wc_notices', array());
+        
+        if (isset($notices['error'])) {
+            $filtered_errors = array();
+            foreach ($notices['error'] as $error) {
+                $error_text = $error['notice'] ?? $error;
+                
+                // Пропускаем ошибки связанные с удаленными полями
+                if (strpos($error_text, 'Населённый пункт') === false &&
+                    strpos($error_text, 'Область') === false &&
+                    strpos($error_text, 'Почтовый индекс') === false &&
+                    strpos($error_text, 'City') === false &&
+                    strpos($error_text, 'State') === false &&
+                    strpos($error_text, 'Postcode') === false) {
+                    $filtered_errors[] = $error;
+                }
+            }
+            
+            $notices['error'] = $filtered_errors;
+            WC()->session->set('wc_notices', $notices);
+        }
     }
     
     public function init_cdek_shipping() {
@@ -719,7 +785,59 @@ class CdekDeliveryPlugin {
     
     public function hide_checkout_fields_css() {
         if (is_checkout()) {
-            // Убираем пустой style tag, который может вызывать проблемы с headers
+            ?>
+            <style>
+            /* Принудительно скрываем удаленные поля адреса если они все-таки появились */
+            .woocommerce-billing-fields #billing_city_field,
+            .woocommerce-billing-fields #billing_state_field,
+            .woocommerce-billing-fields #billing_postcode_field,
+            .woocommerce-shipping-fields #shipping_city_field,
+            .woocommerce-shipping-fields #shipping_state_field,
+            .woocommerce-shipping-fields #shipping_postcode_field,
+            #billing_city_field,
+            #billing_state_field,
+            #billing_postcode_field,
+            #shipping_city_field,
+            #shipping_state_field,
+            #shipping_postcode_field {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                height: 0 !important;
+                overflow: hidden !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            
+            /* Скрываем поля по классам */
+            .form-row.form-row-wide.address-field.update_totals_on_change.validate-required.validate-postcode,
+            .form-row.form-row-wide.address-field.validate-required.validate-state,
+            p[id*="city_field"],
+            p[id*="state_field"], 
+            p[id*="postcode_field"] {
+                display: none !important;
+            }
+            
+            /* Дополнительная защита - скрываем по содержимому label */
+            label[for*="city"],
+            label[for*="state"],
+            label[for*="postcode"] {
+                display: none !important;
+            }
+            
+            /* Скрываем input поля напрямую */
+            input[name*="billing_city"],
+            input[name*="billing_state"],
+            input[name*="billing_postcode"],
+            input[name*="shipping_city"],
+            input[name*="shipping_state"],
+            input[name*="shipping_postcode"],
+            select[name*="billing_state"],
+            select[name*="shipping_state"] {
+                display: none !important;
+            }
+            </style>
+            <?php
         }
     }
     
@@ -2151,6 +2269,8 @@ class CdekDeliveryPlugin {
         
         // Проверяем, что это заказ с доставкой СДЭК
         $is_cdek_order = false;
+        $delivery_type = get_post_meta($post->ID, '_cdek_delivery_type', true);
+        
         if ($order) {
             foreach ($order->get_shipping_methods() as $method) {
                 if (strpos($method->get_method_id(), 'cdek') !== false) {
@@ -2160,11 +2280,14 @@ class CdekDeliveryPlugin {
             }
         }
         
+        // Показываем мета-бокс только для СДЭК доставки (не для самовывоза и менеджера)
+        $show_tracking = $is_cdek_order && $delivery_type === 'cdek';
+        
         wp_nonce_field('save_cdek_tracking', 'cdek_tracking_nonce');
         
         echo '<div style="margin: 10px 0;">';
         
-        if ($is_cdek_order) {
+        if ($show_tracking) {
             echo '<p><strong>Трек-номер СДЭК:</strong></p>';
             echo '<input type="text" name="cdek_tracking_number" value="' . esc_attr($tracking_number) . '" 
                          style="width: 100%; padding: 5px;" placeholder="Введите трек-номер СДЭК" />';
@@ -2184,6 +2307,25 @@ class CdekDeliveryPlugin {
                         Клиент увидит "Скоро появится трек-номер" пока поле не заполнено
                       </p>';
             }
+        } else if ($is_cdek_order) {
+            // Показываем информацию о типе доставки
+            $delivery_type_text = '';
+            switch ($delivery_type) {
+                case 'pickup':
+                    $delivery_type_text = 'Самовывоз';
+                    break;
+                case 'manager':
+                    $delivery_type_text = 'Обсуждение с менеджером';
+                    break;
+                default:
+                    $delivery_type_text = 'Неизвестный тип доставки';
+            }
+            
+            echo '<p style="color: #666;">
+                    <span class="dashicons dashicons-info"></span> 
+                    Тип доставки: <strong>' . esc_html($delivery_type_text) . '</strong><br>
+                    Трек-номер СДЭК не требуется для этого типа доставки
+                  </p>';
         } else {
             echo '<p style="color: #666;">
                     <span class="dashicons dashicons-info"></span> 
@@ -2246,7 +2388,10 @@ class CdekDeliveryPlugin {
     public function add_track_order_action($actions, $order) {
         $tracking_number = get_post_meta($order->get_id(), '_cdek_tracking_number', true);
         
-        if ($tracking_number && $this->is_cdek_order($order)) {
+        // Проверяем тип доставки - кнопка только для СДЭК доставки
+        $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
+        
+        if ($tracking_number && $this->is_cdek_order($order) && $delivery_type === 'cdek') {
             $actions['track'] = array(
                 'url'  => 'https://cdek.ru/ru/tracking?order_id=' . $tracking_number,
                 'name' => 'Отследить СДЭК'
@@ -2263,6 +2408,12 @@ class CdekDeliveryPlugin {
         $order = wc_get_order($order_id);
         if (!$order || !$this->is_cdek_order($order)) {
             return;
+        }
+        
+        // Проверяем тип доставки - показываем блок только для СДЭК доставки
+        $delivery_type = get_post_meta($order_id, '_cdek_delivery_type', true);
+        if ($delivery_type !== 'cdek') {
+            return; // Не показываем блок для самовывоза и менеджера
         }
         
         $tracking_number = get_post_meta($order_id, '_cdek_tracking_number', true);

@@ -400,47 +400,9 @@ class SmartAddressSearch {
     }
     
     searchWithDaData(query, callback) {
-        if (typeof cdek_ajax === 'undefined' || !cdek_ajax.ajax_url) {
-            console.log('⚠️ CDEK AJAX не инициализирован, используем локальный поиск');
-            callback([]);
-            return;
-        }
-        
-        console.log('🔍 Поиск через DaData API:', query);
-        
-        $.ajax({
-            url: cdek_ajax.ajax_url,
-            type: 'POST',
-            dataType: 'json',
-            timeout: 5000, // Короткий таймаут для быстрого fallback
-            data: {
-                action: 'get_dadata_suggestions',
-                search: query,
-                search_type: 'address', // Ищем адреса, а не только города
-                nonce: cdek_ajax.nonce
-            },
-            success: function(response) {
-                if (response.success && response.data) {
-                    console.log('✅ DaData API: Получено адресов:', response.data.length);
-                    
-                    // Фильтруем результаты - показываем только те, где есть пункты СДЭК
-                    var filteredResults = response.data.filter(function(item) {
-                        // Показываем города и улицы в городах где есть СДЭК
-                        return item.type === 'city' || (item.type === 'street' && item.cdek_available);
-                    });
-                    
-                    console.log('🎯 Отфильтровано адресов с СДЭК:', filteredResults.length);
-                    callback(filteredResults);
-                } else {
-                    console.log('⚠️ DaData API: Пустой ответ, используем локальный поиск');
-                    callback([]);
-                }
-            },
-            error: function(xhr, status, error) {
-                console.log('❌ DaData API ошибка:', error, '- используем локальный поиск');
-                callback([]);
-            }
-        });
+        // DaData отключен - сразу используем локальный поиск
+        console.log('⚠️ DaData отключен, используем локальный поиск для:', query);
+        callback([]);
     }
     
     searchInCities(query) {

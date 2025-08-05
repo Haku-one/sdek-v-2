@@ -2419,6 +2419,8 @@ jQuery(document).ready(function($) {
             clearSelectedPoint();
             showPickupInfo();
             $('#cdek-delivery-cost').val(0);
+            // Очищаем поле адреса и уведомляем пользователя
+            clearAddressFieldForNonCdek('Самовывоз выбран. Поле адреса очищено.');
             updateShippingTextForPickup(); // Вызываем после очистки
         } else if (option === 'manager') {
             // Обсудить с менеджером
@@ -2427,19 +2429,42 @@ jQuery(document).ready(function($) {
             clearSelectedPoint();
             showManagerInfo();
             $('#cdek-delivery-cost').val(0);
+            // Очищаем поле адреса и уведомляем пользователя
+            clearAddressFieldForNonCdek('Обсуждение с менеджером выбрано. Поле адреса очищено.');
             updateShippingTextForManager(); // Вызываем после очистки
         } else if (option === 'cdek') {
             // Доставка СДЭК
             $('#cdek-delivery-content').show();
             showCdekHint();
             hideDeliveryInfo(); // Скрываем блоки информации о самовывозе/менеджере
-            // Автоматически ищем пункты если город уже введен
-            var currentAddress = $('#billing_address_1').val();
+            
+            // Проверяем состояние поля адреса и данных СДЭК
+            var currentAddress = $('#billing_address_1').val() || $('#shipping_address_1').val();
+            var hasSelectedPoint = $('#cdek-selected-point-code').val();
+            var hasPointsLoaded = cdekPoints && cdekPoints.length > 0;
+            
+            console.log('🔄 Переключение на СДЭК:', {
+                currentAddress: currentAddress,
+                hasSelectedPoint: hasSelectedPoint,
+                hasPointsLoaded: hasPointsLoaded
+            });
+            
             if (currentAddress && currentAddress.length > 2) {
-                var city = currentAddress.split(',')[0].trim();
-                if (city.length > 2) {
-                    setTimeout(() => searchCdekPoints(city), 200);
+                // Поле адреса заполнено
+                if (!hasPointsLoaded || !hasSelectedPoint) {
+                    // Но пункты не загружены или не выбраны - показываем уведомление и очищаем поле
+                    showAddressReenterNotification();
+                    // Автоматически очищаем поле адреса
+                    $('#billing_address_1, #shipping_address_1').val('');
+                    // Сбрасываем состояние поиска
+                    resetCdekSearchState();
+                } else {
+                    // Пункты уже загружены и выбраны - просто отображаем их
+                    displayCdekPoints(cdekPoints);
                 }
+            } else {
+                // Поле адреса пустое - показываем обычную подсказку
+                $('#cdek-points-count').text('Введите город в поле «Адрес» выше для поиска пунктов выдачи');
             }
         }
     });

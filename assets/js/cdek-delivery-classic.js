@@ -1,7 +1,10 @@
 /**
  * СДЭК Доставка - Версия для классического чекаута WooCommerce
  * Адаптировано для работы с классическими элементами формы вместо блоков
+ * ✅ Работает БЕЗ jQuery - использует нативный JavaScript
  */
+
+console.log('🚀 СДЭК Delivery Classic загружается без jQuery...');
 
 // Глобальная защита от создания нескольких карт
 window.cdekMapCreationLock = false;
@@ -39,6 +42,212 @@ const Utils = {
             }
         });
     },
+    
+    // Замена для jQuery.ajax
+    ajax: (options) => {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const method = options.type || options.method || 'GET';
+            const url = options.url;
+            
+            xhr.open(method, url);
+            xhr.timeout = options.timeout || 30000;
+            
+            // Устанавливаем заголовки
+            if (method === 'POST') {
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+            }
+            
+            // Обработчики
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    let response = xhr.responseText;
+                    if (options.dataType === 'json') {
+                        try {
+                            response = JSON.parse(response);
+                        } catch (e) {
+                            reject(new Error('Invalid JSON response'));
+                            return;
+                        }
+                    }
+                    if (options.success) options.success(response);
+                    resolve(response);
+                } else {
+                    if (options.error) options.error(xhr, xhr.statusText, xhr.statusText);
+                    reject(new Error(xhr.statusText));
+                }
+            };
+            
+            xhr.onerror = () => {
+                if (options.error) options.error(xhr, 'error', 'Network Error');
+                reject(new Error('Network Error'));
+            };
+            
+            xhr.ontimeout = () => {
+                if (options.error) options.error(xhr, 'timeout', 'Timeout');
+                reject(new Error('Timeout'));
+            };
+            
+            // Отправляем данные
+            if (options.data) {
+                if (typeof options.data === 'object') {
+                    const formData = new URLSearchParams();
+                    for (const key in options.data) {
+                        formData.append(key, options.data[key]);
+                    }
+                    xhr.send(formData.toString());
+                } else {
+                    xhr.send(options.data);
+                }
+            } else {
+                xhr.send();
+            }
+        });
+    },
+    
+    // Замена для $(selector)
+    $: (selector) => {
+        if (typeof selector === 'string') {
+            const elements = document.querySelectorAll(selector);
+            return {
+                length: elements.length,
+                get: (index) => elements[index],
+                first: () => elements[0],
+                each: (callback) => {
+                    elements.forEach((el, index) => callback.call(el, index, el));
+                },
+                on: (event, handler) => {
+                    elements.forEach(el => el.addEventListener(event, handler));
+                },
+                off: (event, handler) => {
+                    elements.forEach(el => el.removeEventListener(event, handler));
+                },
+                val: (value) => {
+                    if (value !== undefined) {
+                        elements.forEach(el => el.value = value);
+                        return { length: elements.length };
+                    }
+                    return elements[0]?.value || '';
+                },
+                text: (text) => {
+                    if (text !== undefined) {
+                        elements.forEach(el => el.textContent = text);
+                        return { length: elements.length };
+                    }
+                    return elements[0]?.textContent || '';
+                },
+                html: (html) => {
+                    if (html !== undefined) {
+                        elements.forEach(el => el.innerHTML = html);
+                        return { length: elements.length };
+                    }
+                    return elements[0]?.innerHTML || '';
+                },
+                show: () => {
+                    elements.forEach(el => el.style.display = '');
+                    return { length: elements.length };
+                },
+                hide: () => {
+                    elements.forEach(el => el.style.display = 'none');
+                    return { length: elements.length };
+                },
+                css: (styles) => {
+                    elements.forEach(el => {
+                        if (typeof styles === 'object') {
+                            Object.assign(el.style, styles);
+                        }
+                    });
+                    return { length: elements.length };
+                },
+                remove: () => {
+                    elements.forEach(el => el.remove());
+                },
+                append: (content) => {
+                    elements.forEach(el => {
+                        if (typeof content === 'string') {
+                            el.insertAdjacentHTML('beforeend', content);
+                        } else {
+                            el.appendChild(content);
+                        }
+                    });
+                    return { length: elements.length };
+                },
+                parent: () => {
+                    return Utils.$(elements[0]?.parentElement);
+                },
+                trigger: (event, data) => {
+                    elements.forEach(el => {
+                        const evt = new CustomEvent(event, { detail: data, bubbles: true });
+                        el.dispatchEvent(evt);
+                    });
+                    return { length: elements.length };
+                },
+                data: (attr, value) => {
+                    if (value !== undefined) {
+                        elements.forEach(el => el.setAttribute('data-' + attr, value));
+                        return { length: elements.length };
+                    }
+                    return elements[0]?.getAttribute('data-' + attr);
+                },
+                is: (selector) => {
+                    return elements[0]?.matches(selector) || false;
+                },
+                addClass: (className) => {
+                    elements.forEach(el => el.classList.add(className));
+                    return { length: elements.length };
+                },
+                removeClass: (className) => {
+                    elements.forEach(el => el.classList.remove(className));
+                    return { length: elements.length };
+                },
+                slice: (start, end) => {
+                    const sliced = Array.from(elements).slice(start, end);
+                    return {
+                        length: sliced.length,
+                        remove: () => sliced.forEach(el => el.remove())
+                    };
+                }
+            };
+        } else if (selector === document) {
+            return {
+                ready: (callback) => {
+                    if (document.readyState === 'loading') {
+                        document.addEventListener('DOMContentLoaded', callback);
+                    } else {
+                        callback();
+                    }
+                },
+                on: (event, selector, handler) => {
+                    if (typeof selector === 'function') {
+                        handler = selector;
+                        selector = null;
+                    }
+                    if (selector) {
+                        document.addEventListener(event, (e) => {
+                            if (e.target.matches(selector)) {
+                                handler.call(e.target, e);
+                            }
+                        });
+                    } else {
+                        document.addEventListener(event, handler);
+                    }
+                },
+                                 trigger: (event, data) => {
+                     const evt = new CustomEvent(event, { detail: data });
+                     document.dispatchEvent(evt);
+                 }
+             };
+         } else if (selector === document.body || (typeof selector === 'object' && selector.tagName === 'BODY')) {
+             const body = document.body;
+             return {
+                 trigger: (event, data) => {
+                     const evt = new CustomEvent(event, { detail: data, bubbles: true });
+                     body.dispatchEvent(evt);
+                 }
+             };
+         }
+         return { length: 0 };
+     },
     
     mapResize: () => {
         if (window.cdekMap?.container) {
@@ -190,18 +399,14 @@ class SmartAddressSearch {
     
     searchWithDaData(query, callback) {
         if (typeof cdek_ajax === 'undefined' || !cdek_ajax.ajax_url) {
+            console.log('⚠️ CDEK AJAX не инициализирован, используем локальный поиск');
             callback([]);
             return;
         }
         
-        // Проверяем наличие jQuery
-        if (typeof $ === 'undefined' || typeof jQuery === 'undefined') {
-            console.log('❌ jQuery не загружен, используем локальный поиск');
-            callback([]);
-            return;
-        }
+        console.log('🔍 Поиск через DaData API:', query);
         
-        $.ajax({
+        Utils.ajax({
             url: cdek_ajax.ajax_url,
             type: 'POST',
             dataType: 'json',
@@ -280,7 +485,12 @@ class SmartAddressSearch {
 
 // ========== ОСНОВНОЙ КОД СДЭК ДЛЯ КЛАССИЧЕСКОГО ЧЕКАУТА ==========
 
-jQuery(document).ready(function($) {
+Utils.$(document).ready(function() {
+    // Используем наш Utils.$ вместо jQuery
+    const $ = Utils.$;
+    
+    console.log('✅ СДЭК инициализируется с нативным JavaScript (без jQuery)');
+    console.log('📊 Состояние jQuery:', typeof jQuery !== 'undefined' ? 'загружен' : 'НЕ загружен');
     var cdekMap = null;
     var cdekPoints = [];
     var selectedPoint = null;
@@ -548,12 +758,6 @@ jQuery(document).ready(function($) {
             return;
         }
         
-        if (typeof $ === 'undefined' || typeof jQuery === 'undefined') {
-            console.error('❌ jQuery не загружен для расчета стоимости');
-            callback(0);
-            return;
-        }
-        
         if (!point || !point.code) {
             console.error('Не указан пункт выдачи или его код');
             callback(0);
@@ -563,7 +767,7 @@ jQuery(document).ready(function($) {
         console.log('Запрос расчета стоимости доставки для пункта:', point.code);
         console.log('Данные корзины:', cartData);
         
-        $.ajax({
+        Utils.ajax({
             url: cdek_ajax.ajax_url,
             type: 'POST',
             dataType: 'json',
@@ -948,12 +1152,7 @@ jQuery(document).ready(function($) {
                 return;
             }
             
-            if (typeof $ === 'undefined' || typeof jQuery === 'undefined') {
-                console.log('❌ jQuery не загружен для сохранения СДЭК кода');
-                return;
-            }
-            
-            $.ajax({
+            Utils.ajax({
                 url: cdek_ajax.ajax_url,
                 type: 'POST',
                 data: {
@@ -1188,12 +1387,6 @@ jQuery(document).ready(function($) {
     function performCdekSearch() {
         if (typeof cdek_ajax === 'undefined') return;
         
-        if (typeof $ === 'undefined' || typeof jQuery === 'undefined') {
-            console.error('❌ jQuery не загружен для поиска пунктов СДЭК');
-            showPvzError('jQuery не загружен');
-            return;
-        }
-        
         // Формируем адрес для поиска
         var searchAddress = 'Россия';
         if (window.currentSearchCity) {
@@ -1202,7 +1395,7 @@ jQuery(document).ready(function($) {
         
         console.log('📡 Запрос к API СДЭК для:', searchAddress);
         
-        $.ajax({
+        Utils.ajax({
             url: cdek_ajax.ajax_url,
             type: 'POST',
             dataType: 'json',
@@ -1632,7 +1825,7 @@ jQuery(document).ready(function($) {
             $('#cdek-delivery-cost').val(deliveryCost);
             
             // Обновляем чекаут стандартным способом
-            $(document.body).trigger('update_checkout');
+            Utils.$(document.body).trigger('update_checkout');
             
             // Обновляем итог через нашу функцию с задержкой
             setTimeout(() => {
@@ -1829,7 +2022,7 @@ jQuery(document).ready(function($) {
             }
             
             // 2. Мягкое обновление чекаута
-            $(document.body).trigger('update_checkout');
+            Utils.$(document.body).trigger('update_checkout');
             
         }, 100);
         
@@ -1873,7 +2066,7 @@ jQuery(document).ready(function($) {
         // Финальное мягкое обновление
         setTimeout(() => {
             console.log('🔄 Финальное мягкое обновление чекаута...');
-            $(document.body).trigger('update_checkout');
+            Utils.$(document.body).trigger('update_checkout');
         }, 1000);
     }
     
@@ -2051,8 +2244,8 @@ jQuery(document).ready(function($) {
         window.currentCityData = null;
         
         // Принудительно очищаем стоимость доставки СДЭК в сессии
-        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url && typeof $ !== 'undefined') {
-            $.ajax({
+        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
+            Utils.ajax({
                 url: cdek_ajax.ajax_url,
                 type: 'POST',
                 data: {
@@ -2088,8 +2281,8 @@ jQuery(document).ready(function($) {
         window.currentCityData = null;
         
         // Принудительно очищаем стоимость доставки СДЭК в сессии
-        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url && typeof $ !== 'undefined') {
-            $.ajax({
+        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
+            Utils.ajax({
                 url: cdek_ajax.ajax_url,
                 type: 'POST',
                 data: {

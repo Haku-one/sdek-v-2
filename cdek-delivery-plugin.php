@@ -295,9 +295,14 @@ class CdekDeliveryPlugin {
         }
         
         $search = sanitize_text_field($_POST['search']);
+        $search_type = sanitize_text_field($_POST['search_type'] ?? 'city');
         
         // Получаем предложения от DaData
-        $suggestions = $this->get_dadata_city_suggestions($search);
+        if ($search_type === 'address') {
+            $suggestions = $this->get_dadata_address_suggestions($search);
+        } else {
+            $suggestions = $this->get_dadata_city_suggestions($search);
+        }
         
         wp_send_json_success($suggestions);
     }
@@ -366,6 +371,64 @@ class CdekDeliveryPlugin {
                 'city' => $city,
                 'kladr_id' => $kladr_id,
                 'cdek_code' => $cdek_code,
+                'source' => 'dadata'
+            );
+        }
+        
+        return $suggestions;
+    }
+    
+    private function get_dadata_address_suggestions($query) {
+        if (strlen($query) < 2) {
+            return array();
+        }
+        
+        $api_key = '024d65e3e981ce56db10e657d740e160d6b8ab28';
+        
+        // Запрос к DaData для поиска адресов (города и улицы)
+        $url = 'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address';
+        
+        $data = array(
+            'query' => $query,
+            'count' => 10,
+            'locations' => array(
+                array('country_iso_code' => 'RU')
+            ),
+            'restrict_value' => true
+            // Убираем ограничения from_bound и to_bound чтобы искать всё
+        );
+        
+        $response = wp_remote_post($url, array(
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+                'Authorization' => 'Token ' . $api_key
+            ),
+            'body' => json_encode($data),
+            'timeout' => 10
+        ));
+        
+        if (is_wp_error($response)) {
+            error_log('DaData Address API ошибка: ' . $response->get_error_message());
+            return $this->generate_address_suggestions($query); // Fallback к локальному поиску
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        $result = json_decode($body, true);
+        
+        if (!$result || !isset($result['suggestions'])) {
+            error_log('DaData Address API: Некорректный ответ');
+            return $this->generate_address_suggestions($query); // Fallback к локальному поиску
+        }
+        
+        $suggestions = array();
+        
+        foreach ($result['suggestions'] as $suggestion) {
+            // Возвращаем полную структуру от DaData
+            $suggestions[] = array(
+                'value' => $suggestion['value'],
+                'unrestricted_value' => $suggestion['unrestricted_value'] ?? $suggestion['value'],
+                'data' => $suggestion['data'],
                 'source' => 'dadata'
             );
         }

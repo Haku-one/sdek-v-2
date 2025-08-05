@@ -63,6 +63,13 @@ class CdekDeliveryPlugin {
         // Хук для очистки сессии при загрузке checkout
         add_action('woocommerce_checkout_init', array($this, 'cleanup_session_on_checkout_init'));
         
+        // Хуки для очистки данных СДЭК при изменении корзины
+        add_action('woocommerce_add_to_cart', array($this, 'clear_cdek_data_on_cart_change'));
+        add_action('woocommerce_cart_item_removed', array($this, 'clear_cdek_data_on_cart_change'));
+        add_action('woocommerce_cart_item_restored', array($this, 'clear_cdek_data_on_cart_change'));
+        add_action('woocommerce_cart_item_set_quantity', array($this, 'clear_cdek_data_on_cart_change'));
+        add_action('woocommerce_cart_emptied', array($this, 'clear_cdek_data_on_cart_change'));
+        
         // Хуки для админки заказов - поле трек-номера СДЭК
         add_action('add_meta_boxes', array($this, 'add_cdek_tracking_meta_box'));
         add_action('save_post', array($this, 'save_cdek_tracking_meta_box'));
@@ -1923,6 +1930,7 @@ class CdekDeliveryPlugin {
             // Это возврат после неудачного заказа - очищаем старые данные СДЭК
             $this->clear_cdek_session_data();
             error_log('СДЭК: Очищена сессия при повторном входе в checkout');
+            return;
         }
         
         // Дополнительная проверка: если это новая сессия, очищаем старые данные
@@ -1933,6 +1941,26 @@ class CdekDeliveryPlugin {
             $this->clear_cdek_session_data();
             WC()->session->set('cdek_last_session_id', $current_session_id);
             error_log('СДЭК: Очищена сессия для новой пользовательской сессии');
+            return;
+        }
+        
+        // НОВАЯ ЛОГИКА: Проверяем, изменилась ли корзина с момента последнего расчета СДЭК
+        $current_cart_hash = WC()->cart ? WC()->cart->get_cart_hash() : '';
+        $last_cart_hash = WC()->session->get('cdek_last_cart_hash');
+        $has_cdek_data = (
+            WC()->session->get('cdek_delivery_cost') ||
+            WC()->session->get('cdek_selected_point_code') ||
+            WC()->session->get('cdek_delivery_type')
+        );
+        
+        // Если корзина изменилась и есть старые данные СДЭК - очищаем их
+        if ($has_cdek_data && $current_cart_hash !== $last_cart_hash && !empty($current_cart_hash)) {
+            error_log('СДЭК: Корзина изменилась (новый hash: ' . $current_cart_hash . ', старый: ' . $last_cart_hash . ') - очищаем данные СДЭК');
+            $this->clear_cdek_session_data();
+            WC()->session->set('cdek_last_cart_hash', $current_cart_hash);
+        } elseif (!$has_cdek_data && !empty($current_cart_hash)) {
+            // Если данных СДЭК нет, просто обновляем hash корзины
+            WC()->session->set('cdek_last_cart_hash', $current_cart_hash);
         }
     }
     
@@ -1956,6 +1984,40 @@ class CdekDeliveryPlugin {
         WC()->shipping()->reset_shipping();
         
         error_log('СДЭК: Все данные сессии очищены');
+    }
+    
+    /**
+     * Очистка данных СДЭК при изменении корзины
+     */
+    public function clear_cdek_data_on_cart_change() {
+        // Проверяем, что WooCommerce сессия доступна
+        if (!WC()->session) {
+            return;
+        }
+        
+        // Проверяем, есть ли данные СДЭК в сессии
+        $has_cdek_data = (
+            WC()->session->get('cdek_delivery_cost') ||
+            WC()->session->get('cdek_selected_point_code') ||
+            WC()->session->get('cdek_delivery_type')
+        );
+        
+        if ($has_cdek_data) {
+            error_log('СДЭК: Обнаружено изменение корзины - очищаем данные СДЭК');
+            
+            // Очищаем все данные СДЭК
+            $this->clear_cdek_session_data();
+            
+            // Принудительно пересчитываем методы доставки
+            WC()->shipping()->reset_shipping();
+            
+            // Если есть корзина, пересчитываем её
+            if (WC()->cart) {
+                WC()->cart->calculate_totals();
+            }
+            
+            error_log('СДЭК: Данные очищены после изменения корзины');
+        }
     }
     
     public function update_order_total_before_payment() {

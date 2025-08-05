@@ -1798,6 +1798,24 @@ jQuery(document).ready(function($) {
         $('#cdek-selected-point-code').val(point.code);
         $('#cdek-selected-point-data').val(JSON.stringify(point));
         
+        // Сохраняем hash корзины для отслеживания изменений
+        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
+            $.ajax({
+                url: cdek_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'save_cart_hash_for_cdek',
+                    nonce: cdek_ajax.nonce
+                },
+                success: function(response) {
+                    console.log('✅ Hash корзины сохранен для СДЭК');
+                },
+                error: function() {
+                    console.log('❌ Ошибка сохранения hash корзины');
+                }
+            });
+        }
+        
         updateOrderSummary(point);
     }
     

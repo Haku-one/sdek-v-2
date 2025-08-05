@@ -2009,6 +2009,12 @@ jQuery(document).ready(function($) {
             setTimeout(() => {
                 updateTotalCost(deliveryCost);
                 
+                // Повторно устанавливаем правильный текст доставки после обновления чекаута
+                setTimeout(() => {
+                    console.log('🔄 Повторно устанавливаем текст доставки после обновления чекаута');
+                    updateClassicShippingCost(point, deliveryCost);
+                }, 100);
+                
                 // Мягкий перезапуск Т-Банка
                 setTimeout(() => {
                     console.log('🔄 Мягкий перезапуск Т-Банка...');
@@ -3190,9 +3196,35 @@ jQuery(document).ready(function($) {
             });
             
             // Если выбран СДЭК но нет выбранного пункта - сбрасываем текст
-            if (deliveryType === 'cdek' && !hasSelectedPoint) {
+            // Проверяем как скрытое поле, так и глобальные переменные
+            var hasGlobalSelectedPoint = selectedPoint || window.selectedCdekPoint;
+            if (deliveryType === 'cdek' && !hasSelectedPoint && !hasGlobalSelectedPoint) {
                 console.log('🔄 СДЭК выбран, но пункт не выбран - сбрасываем текст');
                 resetShippingMethodTextToCdek();
+            } else if (deliveryType === 'cdek' && (hasSelectedPoint || hasGlobalSelectedPoint)) {
+                console.log('✅ СДЭК выбран и пункт есть - восстанавливаем текст доставки');
+                
+                // Получаем данные выбранного пункта
+                var pointData = null;
+                var deliveryCost = 0;
+                
+                if (hasGlobalSelectedPoint) {
+                    pointData = selectedPoint || window.selectedCdekPoint;
+                    deliveryCost = parseInt($('#cdek-delivery-cost').val()) || 0;
+                } else if (hasSelectedPoint) {
+                    try {
+                        pointData = JSON.parse($('#cdek-selected-point-data').val());
+                        deliveryCost = parseInt($('#cdek-delivery-cost').val()) || 0;
+                    } catch (e) {
+                        console.log('⚠️ Ошибка парсинга данных пункта:', e);
+                    }
+                }
+                
+                // Восстанавливаем правильный текст доставки
+                if (pointData) {
+                    console.log('🔄 Восстанавливаем текст доставки для пункта:', pointData.name, 'стоимость:', deliveryCost);
+                    updateClassicShippingCost(pointData, deliveryCost);
+                }
             }
             
             // Снимаем флаг через небольшую задержку

@@ -390,7 +390,7 @@ class CdekDeliveryPlugin {
         
         $data = array(
             'query' => $query,
-            'count' => 10,
+            'count' => 20, // Увеличиваем количество для лучшего поиска
             'locations' => array(
                 array('country_iso_code' => 'RU')
             ),
@@ -422,18 +422,86 @@ class CdekDeliveryPlugin {
         }
         
         $suggestions = array();
+        $processed_cities = array(); // Для избежания дублирования городов
         
         foreach ($result['suggestions'] as $suggestion) {
-            // Возвращаем полную структуру от DaData
-            $suggestions[] = array(
-                'value' => $suggestion['value'],
-                'unrestricted_value' => $suggestion['unrestricted_value'] ?? $suggestion['value'],
-                'data' => $suggestion['data'],
-                'source' => 'dadata'
-            );
+            $data = $suggestion['data'];
+            
+            // Определяем тип адреса и проверяем наличие СДЭК пунктов
+            $city_name = $data['city'] ?? $data['settlement'] ?? '';
+            $street_name = $data['street'] ?? '';
+            
+            // Пропускаем если нет города
+            if (empty($city_name)) {
+                continue;
+            }
+            
+            // Получаем СДЭК код города для проверки доступности
+            $cdek_code = null;
+            if (!empty($data['kladr_id'])) {
+                $cdek_code = $this->get_cdek_city_code_from_dadata($data['kladr_id']);
+            }
+            
+            // Формируем запись для города
+            if (!empty($city_name) && !in_array($city_name, $processed_cities)) {
+                $display_value = $city_name;
+                if (!empty($data['city_type_full'])) {
+                    $display_value = $data['city_type_full'] . ' ' . $city_name;
+                }
+                
+                $suggestions[] = array(
+                    'value' => $display_value,
+                    'unrestricted_value' => $suggestion['unrestricted_value'] ?? $suggestion['value'],
+                    'data' => $data,
+                    'source' => 'dadata',
+                    'type' => 'city',
+                    'city' => $city_name,
+                    'cdek_code' => $cdek_code,
+                    'has_cdek' => !empty($cdek_code)
+                );
+                
+                $processed_cities[] = $city_name;
+            }
+            
+            // Формируем запись для улицы (если есть)
+            if (!empty($street_name) && !empty($city_name)) {
+                $display_value = $data['street_type_full'] . ' ' . $street_name . ', ' . $city_name;
+                
+                $suggestions[] = array(
+                    'value' => $display_value,
+                    'unrestricted_value' => $suggestion['unrestricted_value'] ?? $suggestion['value'],
+                    'data' => $data,
+                    'source' => 'dadata',
+                    'type' => 'street',
+                    'city' => $city_name,
+                    'street' => $street_name,
+                    'cdek_code' => $cdek_code,
+                    'has_cdek' => !empty($cdek_code)
+                );
+            }
         }
         
-        return $suggestions;
+        // Сортируем: сначала города с СДЭК, потом улицы с СДЭК, затем остальные
+        usort($suggestions, function($a, $b) {
+            // Приоритет: города с СДЭК > улицы с СДЭК > города без СДЭК > улицы без СДЭК
+            $a_priority = 0;
+            $b_priority = 0;
+            
+            if ($a['type'] === 'city' && $a['has_cdek']) $a_priority = 4;
+            elseif ($a['type'] === 'street' && $a['has_cdek']) $a_priority = 3;
+            elseif ($a['type'] === 'city') $a_priority = 2;
+            else $a_priority = 1;
+            
+            if ($b['type'] === 'city' && $b['has_cdek']) $b_priority = 4;
+            elseif ($b['type'] === 'street' && $b['has_cdek']) $b_priority = 3;
+            elseif ($b['type'] === 'city') $b_priority = 2;
+            else $b_priority = 1;
+            
+            return $b_priority - $a_priority;
+        });
+        
+        // Ограничиваем результат
+        return array_slice($suggestions, 0, 15);
     }
     
     private function get_cdek_city_code_from_dadata($kladr_id) {

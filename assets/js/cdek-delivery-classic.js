@@ -1011,6 +1011,28 @@ jQuery(document).ready(function($) {
                     color: #666;
                     font-size: 11px;
                 }
+                
+                .suggestion-separator {
+                    background: #f5f5f5 !important;
+                    border-top: 1px solid #e0e0e0;
+                    border-bottom: 1px solid #e0e0e0;
+                    margin: 4px 0;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+                
+                .suggestion-no-cdek {
+                    opacity: 0.7;
+                }
+                
+                .suggestion-no-cdek .suggestion-icon {
+                    opacity: 0.5;
+                }
+                
+                .suggestion-no-cdek .suggestion-subtitle {
+                    color: #999 !important;
+                }
                 </style>
             `);
         }
@@ -1062,74 +1084,128 @@ jQuery(document).ready(function($) {
                 container.html('<div class="suggestion-item"><div class="suggestion-content"><div class="suggestion-title">Ничего не найдено</div><div class="suggestion-subtitle">Попробуйте изменить запрос</div></div></div>');
                 suggestionsContainer.find('.suggestions-count').text('0 результатов');
             } else {
-                suggestions.forEach(function(suggestion, index) {
-                    // Определяем текст для отображения из DaData или локального поиска
-                    var displayText = suggestion.value || suggestion.city || suggestion.address_full || suggestion.display;
-                    var highlightedText = highlightQuery(displayText, query);
-                    
-                    // Определяем иконку и подпись в зависимости от типа
-                    var icon = '🏙️';
-                    var subtitle = 'Россия';
-                    
-                    // Обработка данных от DaData
-                    if (suggestion.data) {
-                        // Это результат от DaData
-                        icon = '🎯';
-                        var data = suggestion.data;
-                        
-                        if (data.city_type_full && data.city) {
-                            displayText = data.city_type_full + ' ' + data.city;
-                            subtitle = data.region || 'Россия';
-                        } else if (data.settlement_type_full && data.settlement) {
-                            displayText = data.settlement_type_full + ' ' + data.settlement;
-                            subtitle = (data.city || data.region || 'Россия');
-                        }
-                        
-                        // Если это улица
-                        if (data.street_type_full && data.street) {
-                            icon = '🛣️';
-                            displayText = data.street_type_full + ' ' + data.street;
-                            subtitle = (data.city || data.settlement || 'Город') + ', ' + (data.region || 'Россия');
-                        }
-                        
-                        highlightedText = highlightQuery(displayText, query);
-                        
-                    } else if (suggestion.type === 'street') {
-                        // Локальный результат - улица
-                        icon = '🛣️';
-                        displayText = suggestion.street || suggestion.address_full;
-                        highlightedText = highlightQuery(displayText, query);
-                        subtitle = suggestion.city + ' • улица с пунктами СДЭК';
-                    } else if (suggestion.source === 'dadata') {
-                        // Старый формат DaData
-                        icon = '🎯';
-                        subtitle = 'Точный адрес';
-                        if (suggestion.cdek_code) {
-                            subtitle += ' • СДЭК: ' + suggestion.cdek_code;
-                        }
-                    }
-                    
-                    var item = $(`
-                        <div class="suggestion-item" data-index="${index}">
-                            <div class="suggestion-icon">${icon}</div>
-                            <div class="suggestion-content">
-                                <div class="suggestion-title">${highlightedText}</div>
-                                <div class="suggestion-subtitle">${subtitle}</div>
-                            </div>
+                // Группируем результаты: сначала города, потом улицы
+                var cities = suggestions.filter(s => s.type === 'city' || (!s.type && s.source !== 'dadata'));
+                var streets = suggestions.filter(s => s.type === 'street' || (s.data && s.data.street));
+                
+                var allSuggestions = [];
+                
+                // Добавляем города
+                if (cities.length > 0) {
+                    cities.forEach(function(suggestion, index) {
+                        var item = createSuggestionItem(suggestion, index, query, true);
+                        allSuggestions.push(item);
+                    });
+                }
+                
+                // Добавляем разделитель если есть и города и улицы
+                if (cities.length > 0 && streets.length > 0) {
+                    allSuggestions.push(`
+                        <div class="suggestion-separator" style="padding: 8px 12px; background: #f5f5f5; font-size: 12px; color: #666; font-weight: 600;">
+                            🛣️ Улицы с пунктами СДЭК
                         </div>
                     `);
-                    
-                    item.on('click', function() {
-                        selectSuggestion(suggestion);
+                }
+                
+                // Добавляем улицы
+                if (streets.length > 0) {
+                    streets.forEach(function(suggestion, index) {
+                        var item = createSuggestionItem(suggestion, cities.length + index, query, false);
+                        allSuggestions.push(item);
                     });
-                    
-                    container.append(item);
+                }
+                
+                // Выводим все результаты
+                allSuggestions.forEach(function(itemHtml, idx) {
+                    if (typeof itemHtml === 'string') {
+                        container.append(itemHtml);
+                    } else {
+                        container.append(itemHtml.element);
+                        itemHtml.element.on('click', function() {
+                            selectSuggestion(itemHtml.suggestion);
+                        });
+                    }
                 });
                 
-                suggestionsContainer.find('.suggestions-count').text(`${suggestions.length} результатов`);
+                var totalCount = cities.length + streets.length;
+                var cdekCount = suggestions.filter(s => s.has_cdek).length;
+                var countText = `${totalCount} результатов`;
+                if (cdekCount > 0) {
+                    countText += ` (${cdekCount} с СДЭК)`;
+                }
+                suggestionsContainer.find('.suggestions-count').text(countText);
             }
             
             suggestionsContainer.show();
+        }
+        
+        function createSuggestionItem(suggestion, index, query, isCity) {
+            var displayText = suggestion.value || suggestion.city || suggestion.display;
+            var highlightedText = highlightQuery(displayText, query);
+            
+            var icon = isCity ? '🏙️' : '🛣️';
+            var subtitle = 'Россия';
+            
+            // Обработка данных от DaData
+            if (suggestion.data) {
+                var data = suggestion.data;
+                
+                if (isCity) {
+                    // Это город
+                    icon = suggestion.has_cdek ? '🎯' : '🏙️';
+                    subtitle = data.region || 'Россия';
+                    if (suggestion.has_cdek) {
+                        subtitle += ' • доступна доставка СДЭК';
+                    } else {
+                        subtitle += ' • СДЭК недоступен';
+                    }
+                } else {
+                    // Это улица
+                    icon = suggestion.has_cdek ? '🛣️' : '📍';
+                    var cityName = data.city || data.settlement || 'Город';
+                    subtitle = cityName;
+                    if (suggestion.has_cdek) {
+                        subtitle += ' • пункты СДЭК на улице';
+                    } else {
+                        subtitle += ' • нет пунктов СДЭК';
+                    }
+                }
+            } else if (suggestion.type === 'street') {
+                // Локальный результат - улица
+                icon = '🛣️';
+                subtitle = suggestion.city + ' • улица с пунктами СДЭК';
+            } else if (suggestion.source === 'dadata') {
+                // Старый формат DaData
+                icon = suggestion.has_cdek ? '🎯' : '🏙️';
+                subtitle = 'Точный адрес';
+                if (suggestion.cdek_code) {
+                    subtitle += ' • СДЭК: ' + suggestion.cdek_code;
+                }
+            } else {
+                // Локальный поиск - город
+                icon = '🏙️';
+                subtitle = 'Россия • проверим доступность СДЭК';
+            }
+            
+            var itemClass = 'suggestion-item';
+            if (!suggestion.has_cdek && suggestion.source === 'dadata') {
+                itemClass += ' suggestion-no-cdek';
+            }
+            
+            var element = $(`
+                <div class="${itemClass}" data-index="${index}">
+                    <div class="suggestion-icon">${icon}</div>
+                    <div class="suggestion-content">
+                        <div class="suggestion-title">${highlightedText}</div>
+                        <div class="suggestion-subtitle">${subtitle}</div>
+                    </div>
+                </div>
+            `);
+            
+            return {
+                element: element,
+                suggestion: suggestion
+            };
         }
         
         function highlightQuery(text, query) {
@@ -1150,20 +1226,23 @@ jQuery(document).ready(function($) {
                 // Извлекаем название города
                 cityName = data.city || data.settlement || data.region;
                 
-                // Если в адресе есть улица, то берем как есть
-                if (data.street && data.street_type_full) {
-                    // Это улица - оставляем полный адрес
-                } else {
-                    // Это город - используем только название города
+                // Определяем тип выбранного элемента
+                if (suggestion.type === 'street' && data.street) {
+                    // Выбрана улица - используем полный адрес
+                    fullAddress = suggestion.value;
+                } else if (suggestion.type === 'city' || !data.street) {
+                    // Выбран город - используем только название города
                     if (data.city_type_full && data.city) {
                         fullAddress = data.city_type_full + ' ' + data.city;
                     } else if (data.settlement_type_full && data.settlement) {
                         fullAddress = data.settlement_type_full + ' ' + data.settlement;
+                    } else {
+                        fullAddress = cityName;
                     }
                 }
             } else {
                 // Локальный результат
-                fullAddress = suggestion.city;
+                fullAddress = suggestion.value || suggestion.city;
                 cityName = suggestion.city;
                 
                 if (suggestion.type === 'street' && suggestion.street) {
@@ -1183,8 +1262,9 @@ jQuery(document).ready(function($) {
             window.lastSelectedCityData = suggestion; // Сохраняем все данные включая СДЭК код
             
             // Если есть СДЭК код из DaData, сохраняем его в сессии
-            if (suggestion.cdek_code && suggestion.source === 'dadata') {
-                saveCdekCodeToSession(suggestion.cdek_code, cityName);
+            if (suggestion.cdek_code || (suggestion.data && suggestion.data.cdek_code)) {
+                var cdekCode = suggestion.cdek_code || suggestion.data.cdek_code;
+                saveCdekCodeToSession(cdekCode, cityName);
             }
             
             // Очищаем предыдущий выбор ПВЗ только при смене города
@@ -1558,13 +1638,20 @@ jQuery(document).ready(function($) {
         });
         
         
-        // ПОКАЗЫВАЕМ ВСЕ ПУНКТЫ БЕЗ ОГРАНИЧЕНИЙ
+        // Ограничиваем количество пунктов для карты (чтобы избежать лагов)
+        var mapPointsLimit = 50;
         var pointsToShow = filteredPoints;
+        var mapPoints = filteredPoints.slice(0, mapPointsLimit);
         
         var pointsInfo = '';
         if (filteredPoints.length > 0) {
             var locationInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
             pointsInfo = `Найдено ${filteredPoints.length} пунктов выдачи${locationInfo}`;
+            
+            // Добавляем информацию об ограничении если много пунктов
+            if (filteredPoints.length > mapPointsLimit) {
+                pointsInfo += ` (на карте показано ${mapPointsLimit})`;
+            }
         } else {
             var locationInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
             pointsInfo = `Пункты выдачи не найдены${locationInfo}`;
@@ -1591,7 +1678,8 @@ jQuery(document).ready(function($) {
         
         var bounds = [];
         
-        pointsToShow.forEach(function(point, index) {
+        // Используем ограниченный список для карты
+        mapPoints.forEach(function(point, index) {
             if (point.location && point.location.latitude && point.location.longitude) {
                 var coords = [point.location.latitude, point.location.longitude];
                 bounds.push(coords);

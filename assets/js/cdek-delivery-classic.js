@@ -498,6 +498,10 @@ jQuery(document).ready(function($) {
     var selectedPoint = null;
     var isInitialized = false;
     
+    // Флаги для контроля поиска пунктов СДЭК
+    window.citySelectedFromDropdown = false;
+    window.lastDropdownSelectedCity = null;
+    
     // Инициализируем утилиты оптимизации
     const debouncer = new SmartDebouncer();
     const domBatcher = new DOMBatcher();
@@ -1195,6 +1199,10 @@ jQuery(document).ready(function($) {
             window.lastSelectedCity = cityName;
             window.lastSelectedCityData = suggestion; // Сохраняем все данные включая СДЭК код
             
+            // УСТАНАВЛИВАЕМ ФЛАГ: город выбран из выпадающего списка
+            window.citySelectedFromDropdown = true;
+            window.lastDropdownSelectedCity = cityName;
+            
             // Если есть СДЭК код из DaData, сохраняем его в сессии
             if (suggestion.cdek_code || (suggestion.data && suggestion.data.cdek_code)) {
                 var cdekCode = suggestion.cdek_code || suggestion.data.cdek_code;
@@ -1208,6 +1216,8 @@ jQuery(document).ready(function($) {
             
             // Показываем индикатор загрузки ПВЗ
             showPvzLoader();
+            
+            console.log('🎯 Город выбран из выпадающего списка DaData:', cityName, '- запускаем поиск СДЭК');
             
             debouncer.debounce('cdek-search', () => {
                 searchCdekPoints(cityName, suggestion);
@@ -2569,21 +2579,47 @@ jQuery(document).ready(function($) {
         var address = $(this).val().trim();
         var city = address.split(',')[0].trim();
         
-        // Автоматически ищем пункты СДЭК только если выбрана доставка СДЭК
+        // НОВАЯ ЛОГИКА: Поиск пунктов СДЭК ТОЛЬКО при выборе из выпадающего списка
         if ($('#cdek-delivery-type').val() === 'cdek' && city.length > 2) {
-            // Проверяем, есть ли сохраненные данные города из DaData
-            var cityData = null;
-            if (window.lastSelectedCityData && window.lastSelectedCityData.city === city) {
-                cityData = window.lastSelectedCityData;
+            // Проверяем, был ли город выбран из выпадающего списка DaData
+            if (window.citySelectedFromDropdown && window.lastDropdownSelectedCity === city) {
+                console.log('✅ Город был выбран из выпадающего списка - поиск разрешен');
+                
+                // Проверяем, есть ли сохраненные данные города из DaData
+                var cityData = null;
+                if (window.lastSelectedCityData && window.lastSelectedCityData.city === city) {
+                    cityData = window.lastSelectedCityData;
+                }
+                
+                debouncer.debounce('city-search', () => searchCdekPoints(city, cityData), 500);
+            } else {
+                // Город введен вручную, но не выбран из списка
+                console.log('⚠️ Город введен вручную, но не выбран из выпадающего списка - поиск заблокирован');
+                $('#cdek-points-list').hide();
+                if (cdekMap) {
+                    cdekMap.geoObjects.removeAll();
+                }
+                $('#cdek-points-count').html('📌 <strong>Выберите город из выпадающего списка</strong> для поиска пунктов выдачи СДЭК');
+                
+                // Сбрасываем флаг если город изменился
+                if (window.lastDropdownSelectedCity && window.lastDropdownSelectedCity !== city) {
+                    window.citySelectedFromDropdown = false;
+                    console.log('🔄 Сброс флага выбора города - город изменился');
+                }
             }
-            
-            debouncer.debounce('city-search', () => searchCdekPoints(city, cityData), 500);
         } else if (city.length <= 2) {
             $('#cdek-points-list').hide();
             if (cdekMap) {
                 cdekMap.geoObjects.removeAll();
             }
             $('#cdek-points-count').text('Введите город в поле "Адрес" для поиска пунктов выдачи');
+            
+            // Сбрасываем флаг при очистке поля
+            if (city.length === 0) {
+                window.citySelectedFromDropdown = false;
+                window.lastDropdownSelectedCity = null;
+                console.log('🗑️ Поле очищено - сброс флагов выбора города');
+            }
         }
     });
     

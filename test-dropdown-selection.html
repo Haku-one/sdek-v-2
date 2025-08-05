@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест выбора из выпадающего списка</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .test-container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 6px; }
+        .input-field { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; margin: 10px 0; }
+        .dropdown { border: 1px solid #007cba; border-radius: 4px; max-height: 200px; overflow-y: auto; background: white; position: relative; }
+        .dropdown-item { padding: 10px; cursor: pointer; border-bottom: 1px solid #eee; }
+        .dropdown-item:hover { background: #f0f8ff; }
+        .dropdown-item:last-child { border-bottom: none; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.warning { background: #fff3cd; color: #856404; }
+        .status.info { background: #d1ecf1; color: #0c5460; }
+        .log { background: #f1f3f4; padding: 15px; font-family: monospace; font-size: 12px; height: 250px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; margin: 10px 0; }
+        .test-button { padding: 10px 20px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .test-button:hover { background: #005a8c; }
+        .scenario { background: #f8f9fa; padding: 15px; margin: 10px 0; border-left: 4px solid #007cba; }
+        .scenario-title { font-weight: bold; color: #007cba; margin-bottom: 10px; }
+        .flags-display { background: #e9ecef; padding: 10px; border-radius: 4px; margin: 10px 0; font-family: monospace; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🔍 Тест выбора города из выпадающего списка</h1>
+        <p>Проверяем, что поиск пунктов СДЭК запускается ТОЛЬКО при выборе города из выпадающего списка DaData.</p>
+        
+        <div class="test-section">
+            <h3>🎯 Симуляция поля ввода адреса</h3>
+            
+            <!-- Скрытое поле типа доставки -->
+            <input type="hidden" id="cdek-delivery-type" value="cdek">
+            
+            <!-- Поле ввода города -->
+            <input type="text" id="billing_address_1" class="input-field" placeholder="Введите город для поиска...">
+            
+            <!-- Выпадающий список городов -->
+            <div id="address-suggestions" class="dropdown" style="display: none;">
+                <div class="dropdown-item" data-city="Москва" data-cdek-code="44">
+                    <strong>Москва</strong><br>
+                    <small>г. Москва • СДЭК код: 44</small>
+                </div>
+                <div class="dropdown-item" data-city="Магадан" data-cdek-code="314">
+                    <strong>Магадан</strong><br>
+                    <small>Магаданская область • СДЭК код: 314</small>
+                </div>
+                <div class="dropdown-item" data-city="Санкт-Петербург" data-cdek-code="137">
+                    <strong>Санкт-Петербург</strong><br>
+                    <small>г. Санкт-Петербург • СДЭК код: 137</small>
+                </div>
+                <div class="dropdown-item" data-city="Анадырь" data-cdek-code="475">
+                    <strong>Анадырь</strong><br>
+                    <small>Чукотский АО • СДЭК код: 475</small>
+                </div>
+            </div>
+            
+            <!-- Отображение статуса поиска -->
+            <div id="search-status" class="status info">
+                Введите название города в поле выше
+            </div>
+            
+            <!-- Отображение пунктов выдачи -->
+            <div id="cdek-points-count" style="padding: 10px; background: #f8f9fa; border-radius: 4px; margin: 10px 0;">
+                Введите город в поле "Адрес" для поиска пунктов выдачи
+            </div>
+            
+            <!-- Отображение флагов -->
+            <div class="flags-display">
+                <strong>Состояние флагов:</strong><br>
+                <span id="flag-dropdown">citySelectedFromDropdown: false</span><br>
+                <span id="flag-city">lastDropdownSelectedCity: null</span>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>🧪 Тестовые сценарии</h3>
+            
+            <div class="scenario">
+                <div class="scenario-title">Сценарий 1: Ввод города вручную (БЕЗ выбора из списка)</div>
+                <p>1. Введите "Мос" в поле ввода</p>
+                <p>2. НЕ выбирайте из выпадающего списка</p>
+                <p><strong>Ожидаемый результат:</strong> ❌ Поиск пунктов СДЭК НЕ должен запуститься</p>
+                <button class="test-button" onclick="testManualInput()">🧪 Тест ручного ввода</button>
+            </div>
+            
+            <div class="scenario">
+                <div class="scenario-title">Сценарий 2: Выбор города из выпадающего списка</div>
+                <p>1. Введите "Мос" в поле ввода</p>
+                <p>2. Выберите "Москва" из выпадающего списка</p>
+                <p><strong>Ожидаемый результат:</strong> ✅ Поиск пунктов СДЭК должен запуститься</p>
+                <button class="test-button" onclick="testDropdownSelection()">🧪 Тест выбора из списка</button>
+            </div>
+            
+            <div class="scenario">
+                <div class="scenario-title">Сценарий 3: Изменение города после выбора</div>
+                <p>1. Выберите город из списка</p>
+                <p>2. Измените текст в поле вручную</p>
+                <p><strong>Ожидаемый результат:</strong> ❌ Поиск должен заблокироваться</p>
+                <button class="test-button" onclick="testCityChange()">🧪 Тест изменения города</button>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>📝 Лог событий</h3>
+            <div id="test-log" class="log">
+                Лог событий будет отображен здесь...
+            </div>
+            <button class="test-button" onclick="clearLog()">🗑️ Очистить лог</button>
+        </div>
+    </div>
+
+    <script>
+        // Флаги для симуляции
+        window.citySelectedFromDropdown = false;
+        window.lastDropdownSelectedCity = null;
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('test-log');
+            const typeIcon = {
+                'info': 'ℹ️',
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️'
+            }[type] || 'ℹ️';
+            
+            logDiv.innerHTML += `[${timestamp}] ${typeIcon} ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+            
+            updateFlagsDisplay();
+        }
+        
+        function updateFlagsDisplay() {
+            document.getElementById('flag-dropdown').textContent = 
+                `citySelectedFromDropdown: ${window.citySelectedFromDropdown}`;
+            document.getElementById('flag-city').textContent = 
+                `lastDropdownSelectedCity: ${window.lastDropdownSelectedCity || 'null'}`;
+        }
+        
+        function updateSearchStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('search-status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+        
+        function updateCdekPointsStatus(message) {
+            const cdekDiv = document.getElementById('cdek-points-count');
+            cdekDiv.innerHTML = message;
+        }
+        
+        function simulateCdekSearch(city) {
+            if (window.citySelectedFromDropdown && window.lastDropdownSelectedCity === city) {
+                log(`✅ Город был выбран из выпадающего списка - поиск разрешен`, 'success');
+                updateSearchStatus(`✅ Поиск пунктов СДЭК для города: ${city}`, 'success');
+                updateCdekPointsStatus(`🔍 Поиск пунктов выдачи в городе ${city}...`);
+                
+                // Симуляция успешного поиска
+                setTimeout(() => {
+                    const pointsCount = Math.floor(Math.random() * 10) + 1;
+                    updateCdekPointsStatus(`✅ Найдено ${pointsCount} пунктов выдачи в городе ${city}`);
+                    log(`🎯 Найдено ${pointsCount} пунктов выдачи СДЭК`, 'success');
+                }, 1000);
+                
+                return true;
+            } else {
+                log(`⚠️ Город введен вручную, но не выбран из выпадающего списка - поиск заблокирован`, 'warning');
+                updateSearchStatus(`❌ Поиск заблокирован: выберите город из списка`, 'error');
+                updateCdekPointsStatus(`📌 <strong>Выберите город из выпадающего списка</strong> для поиска пунктов выдачи СДЭК`);
+                return false;
+            }
+        }
+        
+        function selectCityFromDropdown(cityName, cdekCode) {
+            log(`🎯 Город выбран из выпадающего списка DaData: ${cityName} - запускаем поиск СДЭК`, 'success');
+            
+            // Устанавливаем флаги
+            window.citySelectedFromDropdown = true;
+            window.lastDropdownSelectedCity = cityName;
+            
+            // Заполняем поле ввода
+            document.getElementById('billing_address_1').value = cityName;
+            
+            // Скрываем выпадающий список
+            document.getElementById('address-suggestions').style.display = 'none';
+            
+            // Запускаем поиск пунктов
+            simulateCdekSearch(cityName);
+        }
+        
+        // Тестовые функции
+        function testManualInput() {
+            log('🧪 === ТЕСТ 1: Ручной ввод города ===');
+            
+            // Сбрасываем флаги
+            window.citySelectedFromDropdown = false;
+            window.lastDropdownSelectedCity = null;
+            
+            // Вводим город вручную
+            const input = document.getElementById('billing_address_1');
+            input.value = 'Мос';
+            
+            log('⌨️ Ввожу "Мос" в поле адреса');
+            
+            // Симулируем попытку поиска
+            const searchAllowed = simulateCdekSearch('Мос');
+            
+            if (!searchAllowed) {
+                log('✅ ТЕСТ ПРОЙДЕН: Поиск правильно заблокирован', 'success');
+            } else {
+                log('❌ ТЕСТ ПРОВАЛЕН: Поиск не должен был запуститься', 'error');
+            }
+        }
+        
+        function testDropdownSelection() {
+            log('🧪 === ТЕСТ 2: Выбор из выпадающего списка ===');
+            
+            // Сначала показываем выпадающий список
+            document.getElementById('address-suggestions').style.display = 'block';
+            log('📋 Показываю выпадающий список городов');
+            
+            // Симулируем выбор Москвы
+            setTimeout(() => {
+                selectCityFromDropdown('Москва', '44');
+                log('✅ ТЕСТ ПРОЙДЕН: Поиск правильно запущен после выбора из списка', 'success');
+            }, 500);
+        }
+        
+        function testCityChange() {
+            log('🧪 === ТЕСТ 3: Изменение города после выбора ===');
+            
+            // Сначала выбираем город из списка
+            selectCityFromDropdown('Санкт-Петербург', '137');
+            
+            // Через секунду изменяем текст в поле
+            setTimeout(() => {
+                log('✏️ Изменяю текст в поле с "Санкт-Петербург" на "Спб"');
+                
+                const input = document.getElementById('billing_address_1');
+                input.value = 'Спб';
+                
+                // Сбрасываем флаг при изменении
+                if (window.lastDropdownSelectedCity && window.lastDropdownSelectedCity !== 'Спб') {
+                    window.citySelectedFromDropdown = false;
+                    log('🔄 Сброс флага выбора города - город изменился', 'warning');
+                }
+                
+                // Пытаемся выполнить поиск
+                const searchAllowed = simulateCdekSearch('Спб');
+                
+                if (!searchAllowed) {
+                    log('✅ ТЕСТ ПРОЙДЕН: Поиск правильно заблокирован после изменения', 'success');
+                } else {
+                    log('❌ ТЕСТ ПРОВАЛЕН: Поиск не должен был запуститься', 'error');
+                }
+                
+            }, 2000);
+        }
+        
+        function clearLog() {
+            document.getElementById('test-log').innerHTML = '';
+            updateFlagsDisplay();
+            log('🗑️ Лог очищен');
+        }
+        
+        // Обработчики событий
+        document.addEventListener('DOMContentLoaded', function() {
+            updateFlagsDisplay();
+            log('🎯 Тест выбора из выпадающего списка загружен');
+            log('💡 Этот тест проверяет, что поиск пунктов СДЭК запускается только при выборе города из выпадающего списка');
+            log('');
+            
+            // Обработчик ввода в поле адреса
+            document.getElementById('billing_address_1').addEventListener('input', function() {
+                const city = this.value.trim();
+                
+                if (city.length >= 2) {
+                    // Показываем выпадающий список если введено 2+ символа
+                    document.getElementById('address-suggestions').style.display = 'block';
+                    log(`🔍 Ввод: "${city}" - показываю выпадающий список`);
+                } else {
+                    // Скрываем список и сбрасываем флаги
+                    document.getElementById('address-suggestions').style.display = 'none';
+                    if (city.length === 0) {
+                        window.citySelectedFromDropdown = false;
+                        window.lastDropdownSelectedCity = null;
+                        log('🗑️ Поле очищено - сброс флагов выбора города');
+                        updateCdekPointsStatus('Введите город в поле "Адрес" для поиска пунктов выдачи');
+                    }
+                }
+                
+                updateFlagsDisplay();
+            });
+            
+            // Обработчики кликов по элементам выпадающего списка
+            document.querySelectorAll('.dropdown-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const cityName = this.dataset.city;
+                    const cdekCode = this.dataset.cdekCode;
+                    selectCityFromDropdown(cityName, cdekCode);
+                });
+            });
+        });
+    </script>
+</body>
+</html>

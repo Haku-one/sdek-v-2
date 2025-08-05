@@ -1841,6 +1841,9 @@ jQuery(document).ready(function($) {
         $('#cdek-selected-point-data').val('');
         $('#cdek-delivery-cost').val('0');
         
+        // Сбрасываем текст метода доставки на базовый
+        updateClassicShippingCost(null, 0);
+        
         // ПОЛНОСТЬЮ очищаем данные СДЭК в сессии через AJAX
         if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
             $.ajax({
@@ -2031,13 +2034,16 @@ jQuery(document).ready(function($) {
         console.log('💰 Обновляем стоимость доставки:', deliveryCost, 'руб.');
         
         // Обновляем текст в методе доставки СДЭК
-        var cdekShippingLabels = $('label[for*="shipping_method"]:contains("СДЭК"), label[for*="shipping_method"]:contains("cdek")');
+        var cdekShippingLabels = $('label[for*="shipping_method"][for*="cdek"], label[for*="cdek_delivery"]');
         
         if (cdekShippingLabels.length === 0) {
             // Расширенный поиск если основной не нашел
-            cdekShippingLabels = $('label, .woocommerce-shipping-method label').filter(function() {
+            cdekShippingLabels = $('label').filter(function() {
+                var forAttr = $(this).attr('for');
                 var text = $(this).text().toLowerCase();
-                return text.includes('сдэк') || text.includes('cdek') || text.includes('доставка');
+                return (forAttr && (forAttr.includes('shipping_method') || forAttr.includes('cdek'))) ||
+                       text.includes('сдэк') || text.includes('cdek') || 
+                       (text.includes('доставка') && !text.includes('самовывоз') && !text.includes('менеджер'));
             });
         }
         
@@ -2045,14 +2051,17 @@ jQuery(document).ready(function($) {
             var $label = $(this);
             
             var newText;
-            if (deliveryCost === 0) {
+            if (!point) {
+                // Если точка не передана - показываем базовый текст
+                newText = '🚚 СДЭК доставка - выберите пункт выдачи';
+            } else if (deliveryCost === 0) {
                 // Для самовывоза и менеджера
-                if (point.name.includes('Самовывоз')) {
-                    newText = '📍 ' + point.name + ' - Бесплатно';
-                } else if (point.name.includes('менеджером') || point.name.includes('менеджер')) {
-                    newText = '📞 ' + point.name + ' - Бесплатно';
+                if (point.name && point.name.includes('Самовывоз')) {
+                    newText = '📍 ' + point.name + ' — Бесплатно';
+                } else if (point.name && (point.name.includes('менеджером') || point.name.includes('менеджер'))) {
+                    newText = '📞 ' + point.name + ' — Бесплатно';
                 } else {
-                    newText = point.name + ' - Бесплатно';
+                    newText = (point.name || 'Доставка') + ' — Бесплатно';
                 }
             } else {
                 // Для доставки СДЭК
@@ -2066,9 +2075,10 @@ jQuery(document).ready(function($) {
                     displayName = point.location.city + ', ' + pointName.replace(point.location.city, '').replace(/^[,\s]+/, '');
                 }
                 
-                newText = '🚚 СДЭК: ' + displayName + ' - ' + deliveryCost + ' руб.';
+                newText = '🚚 СДЭК: ' + displayName + ' — ' + deliveryCost + ' руб.';
             }
             
+            console.log('🔄 Обновляем label текст на:', newText);
             $label.html(newText);
         });
         
@@ -2398,6 +2408,9 @@ jQuery(document).ready(function($) {
         $('#cdek-selected-point-code').val('');
         $('#cdek-selected-point-data').val('');
         $('#cdek-delivery-cost').val('0');
+        
+        // Сбрасываем текст метода доставки
+        resetShippingMethodTextToCdek();
     }
     
     function showTemporaryNotification(message, type = 'info') {
@@ -2454,6 +2467,41 @@ jQuery(document).ready(function($) {
         setTimeout(function() {
             $('.cdek-temp-notification').remove();
         }, 4000);
+    }
+    
+    function resetShippingMethodTextToCdek() {
+        console.log('🔄 Сбрасываем текст метода доставки на СДЭК');
+        
+        // Находим все labels методов доставки СДЭК
+        var cdekLabels = $('label[for*="shipping_method"][for*="cdek"], label[for*="cdek_delivery"]');
+        
+        if (cdekLabels.length === 0) {
+            // Расширенный поиск
+            cdekLabels = $('label').filter(function() {
+                var forAttr = $(this).attr('for');
+                return forAttr && (forAttr.includes('shipping_method') || forAttr.includes('cdek'));
+            });
+        }
+        
+        // Сбрасываем текст на базовый СДЭК
+        cdekLabels.each(function() {
+            var $label = $(this);
+            console.log('🔄 Обновляем label:', $label.attr('for'));
+            $label.html('🚚 СДЭК доставка - выберите пункт выдачи');
+        });
+        
+        // Также обновляем стоимость доставки в таблице
+        var shippingRow = $('.woocommerce-shipping-totals.shipping td');
+        if (shippingRow.length > 0) {
+            console.log('🔄 Сбрасываем стоимость доставки в таблице');
+            shippingRow.html('<ul id="shipping_method" class="woocommerce-shipping-methods"><li><input type="hidden" name="shipping_method[0]" data-index="0" id="shipping_method_0_cdek_delivery" value="cdek_delivery" class="shipping_method"><label for="shipping_method_0_cdek_delivery">🚚 СДЭК доставка - выберите пункт выдачи</label></li></ul>');
+        }
+        
+        // Принудительно обновляем чекаут для применения изменений
+        setTimeout(function() {
+            console.log('🔄 Принудительное обновление чекаута после сброса текста');
+            $('body').trigger('update_checkout');
+        }, 100);
     }
 
     // Функция для показа информации о менеджере
@@ -2636,6 +2684,9 @@ jQuery(document).ready(function($) {
             $('#cdek-delivery-content').show();
             showCdekHint();
             hideDeliveryInfo(); // Скрываем блоки информации о самовывозе/менеджере
+            
+            // ПРИНУДИТЕЛЬНО сбрасываем текст метода доставки на СДЭК
+            resetShippingMethodTextToCdek();
             
             // Проверяем состояние поля адреса и данных СДЭК
             var currentAddress = $('#billing_address_1').val() || $('#shipping_address_1').val();
@@ -2928,10 +2979,27 @@ jQuery(document).ready(function($) {
     
     // Переинициализация при обновлении чекаута
     $(document.body).on('updated_checkout', function() {
-        console.log('🔄 Чекаут обновился, удаляем ненужные поля...');
+        console.log('🔄 Чекаут обновился, удаляем ненужные поля и проверяем текст доставки...');
         
         // Удаляем ненужные поля при каждом обновлении
         setTimeout(() => removeUnnecessaryAddressFields(), 50);
+        
+        // Проверяем и корректируем текст доставки
+        setTimeout(() => {
+            var deliveryType = $('#cdek-delivery-type').val() || 'cdek';
+            var hasSelectedPoint = $('#cdek-selected-point-code').val();
+            
+            console.log('🔍 Проверяем состояние доставки:', {
+                deliveryType: deliveryType,
+                hasSelectedPoint: hasSelectedPoint
+            });
+            
+            // Если выбран СДЭК но нет выбранного пункта - сбрасываем текст
+            if (deliveryType === 'cdek' && !hasSelectedPoint) {
+                console.log('🔄 СДЭК выбран, но пункт не выбран - сбрасываем текст');
+                resetShippingMethodTextToCdek();
+            }
+        }, 200);
     });
     
     console.log('📋 СДЭК доставка для классического чекаута загружена');

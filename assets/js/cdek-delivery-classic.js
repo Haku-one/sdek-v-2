@@ -430,14 +430,9 @@ class SmartAddressSearch {
                 if (response.success && response.data) {
                     console.log('✅ DaData API: Получено адресов:', response.data.length);
                     
-                    // Фильтруем результаты - показываем только те, где есть пункты СДЭК
-                    var filteredResults = response.data.filter(function(item) {
-                        // Показываем города и улицы в городах где есть СДЭК
-                        return item.type === 'city' || (item.type === 'street' && item.cdek_available);
-                    });
-                    
-                    console.log('🎯 Отфильтровано адресов с СДЭК:', filteredResults.length);
-                    callback(filteredResults);
+                    // Показываем все результаты от DaData как есть
+                    console.log('🎯 Показываем все адреса от DaData:', response.data.length);
+                    callback(response.data);
                 } else {
                     console.log('⚠️ DaData API: Пустой ответ, используем локальный поиск');
                     callback([]);
@@ -1068,19 +1063,45 @@ jQuery(document).ready(function($) {
                 suggestionsContainer.find('.suggestions-count').text('0 результатов');
             } else {
                 suggestions.forEach(function(suggestion, index) {
-                    var displayText = suggestion.city;
+                    // Определяем текст для отображения из DaData или локального поиска
+                    var displayText = suggestion.value || suggestion.city || suggestion.address_full || suggestion.display;
                     var highlightedText = highlightQuery(displayText, query);
                     
                     // Определяем иконку и подпись в зависимости от типа
                     var icon = '🏙️';
                     var subtitle = 'Россия';
                     
-                    if (suggestion.type === 'street') {
+                    // Обработка данных от DaData
+                    if (suggestion.data) {
+                        // Это результат от DaData
+                        icon = '🎯';
+                        var data = suggestion.data;
+                        
+                        if (data.city_type_full && data.city) {
+                            displayText = data.city_type_full + ' ' + data.city;
+                            subtitle = data.region || 'Россия';
+                        } else if (data.settlement_type_full && data.settlement) {
+                            displayText = data.settlement_type_full + ' ' + data.settlement;
+                            subtitle = (data.city || data.region || 'Россия');
+                        }
+                        
+                        // Если это улица
+                        if (data.street_type_full && data.street) {
+                            icon = '🛣️';
+                            displayText = data.street_type_full + ' ' + data.street;
+                            subtitle = (data.city || data.settlement || 'Город') + ', ' + (data.region || 'Россия');
+                        }
+                        
+                        highlightedText = highlightQuery(displayText, query);
+                        
+                    } else if (suggestion.type === 'street') {
+                        // Локальный результат - улица
                         icon = '🛣️';
                         displayText = suggestion.street || suggestion.address_full;
                         highlightedText = highlightQuery(displayText, query);
                         subtitle = suggestion.city + ' • улица с пунктами СДЭК';
                     } else if (suggestion.source === 'dadata') {
+                        // Старый формат DaData
                         icon = '🎯';
                         subtitle = 'Точный адрес';
                         if (suggestion.cdek_code) {
@@ -1119,12 +1140,37 @@ jQuery(document).ready(function($) {
         }
         
         function selectSuggestion(suggestion) {
-            // Если выбираем улицу, добавляем её к городу
-            var fullAddress = suggestion.city;
-            if (suggestion.type === 'street' && suggestion.street) {
-                fullAddress = suggestion.city + ', ' + suggestion.street;
-            } else if (suggestion.address_full) {
-                fullAddress = suggestion.address_full;
+            var fullAddress, cityName;
+            
+            // Обработка результата от DaData
+            if (suggestion.data) {
+                var data = suggestion.data;
+                fullAddress = suggestion.value; // Полный адрес из DaData
+                
+                // Извлекаем название города
+                cityName = data.city || data.settlement || data.region;
+                
+                // Если в адресе есть улица, то берем как есть
+                if (data.street && data.street_type_full) {
+                    // Это улица - оставляем полный адрес
+                } else {
+                    // Это город - используем только название города
+                    if (data.city_type_full && data.city) {
+                        fullAddress = data.city_type_full + ' ' + data.city;
+                    } else if (data.settlement_type_full && data.settlement) {
+                        fullAddress = data.settlement_type_full + ' ' + data.settlement;
+                    }
+                }
+            } else {
+                // Локальный результат
+                fullAddress = suggestion.city;
+                cityName = suggestion.city;
+                
+                if (suggestion.type === 'street' && suggestion.street) {
+                    fullAddress = suggestion.city + ', ' + suggestion.street;
+                } else if (suggestion.address_full) {
+                    fullAddress = suggestion.address_full;
+                }
             }
             
             addressInput.val(fullAddress);
@@ -1133,16 +1179,16 @@ jQuery(document).ready(function($) {
             saveRecentSearch(suggestion);
             
             // Запоминаем выбранный город и его данные
-            window.lastSelectedCity = suggestion.city;
+            window.lastSelectedCity = cityName;
             window.lastSelectedCityData = suggestion; // Сохраняем все данные включая СДЭК код
             
             // Если есть СДЭК код из DaData, сохраняем его в сессии
             if (suggestion.cdek_code && suggestion.source === 'dadata') {
-                saveCdekCodeToSession(suggestion.cdek_code, suggestion.city);
+                saveCdekCodeToSession(suggestion.cdek_code, cityName);
             }
             
             // Очищаем предыдущий выбор ПВЗ только при смене города
-            if (window.currentSearchCity && window.currentSearchCity !== suggestion.city) {
+            if (window.currentSearchCity && window.currentSearchCity !== cityName) {
                 clearSelectedPoint();
             }
             
@@ -1150,7 +1196,7 @@ jQuery(document).ready(function($) {
             showPvzLoader();
             
             debouncer.debounce('cdek-search', () => {
-                searchCdekPoints(suggestion.city, suggestion);
+                searchCdekPoints(cityName, suggestion);
             }, 50, 6);
         }
         

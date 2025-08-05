@@ -175,8 +175,49 @@ class SmartAddressSearch {
             return;
         }
         
-        const results = this.searchInCities(query);
-        callback(results);
+        // Сначала пробуем DaData API
+        this.searchWithDaData(query, (dadataResults) => {
+            if (dadataResults && dadataResults.length > 0) {
+                // Если DaData вернул результаты, используем их
+                callback(dadataResults);
+            } else {
+                // Иначе используем локальный поиск как fallback
+                const localResults = this.searchInCities(query);
+                callback(localResults);
+            }
+        });
+    }
+    
+    searchWithDaData(query, callback) {
+        if (typeof cdek_ajax === 'undefined' || !cdek_ajax.ajax_url) {
+            callback([]);
+            return;
+        }
+        
+        $.ajax({
+            url: cdek_ajax.ajax_url,
+            type: 'POST',
+            dataType: 'json',
+            timeout: 5000, // Короткий таймаут для быстрого fallback
+            data: {
+                action: 'get_dadata_suggestions',
+                search: query,
+                nonce: cdek_ajax.nonce
+            },
+            success: function(response) {
+                if (response.success && response.data) {
+                    console.log('✅ DaData API: Получено городов:', response.data.length);
+                    callback(response.data);
+                } else {
+                    console.log('⚠️ DaData API: Пустой ответ, используем локальный поиск');
+                    callback([]);
+                }
+            },
+            error: function(xhr, status, error) {
+                console.log('❌ DaData API ошибка:', error, '- используем локальный поиск');
+                callback([]);
+            }
+        });
     }
     
     searchInCities(query) {
@@ -796,12 +837,24 @@ jQuery(document).ready(function($) {
                 suggestions.forEach(function(suggestion, index) {
                     var highlightedCity = highlightQuery(suggestion.city, query);
                     
+                    // Определяем иконку и подпись в зависимости от источника
+                    var icon = '🏙️';
+                    var subtitle = 'Россия';
+                    
+                    if (suggestion.source === 'dadata') {
+                        icon = '🎯';
+                        subtitle = 'Точный адрес';
+                        if (suggestion.cdek_code) {
+                            subtitle += ' • СДЭК: ' + suggestion.cdek_code;
+                        }
+                    }
+                    
                     var item = $(`
                         <div class="suggestion-item" data-index="${index}">
-                            <div class="suggestion-icon">🏙️</div>
+                            <div class="suggestion-icon">${icon}</div>
                             <div class="suggestion-content">
                                 <div class="suggestion-title">${highlightedCity}</div>
-                                <div class="suggestion-subtitle">Россия</div>
+                                <div class="suggestion-subtitle">${subtitle}</div>
                             </div>
                         </div>
                     `);
@@ -832,8 +885,14 @@ jQuery(document).ready(function($) {
             
             saveRecentSearch(suggestion);
             
-            // Запоминаем выбранный город
+            // Запоминаем выбранный город и его данные
             window.lastSelectedCity = suggestion.city;
+            window.lastSelectedCityData = suggestion; // Сохраняем все данные включая СДЭК код
+            
+            // Если есть СДЭК код из DaData, сохраняем его в сессии
+            if (suggestion.cdek_code && suggestion.source === 'dadata') {
+                saveCdekCodeToSession(suggestion.cdek_code, suggestion.city);
+            }
             
             // Очищаем предыдущий выбор ПВЗ только при смене города
             if (window.currentSearchCity && window.currentSearchCity !== suggestion.city) {
@@ -844,8 +903,31 @@ jQuery(document).ready(function($) {
             showPvzLoader();
             
             debouncer.debounce('cdek-search', () => {
-                searchCdekPoints(suggestion.city);
+                searchCdekPoints(suggestion.city, suggestion);
             }, 50, 6);
+        }
+        
+        function saveCdekCodeToSession(cdekCode, city) {
+            if (typeof cdek_ajax === 'undefined' || !cdek_ajax.ajax_url) {
+                return;
+            }
+            
+            $.ajax({
+                url: cdek_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'save_dadata_cdek_code',
+                    cdek_code: cdekCode,
+                    city: city,
+                    nonce: cdek_ajax.nonce
+                },
+                success: function(response) {
+                    console.log('✅ СДЭК код из DaData сохранен в сессии:', cdekCode);
+                },
+                error: function() {
+                    console.log('❌ Ошибка сохранения СДЭК кода в сессии');
+                }
+            });
         }
         
         function saveRecentSearch(suggestion) {
@@ -1035,7 +1117,7 @@ jQuery(document).ready(function($) {
     
     // ========== ФУНКЦИИ ДЛЯ ПОИСКА И ОТОБРАЖЕНИЯ ПУНКТОВ ВЫДАЧИ ==========
     
-    function searchCdekPoints(address) {
+    function searchCdekPoints(address, cityData) {
         var parsedAddress = parseAddress(address);
         
         // Проверяем, не ищем ли мы тот же город повторно
@@ -1051,8 +1133,12 @@ jQuery(document).ready(function($) {
         }
         
         window.currentSearchCity = parsedAddress.city;
+        window.currentCityData = cityData; // Сохраняем данные города
         
         console.log('🔍 Поиск пунктов СДЭК для города:', parsedAddress.city);
+        if (cityData && cityData.cdek_code) {
+            console.log('🎯 Используем СДЭК код из DaData:', cityData.cdek_code);
+        }
         
         performCdekSearch();
     }
@@ -1852,7 +1938,7 @@ jQuery(document).ready(function($) {
     
     // Функции для обновления текста доставки
     window.updateShippingTextForPickup = function() {
-        console.log('🏪 Выбран самовывоз');
+        console.log('🏪 Выбран самовывоз - очищаем ВСЕ данные СДЭК');
         // Скрываем подсказку о выборе города
         hideCdekHint();
         // Обновляем отображение в чекауте
@@ -1861,6 +1947,11 @@ jQuery(document).ready(function($) {
         // Добавляем скрытое поле с типом доставки
         $('#cdek-delivery-type').remove(); // Удаляем предыдущее поле
         $('form.checkout').append('<input type="hidden" id="cdek-delivery-type" name="cdek_delivery_type" value="pickup">');
+        
+        // Очищаем локальные переменные
+        clearSelectedPoint();
+        window.lastSelectedCityData = null;
+        window.currentCityData = null;
         
         // Принудительно очищаем стоимость доставки СДЭК в сессии
         if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
@@ -1874,17 +1965,17 @@ jQuery(document).ready(function($) {
                     nonce: cdek_ajax.nonce
                 },
                 success: function(response) {
-                    console.log('✅ Стоимость доставки очищена для самовывоза');
+                    console.log('✅ ВСЕ данные СДЭК очищены для самовывоза');
                 },
                 error: function() {
-                    console.log('❌ Ошибка при очистке стоимости доставки');
+                    console.log('❌ Ошибка при очистке данных СДЭК');
                 }
             });
         }
     };
     
     window.updateShippingTextForManager = function() {
-        console.log('📞 Выбрано обсуждение с менеджером');
+        console.log('📞 Выбрано обсуждение с менеджером - очищаем ВСЕ данные СДЭК');
         // Скрываем подсказку о выборе города
         hideCdekHint();
         // Обновляем отображение в чекауте
@@ -1893,6 +1984,11 @@ jQuery(document).ready(function($) {
         // Добавляем скрытое поле с типом доставки
         $('#cdek-delivery-type').remove(); // Удаляем предыдущее поле
         $('form.checkout').append('<input type="hidden" id="cdek-delivery-type" name="cdek_delivery_type" value="manager">');
+        
+        // Очищаем локальные переменные
+        clearSelectedPoint();
+        window.lastSelectedCityData = null;
+        window.currentCityData = null;
         
         // Принудительно очищаем стоимость доставки СДЭК в сессии
         if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
@@ -1906,10 +2002,10 @@ jQuery(document).ready(function($) {
                     nonce: cdek_ajax.nonce
                 },
                 success: function(response) {
-                    console.log('✅ Стоимость доставки очищена для менеджера');
+                    console.log('✅ ВСЕ данные СДЭК очищены для менеджера');
                 },
                 error: function() {
-                    console.log('❌ Ошибка при очистке стоимости доставки');
+                    console.log('❌ Ошибка при очистке данных СДЭК');
                 }
             });
         }
@@ -1945,7 +2041,13 @@ jQuery(document).ready(function($) {
         
         // Автоматически ищем пункты СДЭК только если выбрана доставка СДЭК
         if ($('#cdek-delivery-type').val() === 'cdek' && city.length > 2) {
-            debouncer.debounce('city-search', () => searchCdekPoints(city), 500);
+            // Проверяем, есть ли сохраненные данные города из DaData
+            var cityData = null;
+            if (window.lastSelectedCityData && window.lastSelectedCityData.city === city) {
+                cityData = window.lastSelectedCityData;
+            }
+            
+            debouncer.debounce('city-search', () => searchCdekPoints(city, cityData), 500);
         } else if (city.length <= 2) {
             $('#cdek-points-list').hide();
             if (cdekMap) {

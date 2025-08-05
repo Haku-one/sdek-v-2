@@ -48,6 +48,10 @@ class CdekDeliveryPlugin {
         add_action('wp_ajax_nopriv_calculate_cdek_delivery_cost', array($this, 'ajax_calculate_delivery_cost'));
         add_action('wp_ajax_get_address_suggestions', array($this, 'ajax_get_address_suggestions'));
         add_action('wp_ajax_nopriv_get_address_suggestions', array($this, 'ajax_get_address_suggestions'));
+        add_action('wp_ajax_get_dadata_suggestions', array($this, 'ajax_get_dadata_suggestions'));
+        add_action('wp_ajax_nopriv_get_dadata_suggestions', array($this, 'ajax_get_dadata_suggestions'));
+        add_action('wp_ajax_save_dadata_cdek_code', array($this, 'ajax_save_dadata_cdek_code'));
+        add_action('wp_ajax_nopriv_save_dadata_cdek_code', array($this, 'ajax_save_dadata_cdek_code'));
         
         // Обработчик для обновления стоимости доставки
         add_action('wp_ajax_update_cdek_shipping_cost', array($this, 'ajax_update_shipping_cost'));
@@ -285,6 +289,149 @@ class CdekDeliveryPlugin {
         wp_send_json_success($suggestions);
     }
     
+    public function ajax_get_dadata_suggestions() {
+        if (!wp_verify_nonce($_POST['nonce'], 'cdek_nonce')) {
+            wp_die('Security check failed');
+        }
+        
+        $search = sanitize_text_field($_POST['search']);
+        
+        // Получаем предложения от DaData
+        $suggestions = $this->get_dadata_city_suggestions($search);
+        
+        wp_send_json_success($suggestions);
+    }
+    
+    private function get_dadata_city_suggestions($query) {
+        if (strlen($query) < 2) {
+            return array();
+        }
+        
+        $api_key = '024d65e3e981ce56db10e657d740e160d6b8ab28';
+        $secret_key = '5df7d87147bc88cc4e8e4dd722cb6587e2061dea';
+        
+        // Запрос к DaData для поиска городов
+        $url = 'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/address';
+        
+        $data = array(
+            'query' => $query,
+            'count' => 10,
+            'locations' => array(
+                array('country_iso_code' => 'RU')
+            ),
+            'restrict_value' => true,
+            'from_bound' => array('value' => 'city'),
+            'to_bound' => array('value' => 'city')
+        );
+        
+        $response = wp_remote_post($url, array(
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+                'Authorization' => 'Token ' . $api_key
+            ),
+            'body' => json_encode($data),
+            'timeout' => 10
+        ));
+        
+        if (is_wp_error($response)) {
+            error_log('DaData API ошибка: ' . $response->get_error_message());
+            return $this->generate_address_suggestions($query); // Fallback к локальному поиску
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        $result = json_decode($body, true);
+        
+        if (!$result || !isset($result['suggestions'])) {
+            error_log('DaData API: Некорректный ответ');
+            return $this->generate_address_suggestions($query); // Fallback к локальному поиску
+        }
+        
+        $suggestions = array();
+        
+        foreach ($result['suggestions'] as $suggestion) {
+            if (!isset($suggestion['data']['city']) || !isset($suggestion['data']['kladr_id'])) {
+                continue;
+            }
+            
+            $city = $suggestion['data']['city'];
+            $kladr_id = $suggestion['data']['kladr_id'];
+            
+            // Получаем СДЭК код города через DaData delivery API
+            $cdek_code = $this->get_cdek_city_code_from_dadata($kladr_id);
+            
+            $suggestions[] = array(
+                'value' => $city,
+                'text' => $city,
+                'city' => $city,
+                'kladr_id' => $kladr_id,
+                'cdek_code' => $cdek_code,
+                'source' => 'dadata'
+            );
+        }
+        
+        return $suggestions;
+    }
+    
+    private function get_cdek_city_code_from_dadata($kladr_id) {
+        $api_key = '024d65e3e981ce56db10e657d740e160d6b8ab28';
+        
+        $url = 'https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/delivery';
+        
+        $data = array(
+            'query' => $kladr_id
+        );
+        
+        $response = wp_remote_post($url, array(
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+                'Authorization' => 'Token ' . $api_key
+            ),
+            'body' => json_encode($data),
+            'timeout' => 10
+        ));
+        
+        if (is_wp_error($response)) {
+            error_log('DaData Delivery API ошибка: ' . $response->get_error_message());
+            return null;
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        $result = json_decode($body, true);
+        
+        if ($result && isset($result['suggestions'][0]['data']['cdek_id'])) {
+            return $result['suggestions'][0]['data']['cdek_id'];
+        }
+        
+        return null;
+    }
+    
+    public function ajax_save_dadata_cdek_code() {
+        if (!wp_verify_nonce($_POST['nonce'], 'cdek_nonce')) {
+            wp_die('Security check failed');
+        }
+        
+        $cdek_code = sanitize_text_field($_POST['cdek_code']);
+        $city = sanitize_text_field($_POST['city']);
+        
+        if (!empty($cdek_code) && is_numeric($cdek_code) && !empty($city)) {
+            // Сохраняем СДЭК код в сессии
+            WC()->session->set('dadata_cdek_code', $cdek_code);
+            WC()->session->set('dadata_city', $city);
+            
+            error_log('СДЭК: Сохранен СДЭК код из DaData: ' . $cdek_code . ' для города: ' . $city);
+            
+            wp_send_json_success(array(
+                'message' => 'СДЭК код сохранен',
+                'cdek_code' => $cdek_code,
+                'city' => $city
+            ));
+        } else {
+            wp_send_json_error('Некорректные данные');
+        }
+    }
+    
     private function generate_address_suggestions($search) {
         $suggestions = array();
         $search_lower = mb_strtolower($search);
@@ -478,24 +625,28 @@ class CdekDeliveryPlugin {
         // Сохраняем данные пункта выдачи только для доставки СДЭК
         if ($delivery_type === 'cdek') {
             if (isset($_POST['cdek_selected_point_code']) && !empty($_POST['cdek_selected_point_code'])) {
-                update_post_meta($order_id, '_cdek_point_code', sanitize_text_field($_POST['cdek_selected_point_code']));
+                $point_code = sanitize_text_field($_POST['cdek_selected_point_code']);
+                update_post_meta($order_id, '_cdek_point_code', $point_code);
             } else {
                 // Если в POST нет, берем из сессии
                 $session_point_code = WC()->session->get('cdek_selected_point_code');
-                if ($session_point_code) {
-                    update_post_meta($order_id, '_cdek_point_code', $session_point_code);
+                if ($session_point_code && is_string($session_point_code)) {
+                    update_post_meta($order_id, '_cdek_point_code', sanitize_text_field($session_point_code));
                 }
             }
             
             if (isset($_POST['cdek_selected_point_data']) && !empty($_POST['cdek_selected_point_data'])) {
-                $point_data = json_decode(stripslashes($_POST['cdek_selected_point_data']), true);
-                if ($point_data) {
-                    update_post_meta($order_id, '_cdek_point_data', $point_data);
+                $point_data_raw = stripslashes($_POST['cdek_selected_point_data']);
+                if (is_string($point_data_raw)) {
+                    $point_data = json_decode($point_data_raw, true);
+                    if ($point_data && is_array($point_data)) {
+                        update_post_meta($order_id, '_cdek_point_data', $point_data);
+                    }
                 }
             } else {
                 // Если в POST нет, берем из сессии
                 $session_point_data = WC()->session->get('cdek_selected_point_data');
-                if ($session_point_data) {
+                if ($session_point_data && is_array($session_point_data)) {
                     update_post_meta($order_id, '_cdek_point_data', $session_point_data);
                 }
             }
@@ -529,19 +680,23 @@ class CdekDeliveryPlugin {
                     
                 case 'cdek':
                 default:
-                    if ($point_code && $point_data) {
+                    if ($point_code && $point_data && is_array($point_data)) {
                         echo '<strong>🚚 Пункт выдачи СДЭК:</strong><br>';
-                        echo '<strong>' . esc_html($point_data['name']) . '</strong><br>';
+                        
+                        $point_name = isset($point_data['name']) && is_string($point_data['name']) ? $point_data['name'] : 'Пункт выдачи';
+                        echo '<strong>' . esc_html($point_name) . '</strong><br>';
                         echo 'Код: ' . esc_html($point_code) . '<br>';
-                        if (isset($point_data['location']['address_full'])) {
+                        
+                        if (isset($point_data['location']['address_full']) && is_string($point_data['location']['address_full'])) {
                             echo 'Адрес: ' . esc_html($point_data['location']['address_full']) . '<br>';
                         }
+                        
                         if (isset($point_data['phones']) && is_array($point_data['phones']) && !empty($point_data['phones'])) {
                             $phone_numbers = array();
                             foreach ($point_data['phones'] as $phone) {
-                                if (is_array($phone) && isset($phone['number'])) {
+                                if (is_array($phone) && isset($phone['number']) && is_string($phone['number'])) {
                                     $phone_numbers[] = $phone['number'];
-                                } else {
+                                } elseif (is_string($phone)) {
                                     $phone_numbers[] = $phone;
                                 }
                             }
@@ -607,13 +762,15 @@ class CdekDeliveryPlugin {
                 
             case 'cdek':
             default:
-                if ($point_code && $point_data) {
+                if ($point_code && $point_data && is_array($point_data)) {
                     echo '<p><strong>🚚 Пункт выдачи СДЭК</strong></p>';
                     echo '<div style="margin-left: 20px;">';
-                    echo '<p><strong>' . esc_html($point_data['name']) . '</strong></p>';
+                    
+                    $point_name = isset($point_data['name']) && is_string($point_data['name']) ? $point_data['name'] : 'Пункт выдачи';
+                    echo '<p><strong>' . esc_html($point_name) . '</strong></p>';
                     echo '<p>Код пункта: <strong>' . esc_html($point_code) . '</strong></p>';
                     
-                    if (isset($point_data['location']['address_full'])) {
+                    if (isset($point_data['location']['address_full']) && is_string($point_data['location']['address_full'])) {
                         echo '<p>Адрес: ' . esc_html($point_data['location']['address_full']) . '</p>';
                     }
                     
@@ -622,7 +779,7 @@ class CdekDeliveryPlugin {
                         echo '<p><strong>Режим работы:</strong><br>';
                         $days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
                         foreach ($point_data['work_time_list'] as $work_time) {
-                            if (isset($work_time['day']) && isset($work_time['time'])) {
+                            if (is_array($work_time) && isset($work_time['day']) && isset($work_time['time']) && is_string($work_time['time'])) {
                                 $day_index = intval($work_time['day']) - 1;
                                 if ($day_index >= 0 && $day_index < 7) {
                                     echo $days[$day_index] . ': ' . esc_html($work_time['time']) . '<br>';
@@ -636,9 +793,9 @@ class CdekDeliveryPlugin {
                     if (isset($point_data['phones']) && is_array($point_data['phones']) && !empty($point_data['phones'])) {
                         $phone_numbers = array();
                         foreach ($point_data['phones'] as $phone) {
-                            if (is_array($phone) && isset($phone['number'])) {
+                            if (is_array($phone) && isset($phone['number']) && is_string($phone['number'])) {
                                 $phone_numbers[] = $phone['number'];
-                            } else {
+                            } elseif (is_string($phone)) {
                                 $phone_numbers[] = $phone;
                             }
                         }
@@ -709,11 +866,14 @@ class CdekDeliveryPlugin {
                     
                 case 'cdek':
                 default:
-                    if ($point_code && $point_data) {
+                    if ($point_code && $point_data && is_array($point_data)) {
                         echo "Пункт выдачи СДЭК" . "\n";
-                        echo "Название: " . $point_data['name'] . "\n";
+                        
+                        $point_name = isset($point_data['name']) && is_string($point_data['name']) ? $point_data['name'] : 'Пункт выдачи';
+                        echo "Название: " . $point_name . "\n";
                         echo "Код пункта: " . $point_code . "\n";
-                        if (isset($point_data['location']['address_full'])) {
+                        
+                        if (isset($point_data['location']['address_full']) && is_string($point_data['location']['address_full'])) {
                             echo "Адрес: " . $point_data['location']['address_full'] . "\n";
                         }
                     }
@@ -740,11 +900,14 @@ class CdekDeliveryPlugin {
                     
                 case 'cdek':
                 default:
-                    if ($point_code && $point_data) {
+                    if ($point_code && $point_data && is_array($point_data)) {
                         echo '<p><strong>🚚 Пункт выдачи СДЭК</strong></p>';
-                        echo '<p><strong>' . esc_html($point_data['name']) . '</strong></p>';
+                        
+                        $point_name = isset($point_data['name']) && is_string($point_data['name']) ? $point_data['name'] : 'Пункт выдачи';
+                        echo '<p><strong>' . esc_html($point_name) . '</strong></p>';
                         echo '<p>Код пункта: <strong>' . esc_html($point_code) . '</strong></p>';
-                        if (isset($point_data['location']['address_full'])) {
+                        
+                        if (isset($point_data['location']['address_full']) && is_string($point_data['location']['address_full'])) {
                             echo '<p>Адрес: ' . esc_html($point_data['location']['address_full']) . '</p>';
                         }
                     }
@@ -1514,10 +1677,16 @@ class CdekDeliveryPlugin {
             // Для менеджера и самовывоза стоимость всегда 0
             $cost = 0;
             WC()->session->set('cdek_delivery_cost', $cost);
-            // Очищаем данные о пункте выдачи
+            // ПОЛНОСТЬЮ очищаем данные о пункте выдачи СДЭК
             WC()->session->__unset('cdek_selected_point_code');
             WC()->session->__unset('cdek_selected_point_data');
-            error_log('СДЭК: Очищена стоимость доставки для типа: ' . $delivery_type);
+            WC()->session->__unset('dadata_cdek_code');
+            WC()->session->__unset('dadata_city');
+            
+            // Принудительно очищаем кеш доставки для пересчета
+            WC()->shipping()->reset_shipping();
+            
+            error_log('СДЭК: Полностью очищены ВСЕ данные СДЭК для типа: ' . $delivery_type);
         } else {
             // Для доставки СДЭК сохраняем переданную стоимость
             if (isset($_POST['cdek_delivery_cost'])) {
@@ -1569,11 +1738,17 @@ class CdekDeliveryPlugin {
         $delivery_type = isset($post_data['cdek_delivery_type']) ? $post_data['cdek_delivery_type'] : null;
         
         if ($delivery_type === 'manager' || $delivery_type === 'pickup') {
-            // Для менеджера и самовывоза очищаем стоимость доставки
+            // Для менеджера и самовывоза ПОЛНОСТЬЮ очищаем данные СДЭК
             WC()->session->set('cdek_delivery_cost', 0);
             WC()->session->__unset('cdek_selected_point_code');
             WC()->session->__unset('cdek_selected_point_data');
-            error_log('СДЭК: Очищена стоимость доставки для типа: ' . $delivery_type);
+            WC()->session->__unset('dadata_cdek_code');
+            WC()->session->__unset('dadata_city');
+            
+            // Принудительно очищаем кеш доставки
+            WC()->shipping()->reset_shipping();
+            
+            error_log('СДЭК: Полностью очищены ВСЕ данные СДЭК для типа: ' . $delivery_type);
         } elseif (isset($post_data['cdek_delivery_cost']) && !empty($post_data['cdek_delivery_cost'])) {
             // Если есть данные СДЭК в POST, сохраняем их в сессию
             $cost = floatval($post_data['cdek_delivery_cost']);
@@ -1604,12 +1779,41 @@ class CdekDeliveryPlugin {
         // Проверяем, есть ли в URL параметры, указывающие на возврат к checkout
         if (isset($_GET['key']) || isset($_GET['order']) || isset($_GET['order-received'])) {
             // Это возврат после неудачного заказа - очищаем старые данные СДЭК
-            WC()->session->__unset('cdek_delivery_cost');
-            WC()->session->__unset('cdek_selected_point_code');
-            WC()->session->__unset('cdek_selected_point_data');
-            WC()->session->__unset('cdek_delivery_type');
+            $this->clear_cdek_session_data();
             error_log('СДЭК: Очищена сессия при повторном входе в checkout');
         }
+        
+        // Дополнительная проверка: если это новая сессия, очищаем старые данные
+        $current_session_id = WC()->session->get_customer_id();
+        $last_session_id = WC()->session->get('cdek_last_session_id');
+        
+        if ($current_session_id !== $last_session_id) {
+            $this->clear_cdek_session_data();
+            WC()->session->set('cdek_last_session_id', $current_session_id);
+            error_log('СДЭК: Очищена сессия для новой пользовательской сессии');
+        }
+    }
+    
+    /**
+     * Централизованная очистка данных СДЭК из сессии
+     */
+    private function clear_cdek_session_data() {
+        if (!WC()->session) {
+            return;
+        }
+        
+        // Очищаем все данные СДЭК из сессии
+        WC()->session->__unset('cdek_delivery_cost');
+        WC()->session->__unset('cdek_selected_point_code');
+        WC()->session->__unset('cdek_selected_point_data');
+        WC()->session->__unset('cdek_delivery_type');
+        WC()->session->__unset('dadata_cdek_code');
+        WC()->session->__unset('dadata_city');
+        
+        // Принудительно очищаем кеш доставки
+        WC()->shipping()->reset_shipping();
+        
+        error_log('СДЭК: Все данные сессии очищены');
     }
     
     public function update_order_total_before_payment() {
@@ -1936,8 +2140,15 @@ class CdekAPI {
             // Множественные способы определения локации
             $location_found = false;
             
+            // Способ 0: Проверяем, есть ли СДЭК код из DaData в сессии
+            $dadata_cdek_code = WC()->session ? WC()->session->get('dadata_cdek_code') : null;
+            if ($dadata_cdek_code && is_numeric($dadata_cdek_code)) {
+                $to_location['code'] = intval($dadata_cdek_code);
+                $location_found = true;
+                error_log('СДЭК API: Используем СДЭК код из DaData: ' . $dadata_cdek_code);
+            }
             // Способ 1: city_code
-            if (isset($point_data['location']['city_code']) && !empty($point_data['location']['city_code'])) {
+            elseif (isset($point_data['location']['city_code']) && !empty($point_data['location']['city_code'])) {
                 $to_location['code'] = intval($point_data['location']['city_code']);
                 $location_found = true;
             }

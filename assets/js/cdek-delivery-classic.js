@@ -2327,6 +2327,135 @@ jQuery(document).ready(function($) {
         $('p:contains("Введите город в поле «Адрес» выше, затем выберите пункт выдачи")').show();
     }
     
+    // Функции для работы с очисткой полей адреса
+    function clearAddressFieldForNonCdek(message) {
+        console.log('🧹 Очищаем поле адреса для не-СДЭК доставки:', message);
+        
+        // Очищаем поля адреса
+        $('#billing_address_1, #shipping_address_1').val('');
+        
+        // Показываем временное уведомление
+        showTemporaryNotification(message, 'info');
+        
+        // Сбрасываем состояние поиска СДЭК
+        resetCdekSearchState();
+    }
+    
+    function showAddressReenterNotification() {
+        console.log('⚠️ Показываем уведомление о необходимости повторного ввода города');
+        
+        // Обновляем счетчик пунктов с уведомлением
+        $('#cdek-points-count').html('⚠️ Пожалуйста, введите город заново для поиска пунктов выдачи');
+        
+        // Показываем уведомление в поле адреса
+        var addressInput = $('#billing_address_1, #shipping_address_1').first();
+        if (addressInput.length > 0) {
+            addressInput.attr('placeholder', 'Введите город заново для поиска СДЭК');
+            
+            // Добавляем временный стиль для привлечения внимания
+            addressInput.css({
+                'border-color': '#ff9800',
+                'background-color': '#fff3e0'
+            });
+            
+            // Убираем стиль через 3 секунды
+            setTimeout(function() {
+                addressInput.css({
+                    'border-color': '',
+                    'background-color': ''
+                });
+                addressInput.attr('placeholder', 'Например: Москва');
+            }, 3000);
+        }
+        
+        // Показываем общее уведомление
+        showTemporaryNotification('После переключения вкладок необходимо заново выбрать город для поиска пунктов СДЭК', 'warning');
+    }
+    
+    function resetCdekSearchState() {
+        console.log('🔄 Сбрасываем состояние поиска СДЭК');
+        
+        // Очищаем данные о пунктах
+        cdekPoints = [];
+        selectedPoint = null;
+        window.selectedCdekPoint = null;
+        window.currentSearchCity = null;
+        window.currentCityData = null;
+        window.lastSelectedCityData = null;
+        window.citySelectedFromDropdown = false;
+        window.lastDropdownSelectedCity = null;
+        
+        // Очищаем карту
+        if (cdekMap && cdekMap.geoObjects) {
+            cdekMap.geoObjects.removeAll();
+        }
+        
+        // Скрываем блоки с информацией о выбранном пункте
+        $('#cdek-selected-point').hide();
+        $('#cdek-points-list').hide();
+        
+        // Очищаем скрытые поля
+        $('#cdek-selected-point-code').val('');
+        $('#cdek-selected-point-data').val('');
+        $('#cdek-delivery-cost').val('0');
+    }
+    
+    function showTemporaryNotification(message, type = 'info') {
+        // Удаляем предыдущие уведомления
+        $('.cdek-temp-notification').remove();
+        
+        var bgColor = '#e3f2fd';
+        var borderColor = '#2196f3';
+        var icon = 'ℹ️';
+        
+        if (type === 'warning') {
+            bgColor = '#fff3e0';
+            borderColor = '#ff9800';
+            icon = '⚠️';
+        } else if (type === 'success') {
+            bgColor = '#e8f5e8';
+            borderColor = '#4caf50';
+            icon = '✅';
+        }
+        
+        var notificationHtml = `
+            <div class="cdek-temp-notification" style="
+                margin: 10px 0;
+                padding: 12px;
+                background: ${bgColor};
+                border: 1px solid ${borderColor};
+                border-radius: 6px;
+                color: #333;
+                font-size: 14px;
+                animation: fadeInOut 4s ease-in-out;
+            ">
+                ${icon} ${message}
+            </div>
+        `;
+        
+        // Добавляем уведомление в контейнер СДЭК
+        $('#cdek-delivery-options').after(notificationHtml);
+        
+        // Добавляем CSS анимацию если её нет
+        if (!$('#temp-notification-styles').length) {
+            $('head').append(`
+                <style id="temp-notification-styles">
+                @keyframes fadeInOut {
+                    0% { opacity: 0; transform: translateY(-10px); }
+                    15% { opacity: 1; transform: translateY(0); }
+                    85% { opacity: 1; transform: translateY(0); }
+                    100% { opacity: 0; transform: translateY(-10px); }
+                }
+                </style>
+            `);
+        }
+        
+        // Автоматически удаляем уведомление через 4 секунды
+        setTimeout(function() {
+            $('.cdek-temp-notification').remove();
+        }, 4000);
+    }
+
     // Функция для показа информации о менеджере
     function showManagerInfo() {
         // Убираем предыдущие блоки информации
@@ -2367,6 +2496,70 @@ jQuery(document).ready(function($) {
         $('#cdek-manager-info, #cdek-pickup-info').remove();
     }
     
+    // ========== УДАЛЕНИЕ НЕНУЖНЫХ ПОЛЕЙ АДРЕСА ==========
+    
+    function removeUnnecessaryAddressFields() {
+        console.log('🗑️ Удаляем ненужные поля адреса...');
+        
+        // Список селекторов для полей, которые нужно удалить
+        var fieldsToRemove = [
+            // По ID
+            '#billing_city_field',
+            '#billing_state_field', 
+            '#billing_postcode_field',
+            '#shipping_city_field',
+            '#shipping_state_field',
+            '#shipping_postcode_field',
+            
+            // По name атрибуту
+            'input[name="billing_city"]',
+            'input[name="billing_state"]',
+            'input[name="billing_postcode"]',
+            'input[name="shipping_city"]',
+            'input[name="shipping_state"]',
+            'input[name="shipping_postcode"]',
+            'select[name="billing_state"]',
+            'select[name="shipping_state"]',
+            
+            // По классам и содержимому
+            'p[id*="city_field"]',
+            'p[id*="state_field"]',
+            'p[id*="postcode_field"]'
+        ];
+        
+        // Удаляем поля
+        fieldsToRemove.forEach(function(selector) {
+            var elements = $(selector);
+            if (elements.length > 0) {
+                console.log('🗑️ Удаляем поля:', selector, '(' + elements.length + ' элементов)');
+                elements.remove();
+            }
+        });
+        
+        // Дополнительно ищем по тексту label
+        $('label').each(function() {
+            var $label = $(this);
+            var text = $label.text().toLowerCase();
+            
+            if (text.includes('населённый пункт') || 
+                text.includes('область') || 
+                text.includes('район') ||
+                text.includes('почтовый индекс') ||
+                text.includes('city') && text.includes('*') ||
+                text.includes('state') && text.includes('*') ||
+                text.includes('postcode') && text.includes('*')) {
+                
+                console.log('🗑️ Удаляем поле по тексту label:', text);
+                $label.closest('.form-row, p, .field').remove();
+            }
+        });
+        
+        // Удаляем пустые контейнеры
+        $('.form-row:empty, p:empty').remove();
+        
+        console.log('✅ Удаление ненужных полей завершено');
+    }
+    
     // ========== ИНИЦИАЛИЗАЦИЯ ДЛЯ КЛАССИЧЕСКОГО ЧЕКАУТА ==========
     
     function initCdekDelivery() {
@@ -2384,11 +2577,17 @@ jQuery(document).ready(function($) {
             mapContainers.slice(1).remove(); // Оставляем только первую карту
         }
         
+        // Удаляем ненужные поля адреса
+        setTimeout(() => removeUnnecessaryAddressFields(), 100);
+        
         // Инициализируем автокомплит для поиска городов
         setTimeout(() => initAddressAutocomplete(), 200);
         
         // Инициализируем карту
         setTimeout(() => initYandexMap(), 300);
+        
+        // Повторно удаляем поля после инициализации (на случай если они появились снова)
+        setTimeout(() => removeUnnecessaryAddressFields(), 1000);
         
         isInitialized = true;
         
@@ -2714,6 +2913,25 @@ jQuery(document).ready(function($) {
                 }
             }
         }, 100);
+    });
+    
+    // Дополнительное удаление полей при различных событиях
+    $(document).on('DOMNodeInserted', function(e) {
+        // Проверяем, не добавились ли ненужные поля
+        var $target = $(e.target);
+        if ($target.is('[id*="city_field"], [id*="state_field"], [id*="postcode_field"]') ||
+            $target.find('[id*="city_field"], [id*="state_field"], [id*="postcode_field"]').length > 0) {
+            console.log('🗑️ Обнаружены новые ненужные поля, удаляем...');
+            setTimeout(() => removeUnnecessaryAddressFields(), 10);
+        }
+    });
+    
+    // Переинициализация при обновлении чекаута
+    $(document.body).on('updated_checkout', function() {
+        console.log('🔄 Чекаут обновился, удаляем ненужные поля...');
+        
+        // Удаляем ненужные поля при каждом обновлении
+        setTimeout(() => removeUnnecessaryAddressFields(), 50);
     });
     
     console.log('📋 СДЭК доставка для классического чекаута загружена');

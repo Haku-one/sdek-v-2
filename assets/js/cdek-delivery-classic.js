@@ -1,10 +1,10 @@
 /**
  * СДЭК Доставка - Версия для классического чекаута WooCommerce
  * Адаптировано для работы с классическими элементами формы вместо блоков
- * ✅ Работает БЕЗ jQuery - использует нативный JavaScript
+ * ✅ Работает С jQuery
  */
 
-console.log('🚀 СДЭК Delivery Classic загружается без jQuery...');
+console.log('🚀 СДЭК Delivery Classic загружается с jQuery...');
 
 // Глобальная защита от создания нескольких карт
 window.cdekMapCreationLock = false;
@@ -408,7 +408,7 @@ class SmartAddressSearch {
         
         console.log('🔍 Поиск через DaData API:', query);
         
-        Utils.ajax({
+        $.ajax({
             url: cdek_ajax.ajax_url,
             type: 'POST',
             dataType: 'json',
@@ -487,11 +487,9 @@ class SmartAddressSearch {
 
 // ========== ОСНОВНОЙ КОД СДЭК ДЛЯ КЛАССИЧЕСКОГО ЧЕКАУТА ==========
 
-Utils.$(document).ready(function() {
-    // Используем наш Utils.$ вместо jQuery
-    const $ = Utils.$;
+jQuery(document).ready(function($) {
     
-    console.log('✅ СДЭК инициализируется с нативным JavaScript (без jQuery)');
+    console.log('✅ СДЭК инициализируется с jQuery');
     console.log('📊 Состояние jQuery:', typeof jQuery !== 'undefined' ? 'загружен' : 'НЕ загружен');
     var cdekMap = null;
     var cdekPoints = [];
@@ -769,7 +767,7 @@ Utils.$(document).ready(function() {
         console.log('Запрос расчета стоимости доставки для пункта:', point.code);
         console.log('Данные корзины:', cartData);
         
-        Utils.ajax({
+        $.ajax({
             url: cdek_ajax.ajax_url,
             type: 'POST',
             dataType: 'json',
@@ -897,54 +895,18 @@ Utils.$(document).ready(function() {
         // Работаем с первым найденным полем
         addressInput = addressInput.first();
         
-        // Создаем элемент через createElement вместо HTML строки
-        var suggestionsContainer = document.createElement('div');
-        suggestionsContainer.id = 'address-suggestions';
-        suggestionsContainer.className = 'smart-address-suggestions';
-        suggestionsContainer.style.display = 'none';
-        suggestionsContainer.innerHTML = `
-            <div class="suggestions-header">
-                <span class="suggestions-title">Выберите адрес</span>
-                <span class="suggestions-count"></span>
+        var suggestionsContainer = $(`
+            <div id="address-suggestions" class="smart-address-suggestions" style="display: none;">
+                <div class="suggestions-header">
+                    <span class="suggestions-title">Выберите адрес</span>
+                    <span class="suggestions-count"></span>
+                </div>
+                <div class="suggestions-list"></div>
+                <div class="suggestions-footer">
+                    <small>💡 Начните вводить город или улицу</small>
+                </div>
             </div>
-            <div class="suggestions-list"></div>
-            <div class="suggestions-footer">
-                <small>💡 Начните вводить город или улицу</small>
-            </div>
-        `;
-        
-        // Обворачиваем в наш Utils.$ объект
-        var $suggestionsContainer = {
-            length: 1,
-            get: () => suggestionsContainer,
-            find: (selector) => {
-                const elements = suggestionsContainer.querySelectorAll(selector);
-                return {
-                    length: elements.length,
-                    html: (html) => {
-                        if (html !== undefined) {
-                            elements.forEach(el => el.innerHTML = html);
-                        }
-                        return elements[0]?.innerHTML || '';
-                    },
-                    text: (text) => {
-                        if (text !== undefined) {
-                            elements.forEach(el => el.textContent = text);
-                        }
-                        return elements[0]?.textContent || '';
-                    },
-                    empty: () => {
-                        elements.forEach(el => el.innerHTML = '');
-                    }
-                };
-            },
-            show: () => {
-                suggestionsContainer.style.display = '';
-            },
-            hide: () => {
-                suggestionsContainer.style.display = 'none';
-            }
-        };
+        `);
         
         addressInput.parent().css('position', 'relative');
         addressInput.parent().append(suggestionsContainer);
@@ -1054,7 +1016,7 @@ Utils.$(document).ready(function() {
         var currentSuggestions = [];
         
         addressInput.on('input', function() {
-            var query = this.value.trim();
+            var query = $(this).val().trim();
             
             if (query.length >= 2) {
                 // Показываем индикатор поиска городов
@@ -1072,7 +1034,7 @@ Utils.$(document).ready(function() {
         });
         
         function showSearchLoader() {
-            var container = $suggestionsContainer.find('.suggestions-list');
+            var container = suggestionsContainer.find('.suggestions-list');
             container.html(`
                 <div class="suggestion-item">
                     <div class="suggestion-icon">🔄</div>
@@ -1082,8 +1044,8 @@ Utils.$(document).ready(function() {
                     </div>
                 </div>
             `);
-            $suggestionsContainer.find('.suggestions-count').text('Поиск...');
-            $suggestionsContainer.show();
+            suggestionsContainer.find('.suggestions-count').text('Поиск...');
+            suggestionsContainer.show();
         }
         
         function hideSearchLoader() {
@@ -1091,12 +1053,12 @@ Utils.$(document).ready(function() {
         }
         
         function showAddressSuggestions(suggestions, query) {
-            var container = $suggestionsContainer.find('.suggestions-list');
+            var container = suggestionsContainer.find('.suggestions-list');
             container.empty();
             
             if (suggestions.length === 0) {
                 container.html('<div class="suggestion-item"><div class="suggestion-content"><div class="suggestion-title">Ничего не найдено</div><div class="suggestion-subtitle">Попробуйте изменить запрос</div></div></div>');
-                $suggestionsContainer.find('.suggestions-count').text('0 результатов');
+                suggestionsContainer.find('.suggestions-count').text('0 результатов');
             } else {
                 suggestions.forEach(function(suggestion, index) {
                     var displayText = suggestion.city;
@@ -1119,35 +1081,27 @@ Utils.$(document).ready(function() {
                         }
                     }
                     
-                    // Создаем элемент через createElement
-                    var item = document.createElement('div');
-                    item.className = 'suggestion-item';
-                    item.setAttribute('data-index', index);
-                    item.innerHTML = `
-                        <div class="suggestion-icon">${icon}</div>
-                        <div class="suggestion-content">
-                            <div class="suggestion-title">${highlightedText}</div>
-                            <div class="suggestion-subtitle">${subtitle}</div>
+                    var item = $(`
+                        <div class="suggestion-item" data-index="${index}">
+                            <div class="suggestion-icon">${icon}</div>
+                            <div class="suggestion-content">
+                                <div class="suggestion-title">${highlightedText}</div>
+                                <div class="suggestion-subtitle">${subtitle}</div>
+                            </div>
                         </div>
-                    `;
+                    `);
                     
-                    item.addEventListener('click', function() {
+                    item.on('click', function() {
                         selectSuggestion(suggestion);
                     });
                     
-                    // Добавляем элемент к контейнеру
-                    var containerEl = $suggestionsContainer.find('.suggestions-list').get ? 
-                        $suggestionsContainer.find('.suggestions-list').get(0) : 
-                        suggestionsContainer.querySelector('.suggestions-list');
-                    if (containerEl) {
-                        containerEl.appendChild(item);
-                    }
+                    container.append(item);
                 });
                 
-                $suggestionsContainer.find('.suggestions-count').text(`${suggestions.length} результатов`);
+                suggestionsContainer.find('.suggestions-count').text(`${suggestions.length} результатов`);
             }
             
-            $suggestionsContainer.show();
+            suggestionsContainer.show();
         }
         
         function highlightQuery(text, query) {
@@ -1198,7 +1152,7 @@ Utils.$(document).ready(function() {
                 return;
             }
             
-            Utils.ajax({
+            $.ajax({
                 url: cdek_ajax.ajax_url,
                 type: 'POST',
                 data: {
@@ -1236,7 +1190,7 @@ Utils.$(document).ready(function() {
         }
         
         function hideAddressSuggestions() {
-            $suggestionsContainer.hide();
+            suggestionsContainer.hide();
         }
         
         $(document).on('click', function(e) {
@@ -1441,7 +1395,7 @@ Utils.$(document).ready(function() {
         
         console.log('📡 Запрос к API СДЭК для:', searchAddress);
         
-        Utils.ajax({
+        $.ajax({
             url: cdek_ajax.ajax_url,
             type: 'POST',
             dataType: 'json',
@@ -1871,7 +1825,7 @@ Utils.$(document).ready(function() {
             $('#cdek-delivery-cost').val(deliveryCost);
             
             // Обновляем чекаут стандартным способом
-            Utils.$(document.body).trigger('update_checkout');
+            $(document.body).trigger('update_checkout');
             
             // Обновляем итог через нашу функцию с задержкой
             setTimeout(() => {
@@ -2068,7 +2022,7 @@ Utils.$(document).ready(function() {
             }
             
             // 2. Мягкое обновление чекаута
-            Utils.$(document.body).trigger('update_checkout');
+            $(document.body).trigger('update_checkout');
             
         }, 100);
         
@@ -2112,7 +2066,7 @@ Utils.$(document).ready(function() {
         // Финальное мягкое обновление
         setTimeout(() => {
             console.log('🔄 Финальное мягкое обновление чекаута...');
-            Utils.$(document.body).trigger('update_checkout');
+            $(document.body).trigger('update_checkout');
         }, 1000);
     }
     
@@ -2262,8 +2216,7 @@ Utils.$(document).ready(function() {
             $('#cdek-delivery-content').show();
             showCdekHint();
             // Автоматически ищем пункты если город уже введен
-            var billingAddressEl = document.getElementById('billing_address_1');
-            var currentAddress = billingAddressEl ? billingAddressEl.value : '';
+            var currentAddress = $('#billing_address_1').val();
             if (currentAddress && currentAddress.length > 2) {
                 var city = currentAddress.split(',')[0].trim();
                 if (city.length > 2) {
@@ -2292,7 +2245,7 @@ Utils.$(document).ready(function() {
         
         // Принудительно очищаем стоимость доставки СДЭК в сессии
         if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
-            Utils.ajax({
+            $.ajax({
                 url: cdek_ajax.ajax_url,
                 type: 'POST',
                 data: {
@@ -2329,7 +2282,7 @@ Utils.$(document).ready(function() {
         
         // Принудительно очищаем стоимость доставки СДЭК в сессии
         if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
-            Utils.ajax({
+            $.ajax({
                 url: cdek_ajax.ajax_url,
                 type: 'POST',
                 data: {
@@ -2350,9 +2303,9 @@ Utils.$(document).ready(function() {
     
     // Инициализация при изменении метода доставки
     $(document).on('change', 'input[name^="shipping_method"]', function() {
-        console.log('🔄 Изменен метод доставки:', this.value);
+        console.log('🔄 Изменен метод доставки:', $(this).val());
         
-        if (this.value.indexOf('cdek_delivery') !== -1) {
+        if ($(this).val().indexOf('cdek_delivery') !== -1) {
             console.log('✅ Выбрана доставка СДЭК');
             $('#cdek-map-container, #cdek-map-wrapper').show();
             
@@ -2373,12 +2326,11 @@ Utils.$(document).ready(function() {
     
     // Обработчик поиска по городу в поле адреса
     $(document).on('input', '#billing_address_1, #shipping_address_1', function() {
-        var address = this.value.trim();
+        var address = $(this).val().trim();
         var city = address.split(',')[0].trim();
         
         // Автоматически ищем пункты СДЭК только если выбрана доставка СДЭК
-        var deliveryTypeEl = document.getElementById('cdek-delivery-type');
-        if (deliveryTypeEl && deliveryTypeEl.value === 'cdek' && city.length > 2) {
+        if ($('#cdek-delivery-type').val() === 'cdek' && city.length > 2) {
             // Проверяем, есть ли сохраненные данные города из DaData
             var cityData = null;
             if (window.lastSelectedCityData && window.lastSelectedCityData.city === city) {
@@ -2411,7 +2363,7 @@ Utils.$(document).ready(function() {
         // Проверяем, выбрана ли доставка СДЭК
         var cdekSelected = false;
         $('input[name^="shipping_method"]:checked').each(function() {
-            if (this.value.indexOf('cdek_delivery') !== -1) {
+            if ($(this).val().indexOf('cdek_delivery') !== -1) {
                 cdekSelected = true;
                 console.log('✅ СДЭК доставка уже выбрана при загрузке');
             }
@@ -2450,8 +2402,7 @@ Utils.$(document).ready(function() {
             
             if ($('#cdek-map-wrapper').is(':visible')) {
                 // Восстанавливаем состояние кнопок
-                var deliveryTypeEl = document.getElementById('cdek-delivery-type');
-                var deliveryType = (deliveryTypeEl ? deliveryTypeEl.value : '') || 'cdek';
+                var deliveryType = $('#cdek-delivery-type').val() || 'cdek';
                 $('.cdek-delivery-option').removeClass('active');
                 $('.cdek-delivery-option[data-option="' + deliveryType + '"]').addClass('active');
                 
@@ -2465,5 +2416,5 @@ Utils.$(document).ready(function() {
     });
     
     console.log('📋 СДЭК доставка для классического чекаута загружена');
-    console.log('✅ Все ошибки jQuery исправлены - используется нативный JavaScript');
+    console.log('✅ Возвращен к использованию jQuery');
 });

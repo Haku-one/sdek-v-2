@@ -63,6 +63,14 @@ class CdekDeliveryPlugin {
         // Хук для очистки сессии при загрузке checkout
         add_action('woocommerce_checkout_init', array($this, 'cleanup_session_on_checkout_init'));
         
+        // Хуки для админки заказов - поле трек-номера СДЭК
+        add_action('add_meta_boxes', array($this, 'add_cdek_tracking_meta_box'));
+        add_action('save_post', array($this, 'save_cdek_tracking_meta_box'));
+        
+        // Хуки для отображения трек-номера в ЛК клиента
+        add_filter('woocommerce_my_account_my_orders_actions', array($this, 'add_track_order_action'), 10, 2);
+        add_action('woocommerce_view_order', array($this, 'display_cdek_tracking_in_order'), 20);
+        
         // Хук для обновления суммы заказа ПЕРЕД инициализацией платежа
         add_action('woocommerce_checkout_process', array($this, 'update_order_total_before_payment'), 5);
         add_filter('woocommerce_calculated_total', array($this, 'filter_calculated_total'), 10, 2);
@@ -2601,5 +2609,190 @@ class CdekAPI {
             error_log('СДЭК API: HTTP ошибка при получении статуса заказа: ' . $response->get_error_message());
             return false;
         }
+    }
+    
+    // ========== ФУНКЦИИ ДЛЯ ТРЕК-НОМЕРА СДЭК В АДМИНКЕ ==========
+    
+    /**
+     * Добавляет мета-бокс для трек-номера СДЭК в админку заказов
+     */
+    public function add_cdek_tracking_meta_box() {
+        add_meta_box(
+            'cdek_tracking_number',
+            'СДЭК Трек-номер',
+            array($this, 'cdek_tracking_meta_box_content'),
+            'shop_order',
+            'side',
+            'high'
+        );
+    }
+    
+    /**
+     * Отображает содержимое мета-бокса трек-номера
+     */
+    public function cdek_tracking_meta_box_content($post) {
+        // Получаем текущий трек-номер
+        $tracking_number = get_post_meta($post->ID, '_cdek_tracking_number', true);
+        $order = wc_get_order($post->ID);
+        
+        // Проверяем, что это заказ с доставкой СДЭК
+        $is_cdek_order = false;
+        if ($order) {
+            foreach ($order->get_shipping_methods() as $method) {
+                if (strpos($method->get_method_id(), 'cdek') !== false) {
+                    $is_cdek_order = true;
+                    break;
+                }
+            }
+        }
+        
+        wp_nonce_field('save_cdek_tracking', 'cdek_tracking_nonce');
+        
+        echo '<div style="margin: 10px 0;">';
+        
+        if ($is_cdek_order) {
+            echo '<p><strong>Трек-номер СДЭК:</strong></p>';
+            echo '<input type="text" name="cdek_tracking_number" value="' . esc_attr($tracking_number) . '" 
+                         style="width: 100%; padding: 5px;" placeholder="Введите трек-номер СДЭК" />';
+            
+            if ($tracking_number) {
+                echo '<p style="margin-top: 10px; color: #0073aa;">
+                        <span class="dashicons dashicons-yes-alt"></span> 
+                        Трек-номер установлен: <strong>' . esc_html($tracking_number) . '</strong>
+                      </p>';
+                echo '<p><a href="https://cdek.ru/ru/tracking?order_id=' . esc_attr($tracking_number) . '" 
+                            target="_blank" style="text-decoration: none;">
+                            <span class="dashicons dashicons-external"></span> Отследить на сайте СДЭК
+                         </a></p>';
+            } else {
+                echo '<p style="margin-top: 10px; color: #666;">
+                        <span class="dashicons dashicons-info"></span> 
+                        Клиент увидит "Скоро появится трек-номер" пока поле не заполнено
+                      </p>';
+            }
+        } else {
+            echo '<p style="color: #666;">
+                    <span class="dashicons dashicons-info"></span> 
+                    Это не заказ с доставкой СДЭК
+                  </p>';
+        }
+        
+        echo '</div>';
+    }
+    
+    /**
+     * Сохраняет трек-номер СДЭК при сохранении заказа
+     */
+    public function save_cdek_tracking_meta_box($post_id) {
+        // Проверки безопасности
+        if (!isset($_POST['cdek_tracking_nonce']) || !wp_verify_nonce($_POST['cdek_tracking_nonce'], 'save_cdek_tracking')) {
+            return;
+        }
+        
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            return;
+        }
+        
+        if (!current_user_can('edit_shop_order', $post_id)) {
+            return;
+        }
+        
+        if (get_post_type($post_id) !== 'shop_order') {
+            return;
+        }
+        
+        // Сохраняем трек-номер
+        $tracking_number = sanitize_text_field($_POST['cdek_tracking_number'] ?? '');
+        $old_tracking = get_post_meta($post_id, '_cdek_tracking_number', true);
+        
+        update_post_meta($post_id, '_cdek_tracking_number', $tracking_number);
+        
+        // Если трек-номер был добавлен впервые, добавляем заметку к заказу
+        if (empty($old_tracking) && !empty($tracking_number)) {
+            $order = wc_get_order($post_id);
+            if ($order) {
+                $order->add_order_note(
+                    sprintf('Добавлен трек-номер СДЭК: %s', $tracking_number)
+                );
+                
+                // Отправляем уведомление клиенту, если статус подходящий
+                $status = $order->get_status();
+                if (in_array($status, ['processing', 'shipped', 'completed'])) {
+                    $this->maybe_send_tracking_notification($order, $tracking_number);
+                }
+            }
+        }
+    }
+    
+    // ========== ФУНКЦИИ ДЛЯ ОТОБРАЖЕНИЯ В ЛК КЛИЕНТА ==========
+    
+    /**
+     * Добавляет кнопку "Отследить" в список заказов клиента
+     */
+    public function add_track_order_action($actions, $order) {
+        $tracking_number = get_post_meta($order->get_id(), '_cdek_tracking_number', true);
+        
+        if ($tracking_number && $this->is_cdek_order($order)) {
+            $actions['track'] = array(
+                'url'  => 'https://cdek.ru/ru/tracking?order_id=' . $tracking_number,
+                'name' => 'Отследить СДЭК'
+            );
+        }
+        
+        return $actions;
+    }
+    
+    /**
+     * Отображает трек-номер на странице просмотра заказа в ЛК
+     */
+    public function display_cdek_tracking_in_order($order_id) {
+        $order = wc_get_order($order_id);
+        if (!$order || !$this->is_cdek_order($order)) {
+            return;
+        }
+        
+        $tracking_number = get_post_meta($order_id, '_cdek_tracking_number', true);
+        
+        echo '<div class="cdek-tracking-info" style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: #f9f9f9;">';
+        echo '<h3 style="margin-top: 0; color: #0073aa;">📦 Отслеживание СДЭК</h3>';
+        
+        if ($tracking_number) {
+            echo '<p><strong>Трек-номер:</strong> <code style="background: #fff; padding: 2px 6px; border-radius: 3px;">' . esc_html($tracking_number) . '</code></p>';
+            echo '<p><a href="https://cdek.ru/ru/tracking?order_id=' . esc_attr($tracking_number) . '" 
+                        target="_blank" 
+                        style="display: inline-block; background: #0073aa; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px;">
+                        🔍 Отследить посылку на сайте СДЭК
+                     </a></p>';
+            echo '<p style="font-size: 12px; color: #666;">Обновления по трек-номеру могут появляться с задержкой до 24 часов</p>';
+        } else {
+            echo '<p style="color: #666;">⏳ <em>Скоро появится трек-номер для отслеживания</em></p>';
+            echo '<p style="font-size: 12px; color: #666;">Трек-номер будет добавлен после отправки посылки службой СДЭК</p>';
+        }
+        
+        echo '</div>';
+    }
+    
+    /**
+     * Проверяет, является ли заказ заказом с доставкой СДЭК
+     */
+    private function is_cdek_order($order) {
+        foreach ($order->get_shipping_methods() as $method) {
+            if (strpos($method->get_method_id(), 'cdek') !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * Отправляет уведомление клиенту о трек-номере (при необходимости)
+     */
+    private function maybe_send_tracking_notification($order, $tracking_number) {
+        // Здесь можно добавить отправку email уведомления
+        // Пока просто добавляем заметку к заказу
+        $order->add_order_note(
+            sprintf('Клиенту доступен трек-номер для отслеживания: %s', $tracking_number),
+            true // true = заметка видна клиенту
+        );
     }
 }

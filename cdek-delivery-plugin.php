@@ -427,12 +427,16 @@ class CdekDeliveryPlugin {
         foreach ($result['suggestions'] as $suggestion) {
             $data = $suggestion['data'];
             
-            // Определяем тип адреса и проверяем наличие СДЭК пунктов
+            // Ищем ТОЛЬКО города (пропускаем улицы)
             $city_name = $data['city'] ?? $data['settlement'] ?? '';
-            $street_name = $data['street'] ?? '';
             
-            // Пропускаем если нет города
-            if (empty($city_name)) {
+            // Пропускаем если нет города или если это улица
+            if (empty($city_name) || !empty($data['street'])) {
+                continue;
+            }
+            
+            // Избегаем дублирования городов
+            if (in_array($city_name, $processed_cities)) {
                 continue;
             }
             
@@ -442,62 +446,40 @@ class CdekDeliveryPlugin {
                 $cdek_code = $this->get_cdek_city_code_from_dadata($data['kladr_id']);
             }
             
-            // Формируем запись для города
-            if (!empty($city_name) && !in_array($city_name, $processed_cities)) {
-                $display_value = $city_name;
-                if (!empty($data['city_type_full'])) {
-                    $display_value = $data['city_type_full'] . ' ' . $city_name;
-                }
-                
-                $suggestions[] = array(
-                    'value' => $display_value,
-                    'unrestricted_value' => $suggestion['unrestricted_value'] ?? $suggestion['value'],
-                    'data' => $data,
-                    'source' => 'dadata',
-                    'type' => 'city',
-                    'city' => $city_name,
-                    'cdek_code' => $cdek_code,
-                    'has_cdek' => !empty($cdek_code)
-                );
-                
-                $processed_cities[] = $city_name;
+            // Формируем красивое название города
+            $display_value = $city_name;
+            if (!empty($data['city_type_full'])) {
+                $display_value = $data['city_type_full'] . ' ' . $city_name;
+            } elseif (!empty($data['settlement_type_full'])) {
+                $display_value = $data['settlement_type_full'] . ' ' . $city_name;
             }
             
-            // Формируем запись для улицы (если есть)
-            if (!empty($street_name) && !empty($city_name)) {
-                $display_value = $data['street_type_full'] . ' ' . $street_name . ', ' . $city_name;
-                
-                $suggestions[] = array(
-                    'value' => $display_value,
-                    'unrestricted_value' => $suggestion['unrestricted_value'] ?? $suggestion['value'],
-                    'data' => $data,
-                    'source' => 'dadata',
-                    'type' => 'street',
-                    'city' => $city_name,
-                    'street' => $street_name,
-                    'cdek_code' => $cdek_code,
-                    'has_cdek' => !empty($cdek_code)
-                );
-            }
+            $suggestions[] = array(
+                'value' => $display_value,
+                'unrestricted_value' => $suggestion['unrestricted_value'] ?? $suggestion['value'],
+                'data' => $data,
+                'source' => 'dadata',
+                'type' => 'city',
+                'city' => $city_name,
+                'cdek_code' => $cdek_code,
+                'has_cdek' => !empty($cdek_code)
+            );
+            
+            $processed_cities[] = $city_name;
         }
         
-        // Сортируем: сначала города с СДЭК, потом улицы с СДЭК, затем остальные
+        // Сортируем: сначала города с СДЭК, потом остальные
         usort($suggestions, function($a, $b) {
-            // Приоритет: города с СДЭК > улицы с СДЭК > города без СДЭК > улицы без СДЭК
-            $a_priority = 0;
-            $b_priority = 0;
+            // Приоритет: города с СДЭК > города без СДЭК
+            $a_priority = $a['has_cdek'] ? 2 : 1;
+            $b_priority = $b['has_cdek'] ? 2 : 1;
             
-            if ($a['type'] === 'city' && $a['has_cdek']) $a_priority = 4;
-            elseif ($a['type'] === 'street' && $a['has_cdek']) $a_priority = 3;
-            elseif ($a['type'] === 'city') $a_priority = 2;
-            else $a_priority = 1;
+            if ($a_priority !== $b_priority) {
+                return $b_priority - $a_priority;
+            }
             
-            if ($b['type'] === 'city' && $b['has_cdek']) $b_priority = 4;
-            elseif ($b['type'] === 'street' && $b['has_cdek']) $b_priority = 3;
-            elseif ($b['type'] === 'city') $b_priority = 2;
-            else $b_priority = 1;
-            
-            return $b_priority - $a_priority;
+            // Если приоритет одинаковый, сортируем по алфавиту
+            return strcmp($a['city'], $b['city']);
         });
         
         // Ограничиваем результат

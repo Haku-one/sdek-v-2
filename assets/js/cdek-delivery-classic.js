@@ -1084,52 +1084,17 @@ jQuery(document).ready(function($) {
                 container.html('<div class="suggestion-item"><div class="suggestion-content"><div class="suggestion-title">Ничего не найдено</div><div class="suggestion-subtitle">Попробуйте изменить запрос</div></div></div>');
                 suggestionsContainer.find('.suggestions-count').text('0 результатов');
             } else {
-                // Группируем результаты: сначала города, потом улицы
-                var cities = suggestions.filter(s => s.type === 'city' || (!s.type && s.source !== 'dadata'));
-                var streets = suggestions.filter(s => s.type === 'street' || (s.data && s.data.street));
-                
-                var allSuggestions = [];
-                
-                // Добавляем города
-                if (cities.length > 0) {
-                    cities.forEach(function(suggestion, index) {
-                        var item = createSuggestionItem(suggestion, index, query, true);
-                        allSuggestions.push(item);
+                // Теперь показываем только города (без группировки)
+                suggestions.forEach(function(suggestion, index) {
+                    var item = createSuggestionItem(suggestion, index, query, true);
+                    container.append(item.element);
+                    item.element.on('click', function() {
+                        selectSuggestion(item.suggestion);
                     });
-                }
-                
-                // Добавляем разделитель если есть и города и улицы
-                if (cities.length > 0 && streets.length > 0) {
-                    allSuggestions.push(`
-                        <div class="suggestion-separator" style="padding: 8px 12px; background: #f5f5f5; font-size: 12px; color: #666; font-weight: 600;">
-                            🛣️ Улицы с пунктами СДЭК
-                        </div>
-                    `);
-                }
-                
-                // Добавляем улицы
-                if (streets.length > 0) {
-                    streets.forEach(function(suggestion, index) {
-                        var item = createSuggestionItem(suggestion, cities.length + index, query, false);
-                        allSuggestions.push(item);
-                    });
-                }
-                
-                // Выводим все результаты
-                allSuggestions.forEach(function(itemHtml, idx) {
-                    if (typeof itemHtml === 'string') {
-                        container.append(itemHtml);
-                    } else {
-                        container.append(itemHtml.element);
-                        itemHtml.element.on('click', function() {
-                            selectSuggestion(itemHtml.suggestion);
-                        });
-                    }
                 });
                 
-                var totalCount = cities.length + streets.length;
                 var cdekCount = suggestions.filter(s => s.has_cdek).length;
-                var countText = `${totalCount} результатов`;
+                var countText = `${suggestions.length} городов`;
                 if (cdekCount > 0) {
                     countText += ` (${cdekCount} с СДЭК)`;
                 }
@@ -1143,37 +1108,19 @@ jQuery(document).ready(function($) {
             var displayText = suggestion.value || suggestion.city || suggestion.display;
             var highlightedText = highlightQuery(displayText, query);
             
-            var icon = isCity ? '🏙️' : '🛣️';
+            var icon = '🏙️';
             var subtitle = 'Россия';
             
             // Обработка данных от DaData
             if (suggestion.data) {
                 var data = suggestion.data;
-                
-                if (isCity) {
-                    // Это город
-                    icon = suggestion.has_cdek ? '🎯' : '🏙️';
-                    subtitle = data.region || 'Россия';
-                    if (suggestion.has_cdek) {
-                        subtitle += ' • доступна доставка СДЭК';
-                    } else {
-                        subtitle += ' • СДЭК недоступен';
-                    }
+                icon = suggestion.has_cdek ? '🎯' : '🏙️';
+                subtitle = data.region || 'Россия';
+                if (suggestion.has_cdek) {
+                    subtitle += ' • доступна доставка СДЭК';
                 } else {
-                    // Это улица
-                    icon = suggestion.has_cdek ? '🛣️' : '📍';
-                    var cityName = data.city || data.settlement || 'Город';
-                    subtitle = cityName;
-                    if (suggestion.has_cdek) {
-                        subtitle += ' • пункты СДЭК на улице';
-                    } else {
-                        subtitle += ' • нет пунктов СДЭК';
-                    }
+                    subtitle += ' • СДЭК недоступен';
                 }
-            } else if (suggestion.type === 'street') {
-                // Локальный результат - улица
-                icon = '🛣️';
-                subtitle = suggestion.city + ' • улица с пунктами СДЭК';
             } else if (suggestion.source === 'dadata') {
                 // Старый формат DaData
                 icon = suggestion.has_cdek ? '🎯' : '🏙️';
@@ -1218,38 +1165,25 @@ jQuery(document).ready(function($) {
         function selectSuggestion(suggestion) {
             var fullAddress, cityName;
             
-            // Обработка результата от DaData
+            // Обработка результата от DaData (только города)
             if (suggestion.data) {
                 var data = suggestion.data;
-                fullAddress = suggestion.value; // Полный адрес из DaData
                 
                 // Извлекаем название города
                 cityName = data.city || data.settlement || data.region;
                 
-                // Определяем тип выбранного элемента
-                if (suggestion.type === 'street' && data.street) {
-                    // Выбрана улица - используем полный адрес
-                    fullAddress = suggestion.value;
-                } else if (suggestion.type === 'city' || !data.street) {
-                    // Выбран город - используем только название города
-                    if (data.city_type_full && data.city) {
-                        fullAddress = data.city_type_full + ' ' + data.city;
-                    } else if (data.settlement_type_full && data.settlement) {
-                        fullAddress = data.settlement_type_full + ' ' + data.settlement;
-                    } else {
-                        fullAddress = cityName;
-                    }
+                // Формируем красивое отображение города
+                if (data.city_type_full && data.city) {
+                    fullAddress = data.city_type_full + ' ' + data.city;
+                } else if (data.settlement_type_full && data.settlement) {
+                    fullAddress = data.settlement_type_full + ' ' + data.settlement;
+                } else {
+                    fullAddress = cityName;
                 }
             } else {
                 // Локальный результат
                 fullAddress = suggestion.value || suggestion.city;
                 cityName = suggestion.city;
-                
-                if (suggestion.type === 'street' && suggestion.street) {
-                    fullAddress = suggestion.city + ', ' + suggestion.street;
-                } else if (suggestion.address_full) {
-                    fullAddress = suggestion.address_full;
-                }
             }
             
             addressInput.val(fullAddress);
@@ -1490,6 +1424,99 @@ jQuery(document).ready(function($) {
     
     // ========== ФУНКЦИИ ДЛЯ ПОИСКА И ОТОБРАЖЕНИЯ ПУНКТОВ ВЫДАЧИ ==========
     
+    // Функция для постепенной загрузки маркеров
+    function addMarkersGradually(points, bounds) {
+        if (!cdekMap || !points || points.length === 0) {
+            return;
+        }
+        
+        var batchSize = 20; // Загружаем по 20 маркеров за раз
+        var currentIndex = 0;
+        var totalPoints = points.length;
+        
+        console.log(`🗺️ Начинаем постепенную загрузку ${totalPoints} маркеров по ${batchSize} за раз`);
+        
+        // Показываем индикатор загрузки
+        $('#cdek-points-count').append(' <span id="markers-loading">⏳ Загружаем маркеры...</span>');
+        
+        function addNextBatch() {
+            var endIndex = Math.min(currentIndex + batchSize, totalPoints);
+            var batchPoints = points.slice(currentIndex, endIndex);
+            
+            batchPoints.forEach(function(point) {
+                if (point.location && point.location.latitude && point.location.longitude) {
+                    var coords = [point.location.latitude, point.location.longitude];
+                    bounds.push(coords);
+                    
+                    var placemark = new ymaps.Placemark(coords, {
+                        balloonContent: formatPointInfo(point),
+                        hintContent: point.name
+                    }, {
+                        preset: 'islands#redIcon'
+                    });
+                    
+                    placemark.events.add('click', function() {
+                        selectCdekPoint(point);
+                    });
+                    
+                    cdekMap.geoObjects.add(placemark);
+                }
+            });
+            
+            currentIndex = endIndex;
+            
+            // Обновляем прогресс
+            var progress = Math.round((currentIndex / totalPoints) * 100);
+            $('#markers-loading').text(`⏳ Загружено ${currentIndex}/${totalPoints} маркеров (${progress}%)`);
+            
+            // Если есть еще маркеры для загрузки
+            if (currentIndex < totalPoints) {
+                // Небольшая задержка между батчами чтобы не блокировать UI
+                setTimeout(addNextBatch, 50);
+            } else {
+                // Загрузка завершена
+                $('#markers-loading').remove();
+                console.log(`✅ Загрузка ${totalPoints} маркеров завершена`);
+                
+                // Центрируем карту после загрузки всех маркеров
+                centerMapOnBounds(bounds);
+            }
+        }
+        
+        // Начинаем загрузку первого батча
+        addNextBatch();
+    }
+    
+    // Функция для центрирования карты
+    function centerMapOnBounds(bounds) {
+        if (bounds.length > 0 && cdekMap) {
+            if (bounds.length === 1) {
+                cdekMap.setCenter(bounds[0], 14);
+            } else {
+                var minLat = Math.min.apply(null, bounds.map(function(coord) { return coord[0]; }));
+                var maxLat = Math.max.apply(null, bounds.map(function(coord) { return coord[0]; }));
+                var minLon = Math.min.apply(null, bounds.map(function(coord) { return coord[1]; }));
+                var maxLon = Math.max.apply(null, bounds.map(function(coord) { return coord[1]; }));
+                
+                var centerLat = (minLat + maxLat) / 2;
+                var centerLon = (minLon + maxLon) / 2;
+                
+                var latDiff = maxLat - minLat;
+                var lonDiff = maxLon - minLon;
+                var maxDiff = Math.max(latDiff, lonDiff);
+                
+                var zoom = 12;
+                if (maxDiff < 0.01) zoom = 15;
+                else if (maxDiff < 0.05) zoom = 13;
+                else if (maxDiff < 0.1) zoom = 12;
+                else if (maxDiff < 0.5) zoom = 10;
+                else zoom = 8;
+                
+                cdekMap.setCenter([centerLat, centerLon], zoom);
+            }
+        }
+    }
+    
     function searchCdekPoints(address, cityData) {
         var parsedAddress = parseAddress(address);
         
@@ -1638,20 +1665,12 @@ jQuery(document).ready(function($) {
         });
         
         
-        // Ограничиваем количество пунктов для карты (чтобы избежать лагов)
-        var mapPointsLimit = 50;
         var pointsToShow = filteredPoints;
-        var mapPoints = filteredPoints.slice(0, mapPointsLimit);
         
         var pointsInfo = '';
         if (filteredPoints.length > 0) {
             var locationInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
             pointsInfo = `Найдено ${filteredPoints.length} пунктов выдачи${locationInfo}`;
-            
-            // Добавляем информацию об ограничении если много пунктов
-            if (filteredPoints.length > mapPointsLimit) {
-                pointsInfo += ` (на карте показано ${mapPointsLimit})`;
-            }
         } else {
             var locationInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
             pointsInfo = `Пункты выдачи не найдены${locationInfo}`;
@@ -1678,54 +1697,10 @@ jQuery(document).ready(function($) {
         
         var bounds = [];
         
-        // Используем ограниченный список для карты
-        mapPoints.forEach(function(point, index) {
-            if (point.location && point.location.latitude && point.location.longitude) {
-                var coords = [point.location.latitude, point.location.longitude];
-                bounds.push(coords);
-                
-                var placemark = new ymaps.Placemark(coords, {
-                    balloonContent: formatPointInfo(point),
-                    hintContent: point.name
-                }, {
-                    preset: 'islands#redIcon'
-                });
-                
-                placemark.events.add('click', function() {
-                    selectCdekPoint(point);
-                });
-                
-                cdekMap.geoObjects.add(placemark);
-            }
-        });
+        // Постепенная загрузка маркеров для избежания лагов
+        addMarkersGradually(pointsToShow, bounds);
         
-        // Центрируем карту по найденным точкам
-        if (bounds.length > 0) {
-            if (bounds.length === 1) {
-                cdekMap.setCenter(bounds[0], 14);
-            } else {
-                var minLat = Math.min.apply(null, bounds.map(function(coord) { return coord[0]; }));
-                var maxLat = Math.max.apply(null, bounds.map(function(coord) { return coord[0]; }));
-                var minLon = Math.min.apply(null, bounds.map(function(coord) { return coord[1]; }));
-                var maxLon = Math.max.apply(null, bounds.map(function(coord) { return coord[1]; }));
-                
-                var centerLat = (minLat + maxLat) / 2;
-                var centerLon = (minLon + maxLon) / 2;
-                
-                var latDiff = maxLat - minLat;
-                var lonDiff = maxLon - minLon;
-                var maxDiff = Math.max(latDiff, lonDiff);
-                
-                var zoom = 12;
-                if (maxDiff < 0.01) zoom = 15;
-                else if (maxDiff < 0.05) zoom = 13;
-                else if (maxDiff < 0.1) zoom = 12;
-                else if (maxDiff < 0.5) zoom = 10;
-                else zoom = 8;
-                
-                cdekMap.setCenter([centerLat, centerLon], zoom);
-            }
-        }
+        // Центрирование карты происходит в функции addMarkersGradually
     }
     
     function displayPointsList(points) {

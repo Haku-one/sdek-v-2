@@ -139,6 +139,10 @@ class CdekDeliveryPlugin {
         
         // Хук для обновления стоимости доставки
         add_filter('woocommerce_package_rates', array($this, 'update_cdek_shipping_rates'), 10, 2);
+        
+        // Хуки для перестановки блоков чекаута
+        add_action('wp_head', array($this, 'add_checkout_blocks_reorder_styles'));
+        add_action('wp_footer', array($this, 'add_checkout_blocks_reorder_scripts'));
     }
     
     public function init() {
@@ -1757,6 +1761,289 @@ class CdekDeliveryPlugin {
             </style>
             <?php
         }
+    }
+    
+    /**
+     * Добавляет CSS стили для перестановки блоков "Детали" и "Ваш заказ" в чекауте
+     */
+    public function add_checkout_blocks_reorder_styles() {
+        // Применяем только на странице чекаута
+        if (!is_checkout() || is_admin()) {
+            return;
+        }
+        ?>
+        <style id="cdek-checkout-blocks-reorder-css">
+        /* Стили для перестановки блоков "Детали" и "Ваш заказ" в классическом чекауте WooCommerce */
+        
+        /* Основной контейнер правой колонки чекаута */
+        .woocommerce-checkout .col-2 {
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        
+        /* Блок "Ваш заказ" - перемещаем наверх */
+        .woocommerce-checkout #order_review_heading {
+            order: -2 !important;
+            margin-bottom: 1em;
+        }
+        
+        .woocommerce-checkout #order_review {
+            order: -1 !important;
+            margin-bottom: 2em;
+        }
+        
+        /* Все остальные элементы (включая детали) - остаются внизу */
+        .woocommerce-checkout .col-2 > *:not(#order_review_heading):not(#order_review) {
+            order: 1 !important;
+        }
+        
+        /* Альтернативный подход через CSS Grid для более надежной поддержки */
+        @supports (display: grid) {
+            .woocommerce-checkout .col-2 {
+                display: grid !important;
+                grid-template-rows: auto auto auto;
+                gap: 1em;
+            }
+            
+            .woocommerce-checkout #order_review_heading {
+                grid-row: 1;
+            }
+            
+            .woocommerce-checkout #order_review {
+                grid-row: 2;
+            }
+            
+            .woocommerce-checkout .col-2 > *:not(#order_review_heading):not(#order_review) {
+                grid-row: 3;
+            }
+        }
+        
+        /* Специальная поддержка для различных тем */
+        .storefront .woocommerce-checkout .col-2,
+        .astra-theme .woocommerce-checkout .col-2,
+        .oceanwp-theme .woocommerce-checkout .col-2 {
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        
+        /* Мобильная адаптивность */
+        @media (max-width: 768px) {
+            .woocommerce-checkout .col-2 {
+                display: flex !important;
+                flex-direction: column !important;
+            }
+            
+            .woocommerce-checkout #order_review_heading {
+                order: -2 !important;
+            }
+            
+            .woocommerce-checkout #order_review {
+                order: -1 !important;
+                margin-bottom: 1.5em !important;
+            }
+        }
+        
+        /* Улучшенные стили для блока "Ваш заказ" */
+        .woocommerce-checkout #order_review {
+            background: #f8f9fa;
+            padding: 20px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .woocommerce-checkout #order_review_heading {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 2px solid #007cba;
+            padding-bottom: 0.5em;
+        }
+        
+        /* Плавные переходы */
+        .woocommerce-checkout .col-2 > * {
+            transition: all 0.3s ease;
+        }
+        </style>
+        <?php
+    }
+    
+    /**
+     * Добавляет JavaScript для надежной перестановки блоков чекаута
+     */
+    public function add_checkout_blocks_reorder_scripts() {
+        // Применяем только на странице чекаута
+        if (!is_checkout() || is_admin()) {
+            return;
+        }
+        ?>
+        <script id="cdek-checkout-blocks-reorder-js">
+        (function($) {
+            'use strict';
+            
+            // Объект для управления перестановкой блоков чекаута
+            var CdekCheckoutReorder = {
+                
+                // Инициализация
+                init: function() {
+                    this.reorderBlocks();
+                    this.bindEvents();
+                    this.observeChanges();
+                },
+                
+                // Основная функция перестановки блоков
+                reorderBlocks: function() {
+                    var self = this;
+                    
+                    // Выполняем сразу
+                    this.performReorder();
+                    
+                    // Повторяем после полной загрузки DOM
+                    $(document).ready(function() {
+                        self.performReorder();
+                    });
+                    
+                    // И после загрузки всех ресурсов
+                    $(window).on('load', function() {
+                        setTimeout(function() {
+                            self.performReorder();
+                        }, 200);
+                    });
+                },
+                
+                // Выполняет физическую перестановку элементов DOM
+                performReorder: function() {
+                    var $checkoutForm = $('.woocommerce-checkout');
+                    if ($checkoutForm.length === 0) {
+                        return;
+                    }
+                    
+                    var $rightColumn = $checkoutForm.find('.col-2');
+                    if ($rightColumn.length === 0) {
+                        return;
+                    }
+                    
+                    var $orderReviewHeading = $('#order_review_heading');
+                    var $orderReview = $('#order_review');
+                    
+                    if ($orderReviewHeading.length && $orderReview.length) {
+                        // Сначала перемещаем заголовок "Ваш заказ"
+                        $orderReviewHeading.prependTo($rightColumn);
+                        
+                        // Затем блок с таблицей заказа
+                        $orderReview.insertAfter($orderReviewHeading);
+                        
+                        // Добавляем CSS класс для дополнительной стилизации
+                        $rightColumn.addClass('cdek-blocks-reordered');
+                        
+                        // Логируем успешную перестановку
+                        if (window.console && console.log) {
+                            console.log('✅ CDEK: Checkout blocks reordered - "Ваш заказ" moved to top');
+                        }
+                        
+                        // Триггерим событие для других скриптов
+                        $(document).trigger('cdek_checkout_blocks_reordered');
+                    }
+                },
+                
+                // Привязка событий для совместимости с AJAX обновлениями
+                bindEvents: function() {
+                    var self = this;
+                    
+                    // Стандартное обновление чекаута WooCommerce
+                    $('body').on('updated_checkout', function() {
+                        setTimeout(function() {
+                            self.performReorder();
+                        }, 50);
+                    });
+                    
+                    // AJAX обновления
+                    $(document).ajaxComplete(function(event, xhr, settings) {
+                        if (settings.url && (
+                            settings.url.indexOf('wc-ajax=update_order_review') !== -1 ||
+                            settings.url.indexOf('update_order_review') !== -1
+                        )) {
+                            setTimeout(function() {
+                                self.performReorder();
+                            }, 100);
+                        }
+                    });
+                    
+                    // События связанные с методами оплаты
+                    $('body').on('payment_method_selected', function() {
+                        setTimeout(function() {
+                            self.performReorder();
+                        }, 50);
+                    });
+                    
+                    // События CDEK плагина
+                    $(document).on('cdek_delivery_cost_updated cdek_point_selected', function() {
+                        setTimeout(function() {
+                            self.performReorder();
+                        }, 100);
+                    });
+                },
+                
+                // Наблюдение за изменениями DOM
+                observeChanges: function() {
+                    var self = this;
+                    
+                    // Используем MutationObserver для отслеживания изменений
+                    if (window.MutationObserver) {
+                        var observer = new MutationObserver(function(mutations) {
+                            var shouldReorder = false;
+                            
+                            mutations.forEach(function(mutation) {
+                                if (mutation.type === 'childList') {
+                                    var $target = $(mutation.target);
+                                    if ($target.closest('.woocommerce-checkout, .col-2').length > 0) {
+                                        shouldReorder = true;
+                                    }
+                                }
+                            });
+                            
+                            if (shouldReorder) {
+                                setTimeout(function() {
+                                    self.performReorder();
+                                }, 50);
+                            }
+                        });
+                        
+                        // Наблюдаем за областью чекаута
+                        var $checkoutArea = $('.woocommerce-checkout');
+                        if ($checkoutArea.length > 0) {
+                            observer.observe($checkoutArea[0], {
+                                childList: true,
+                                subtree: true
+                            });
+                        }
+                    }
+                }
+            };
+            
+            // Запускаем систему перестановки блоков
+            CdekCheckoutReorder.init();
+            
+            // Глобальная функция для принудительной перестановки
+            window.cdekForceCheckoutReorder = function() {
+                CdekCheckoutReorder.performReorder();
+            };
+            
+            // Интеграция с существующими функциями CDEK
+            if (window.updateClassicShippingCost) {
+                var originalUpdateFunction = window.updateClassicShippingCost;
+                window.updateClassicShippingCost = function() {
+                    var result = originalUpdateFunction.apply(this, arguments);
+                    setTimeout(function() {
+                        CdekCheckoutReorder.performReorder();
+                    }, 100);
+                    return result;
+                };
+            }
+            
+        })(jQuery);
+        </script>
+        <?php
     }
     
     /**

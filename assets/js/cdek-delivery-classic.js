@@ -501,6 +501,7 @@ jQuery(document).ready(function($) {
     // Флаги для контроля поиска пунктов СДЭК
     window.citySelectedFromDropdown = false;
     window.lastDropdownSelectedCity = null;
+    var cdekDataWasCleared = false; // Флаг для отслеживания очистки данных СДЭК
     
     // Инициализируем утилиты оптимизации
     const debouncer = new SmartDebouncer();
@@ -1601,6 +1602,11 @@ jQuery(document).ready(function($) {
     function displayCdekPoints(points) {
         cdekPoints = points;
         
+        // Сбрасываем флаг очистки данных СДЭК при успешном отображении пунктов
+        if (points && points.length > 0) {
+            cdekDataWasCleared = false;
+        }
+        
         if (!points || points.length === 0) {
             var cityInfo = window.currentSearchCity ? ` в городе "${window.currentSearchCity}"` : '';
             $('#cdek-points-count').text(`Пункты выдачи не найдены${cityInfo}`);
@@ -2341,6 +2347,9 @@ jQuery(document).ready(function($) {
     function clearAddressFieldForNonCdek(message) {
         console.log('🧹 Очищаем поле адреса для не-СДЭК доставки:', message);
         
+        // Устанавливаем флаг очистки данных СДЭК
+        cdekDataWasCleared = true;
+        
         // Очищаем поля адреса
         $('#billing_address_1, #shipping_address_1').val('');
         
@@ -2870,10 +2879,16 @@ jQuery(document).ready(function($) {
             console.log('🔄 Переключение на СДЭК:', {
                 currentAddress: currentAddress,
                 hasSelectedPoint: hasSelectedPoint,
-                hasPointsLoaded: hasPointsLoaded
+                hasPointsLoaded: hasPointsLoaded,
+                cdekDataWasCleared: cdekDataWasCleared
             });
             
-            if (currentAddress && currentAddress.length > 2) {
+            // Если данные СДЭК были очищены при переключении на другие вкладки
+            if (cdekDataWasCleared) {
+                console.log('⚠️ Данные СДЭК были очищены - показываем уведомление');
+                showAddressReenterNotification();
+                cdekDataWasCleared = false; // Сбрасываем флаг
+            } else if (currentAddress && currentAddress.length > 2) {
                 // Поле адреса заполнено
                 if (!hasPointsLoaded || !hasSelectedPoint) {
                     // Но пункты не загружены или не выбраны - показываем уведомление и очищаем поле

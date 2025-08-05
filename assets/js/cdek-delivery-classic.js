@@ -1424,67 +1424,73 @@ jQuery(document).ready(function($) {
     
     // ========== ФУНКЦИИ ДЛЯ ПОИСКА И ОТОБРАЖЕНИЯ ПУНКТОВ ВЫДАЧИ ==========
     
-    // Функция для постепенной загрузки маркеров
-    function addMarkersGradually(points, bounds) {
+    // Функция для добавления кластеризованных маркеров
+    function addClusteredMarkers(points) {
         if (!cdekMap || !points || points.length === 0) {
             return;
         }
         
-        var batchSize = 20; // Загружаем по 20 маркеров за раз
-        var currentIndex = 0;
-        var totalPoints = points.length;
+        console.log(`🗺️ Добавляем ${points.length} маркеров с кластеризацией`);
         
-        console.log(`🗺️ Начинаем постепенную загрузку ${totalPoints} маркеров по ${batchSize} за раз`);
+        // Создаем кластеризатор с красивыми кружочками и цифрами
+        var clusterer = new ymaps.Clusterer({
+            preset: 'islands#redClusterIcons',
+            clusterHideIconOnBalloonOpen: false,
+            geoObjectHideIconOnBalloonOpen: false,
+            gridSize: 80, // Размер сетки для группировки
+            clusterDisableClickZoom: false,
+            clusterOpenBalloonOnClick: true,
+            // Настройки кластеров разного размера
+            clusterNumbers: [10, 100], // При 10+ пунктах средний кластер, при 100+ большой
+            hasBalloon: true,
+            hasHint: true
+        });
         
-        // Показываем индикатор загрузки
-        $('#cdek-points-count').append(' <span id="markers-loading">⏳ Загружаем маркеры...</span>');
+        var geoObjects = [];
+        var bounds = [];
         
-        function addNextBatch() {
-            var endIndex = Math.min(currentIndex + batchSize, totalPoints);
-            var batchPoints = points.slice(currentIndex, endIndex);
-            
-            batchPoints.forEach(function(point) {
-                if (point.location && point.location.latitude && point.location.longitude) {
-                    var coords = [point.location.latitude, point.location.longitude];
-                    bounds.push(coords);
-                    
-                    var placemark = new ymaps.Placemark(coords, {
-                        balloonContent: formatPointInfo(point),
-                        hintContent: point.name
-                    }, {
-                        preset: 'islands#redIcon'
-                    });
-                    
-                    placemark.events.add('click', function() {
-                        selectCdekPoint(point);
-                    });
-                    
-                    cdekMap.geoObjects.add(placemark);
-                }
-            });
-            
-            currentIndex = endIndex;
-            
-            // Обновляем прогресс
-            var progress = Math.round((currentIndex / totalPoints) * 100);
-            $('#markers-loading').text(`⏳ Загружено ${currentIndex}/${totalPoints} маркеров (${progress}%)`);
-            
-            // Если есть еще маркеры для загрузки
-            if (currentIndex < totalPoints) {
-                // Небольшая задержка между батчами чтобы не блокировать UI
-                setTimeout(addNextBatch, 50);
-            } else {
-                // Загрузка завершена
-                $('#markers-loading').remove();
-                console.log(`✅ Загрузка ${totalPoints} маркеров завершена`);
+        // Создаем маркеры для всех пунктов
+        points.forEach(function(point) {
+            if (point.location && point.location.latitude && point.location.longitude) {
+                var coords = [point.location.latitude, point.location.longitude];
+                bounds.push(coords);
                 
-                // Центрируем карту после загрузки всех маркеров
-                centerMapOnBounds(bounds);
+                var placemark = new ymaps.Placemark(coords, {
+                    balloonContent: formatPointInfo(point),
+                    hintContent: point.name
+                }, {
+                    preset: 'islands#redIcon'
+                });
+                
+                placemark.events.add('click', function() {
+                    selectCdekPoint(point);
+                });
+                
+                geoObjects.push(placemark);
             }
-        }
+        });
         
-        // Начинаем загрузку первого батча
-        addNextBatch();
+        // Добавляем все маркеры в кластеризатор
+        clusterer.add(geoObjects);
+        
+        // Обработчик клика по кластеру
+        clusterer.events.add('click', function(e) {
+            var cluster = e.get('target');
+            var clusteredObjects = cluster.properties.get('geoObjects');
+            
+            console.log(`🔍 Клик по кластеру с ${clusteredObjects.length} пунктами`);
+            
+            // Можно добавить свою логику обработки клика по кластеру
+            // Например, показать список пунктов в балуне кластера
+        });
+        
+        // Добавляем кластеризатор на карту
+        cdekMap.geoObjects.add(clusterer);
+        
+        // Центрируем карту
+        centerMapOnBounds(bounds);
+        
+        console.log(`✅ Добавлено ${geoObjects.length} маркеров в кластеры`);
     }
     
     // Функция для центрирования карты
@@ -1692,15 +1698,11 @@ jQuery(document).ready(function($) {
             return;
         }
         
-        // Очищаем карту и добавляем новые точки
+        // Очищаем карту и добавляем новые точки с кластеризацией
         cdekMap.geoObjects.removeAll();
         
-        var bounds = [];
-        
-        // Постепенная загрузка маркеров для избежания лагов
-        addMarkersGradually(pointsToShow, bounds);
-        
-        // Центрирование карты происходит в функции addMarkersGradually
+        // Добавляем маркеры с кластеризацией
+        addClusteredMarkers(pointsToShow);
     }
     
     function displayPointsList(points) {

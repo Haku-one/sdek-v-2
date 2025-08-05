@@ -1816,10 +1816,31 @@ class CdekDeliveryPlugin {
                 error_log('СДЭК: Сохранена стоимость доставки в сессии: ' . $cost);
             }
             
-            if (isset($_POST['cdek_selected_point_code']) && !empty($_POST['cdek_selected_point_code'])) {
+            // Обрабатываем код пункта выдачи
+            if (isset($_POST['cdek_selected_point_code'])) {
                 $point_code = sanitize_text_field($_POST['cdek_selected_point_code']);
-                WC()->session->set('cdek_selected_point_code', $point_code);
-                error_log('СДЭК: Сохранен код пункта в сессии: ' . $point_code);
+                if (!empty($point_code)) {
+                    WC()->session->set('cdek_selected_point_code', $point_code);
+                    error_log('СДЭК: Сохранен код пункта в сессии: ' . $point_code);
+                } else {
+                    // Если передан пустой код, очищаем пункт выдачи
+                    WC()->session->__unset('cdek_selected_point_code');
+                    WC()->session->__unset('cdek_selected_point_data');
+                    error_log('СДЭК: Очищены данные пункта выдачи (передан пустой код)');
+                }
+            }
+            
+            // Обрабатываем данные пункта выдачи
+            if (isset($_POST['cdek_selected_point_data'])) {
+                $point_data = sanitize_text_field($_POST['cdek_selected_point_data']);
+                if (!empty($point_data)) {
+                    WC()->session->set('cdek_selected_point_data', $point_data);
+                    error_log('СДЭК: Сохранены данные пункта в сессии');
+                } else {
+                    // Если переданы пустые данные, очищаем
+                    WC()->session->__unset('cdek_selected_point_data');
+                    error_log('СДЭК: Очищены данные пункта выдачи (переданы пустые данные)');
+                }
             }
         }
         

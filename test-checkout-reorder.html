@@ -265,28 +265,88 @@ $orderReview.insertAfter($orderReviewHeading);</code></pre>
         </div>
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+        // Ванильный JavaScript без jQuery зависимости
+        function $(selector) {
+            if (selector.startsWith('#')) {
+                return {
+                    element: document.getElementById(selector.slice(1)),
+                    length: document.getElementById(selector.slice(1)) ? 1 : 0,
+                    prependTo: function(target) {
+                        if (this.element && target.element) {
+                            target.element.insertBefore(this.element, target.element.firstChild);
+                        }
+                        return this;
+                    },
+                    insertAfter: function(target) {
+                        if (this.element && target.element && target.element.parentNode) {
+                            target.element.parentNode.insertBefore(this.element, target.element.nextSibling);
+                        }
+                        return this;
+                    },
+                    appendTo: function(target) {
+                        if (this.element && target.element) {
+                            target.element.appendChild(this.element);
+                        }
+                        return this;
+                    },
+                    css: function(styles) {
+                        if (this.element) {
+                            if (typeof styles === 'object') {
+                                Object.assign(this.element.style, styles);
+                            } else if (arguments.length === 2) {
+                                this.element.style[styles] = arguments[1];
+                            }
+                        }
+                        return this;
+                    },
+                    html: function(content) {
+                        if (this.element) {
+                            this.element.innerHTML = content;
+                        }
+                        return this;
+                    },
+                    show: function() {
+                        if (this.element) {
+                            this.element.style.display = 'block';
+                        }
+                        return this;
+                    },
+                    find: function(selector) {
+                        var elements = this.element ? this.element.querySelectorAll(selector) : [];
+                        return {
+                            css: function(property, value) {
+                                elements.forEach(function(el) {
+                                    el.style[property] = value;
+                                });
+                            }
+                        };
+                    }
+                };
+            }
+            return { element: null, length: 0 };
+        }
+
         // Эмуляция функции перестановки блоков из плагина
         function testReorderFunction() {
-            var $rightColumn = $('#test-col-2');
-            var $orderReviewHeading = $('#test_order_review_heading');
-            var $orderReview = $('#test_order_review');
+            var rightColumn = $('#test-col-2');
+            var orderReviewHeading = $('#test_order_review_heading');
+            var orderReview = $('#test_order_review');
             
-            if ($orderReviewHeading.length && $orderReview.length) {
+            if (orderReviewHeading.length && orderReview.length) {
                 // Перемещаем блок "Ваш заказ" наверх
-                $orderReviewHeading.prependTo($rightColumn);
-                $orderReview.insertAfter($orderReviewHeading);
+                orderReviewHeading.prependTo(rightColumn);
+                orderReview.insertAfter(orderReviewHeading);
                 
                 // Применяем CSS стили
-                $rightColumn.css({
+                rightColumn.css({
                     'display': 'flex',
                     'flex-direction': 'column'
                 });
                 
-                $orderReviewHeading.css('order', '-2');
-                $orderReview.css('order', '-1');
-                $rightColumn.find('*:not(#test_order_review_heading):not(#test_order_review)').css('order', '1');
+                orderReviewHeading.css('order', '-2');
+                orderReview.css('order', '-1');
+                rightColumn.find('*:not(#test_order_review_heading):not(#test_order_review)').css('order', '1');
                 
                 // Показываем результат
                 $('#test-output').html('✅ <strong>Успешно!</strong> Блок "Ваш заказ" перемещен наверх правой колонки.');
@@ -300,23 +360,23 @@ $orderReview.insertAfter($orderReviewHeading);</code></pre>
         }
         
         function resetLayout() {
-            var $rightColumn = $('#test-col-2');
-            var $details = $('#test-details');
-            var $orderReviewHeading = $('#test_order_review_heading');
-            var $orderReview = $('#test_order_review');
+            var rightColumn = $('#test-col-2');
+            var details = $('#test-details');
+            var orderReviewHeading = $('#test_order_review_heading');
+            var orderReview = $('#test_order_review');
             
             // Возвращаем исходный порядок
-            $details.prependTo($rightColumn);
-            $orderReviewHeading.appendTo($rightColumn);
-            $orderReview.appendTo($rightColumn);
+            details.prependTo(rightColumn);
+            orderReviewHeading.appendTo(rightColumn);
+            orderReview.appendTo(rightColumn);
             
             // Убираем CSS стили
-            $rightColumn.css({
+            rightColumn.css({
                 'display': 'block',
                 'flex-direction': ''
             });
             
-            $rightColumn.find('*').css('order', '');
+            rightColumn.find('*').css('order', '');
             
             $('#test-output').html('↩️ Макет сброшен в исходное состояние');
             $('#js-test-result').show();
@@ -325,7 +385,7 @@ $orderReview.insertAfter($orderReviewHeading);</code></pre>
         }
         
         // Автоматическое тестирование
-        $(document).ready(function() {
+        document.addEventListener('DOMContentLoaded', function() {
             console.log('🧪 Checkout blocks reorder test page loaded');
             console.log('📋 Available test functions:');
             console.log('- testReorderFunction(): Test the reordering functionality');

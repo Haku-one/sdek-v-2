@@ -9,8 +9,8 @@ class WC_Cdek_Shipping_Method extends WC_Shipping_Method {
     public function __construct($instance_id = 0) {
         $this->id = 'cdek_delivery';
         $this->instance_id = absint($instance_id);
-        $this->method_title = __('СДЭК — Пункт выдачи', 'cdek-delivery');
-        $this->method_description = __('Доставка через сеть пунктов выдачи СДЭК', 'cdek-delivery');
+        $this->method_title = __('СДЭК — Доставка', 'cdek-delivery');
+        $this->method_description = __('Доставка через сеть пунктов выдачи СДЭК, самовывоз или обсуждение с менеджером', 'cdek-delivery');
         $this->supports = array(
             'shipping-zones',
             'instance-settings',
@@ -41,7 +41,7 @@ class WC_Cdek_Shipping_Method extends WC_Shipping_Method {
                 'title' => __('Название метода', 'cdek-delivery'),
                 'type' => 'text',
                 'description' => __('Название, которое увидит покупатель при выборе способа доставки', 'cdek-delivery'),
-                'default' => __('СДЭК — Пункт выдачи', 'cdek-delivery'),
+                'default' => __('СДЭК — Доставка', 'cdek-delivery'),
                 'desc_tip' => true,
             ),
             'base_cost' => array(
@@ -59,7 +59,10 @@ class WC_Cdek_Shipping_Method extends WC_Shipping_Method {
         $cdek_cost = 0;
         $label = 'Выберите пункт выдачи';
         
+        // Проверяем тип доставки
+        $delivery_type = '';
         if (WC()->session) {
+            $delivery_type = WC()->session->get('cdek_delivery_type');
             $session_cost = WC()->session->get('cdek_delivery_cost');
             $session_point = WC()->session->get('cdek_selected_point_code');
             
@@ -70,11 +73,27 @@ class WC_Cdek_Shipping_Method extends WC_Shipping_Method {
             }
         }
         
+        // Если нет данных в сессии, проверяем POST данные
+        if (empty($delivery_type) && isset($_POST['cdek_delivery_type'])) {
+            $delivery_type = sanitize_text_field($_POST['cdek_delivery_type']);
+        }
+        
         // Если нет стоимости в сессии, проверяем POST данные
         if ($cdek_cost == 0 && isset($_POST['cdek_delivery_cost']) && !empty($_POST['cdek_delivery_cost'])) {
             $cdek_cost = floatval($_POST['cdek_delivery_cost']);
             $label = 'СДЭК доставка';
             error_log('СДЭК: Используем стоимость из POST: ' . $cdek_cost);
+        }
+        
+        // Устанавливаем подходящий label в зависимости от типа доставки
+        if ($delivery_type === 'pickup') {
+            $label = '📍 Самовывоз (г.Саратов, ул. Осипова, д. 18а) — Бесплатно<br><small style="color: #666; font-weight: normal;">Заберите заказ самостоятельно по адресу: г. Саратов, ул. Осипова, д. 18а<br>Режим работы: Пн-Пт 9:00-18:00, Сб 10:00-16:00</small>';
+            $cdek_cost = 0;
+        } elseif ($delivery_type === 'manager') {
+            $label = '📞 Обсудить доставку с менеджером — Бесплатно<br><small style="color: #666; font-weight: normal;">Доставляем: ПОЧТА, ЯНДЕКС, 5 POST</small>';
+            $cdek_cost = 0;
+        } elseif ($cdek_cost > 0) {
+            $label = 'СДЭК доставка: ' . $cdek_cost . ' руб.';
         }
         
         // Добавляем метод доставки
@@ -85,7 +104,7 @@ class WC_Cdek_Shipping_Method extends WC_Shipping_Method {
             'calc_tax' => 'per_item'
         ));
         
-        error_log('СДЭК: Добавлен метод доставки с стоимостью: ' . $cdek_cost);
+        error_log('СДЭК: Добавлен метод доставки с стоимостью: ' . $cdek_cost . ', тип: ' . $delivery_type);
     }
     
     public function is_available($package) {

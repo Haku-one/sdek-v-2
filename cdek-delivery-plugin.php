@@ -2795,3 +2795,4 @@ class CdekAPI {
             return false;
         }
     }
+}

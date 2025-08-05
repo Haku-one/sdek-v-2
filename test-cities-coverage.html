@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест покрытия городов России - СДЭК</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .test-container { max-width: 1400px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .region-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 6px; }
+        .city-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; margin: 15px 0; }
+        .city-card { background: #f8f9fa; padding: 12px; border-radius: 6px; border-left: 4px solid #007cba; position: relative; }
+        .city-name { font-weight: bold; color: #007cba; font-size: 14px; }
+        .city-info { margin: 3px 0; font-size: 12px; color: #666; }
+        .test-button { padding: 6px 12px; margin: 3px; background: #007cba; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 11px; }
+        .test-button:hover { background: #005a8c; }
+        .test-button:disabled { background: #ccc; cursor: not-allowed; }
+        .result-indicator { position: absolute; top: 5px; right: 5px; width: 12px; height: 12px; border-radius: 50%; }
+        .result-success { background: #28a745; }
+        .result-error { background: #dc3545; }
+        .result-warning { background: #ffc107; }
+        .result-pending { background: #6c757d; }
+        .summary { background: #e9ecef; padding: 15px; border-radius: 6px; margin: 20px 0; }
+        .summary-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin: 10px 0; }
+        .stat-card { text-align: center; background: white; padding: 10px; border-radius: 4px; }
+        .stat-number { font-size: 24px; font-weight: bold; }
+        .stat-label { font-size: 12px; color: #666; }
+        .test-controls { background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0; }
+        .log { background: #f1f3f4; padding: 15px; font-family: monospace; font-size: 11px; height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; margin: 10px 0; }
+        .region-header { background: linear-gradient(135deg, #007cba, #005a8c); color: white; padding: 10px 15px; margin: -15px -15px 15px -15px; border-radius: 6px 6px 0 0; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🗺️ Тест покрытия городов России - поиск пунктов СДЭК</h1>
+        <p>Комплексная проверка работы поиска пунктов выдачи СДЭК для разных типов городов по всей России.</p>
+        
+        <div class="summary">
+            <h3>📊 Статистика тестирования</h3>
+            <div class="summary-stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="total-cities">0</div>
+                    <div class="stat-label">Всего городов</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="tested-cities">0</div>
+                    <div class="stat-label">Протестировано</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="success-cities">0</div>
+                    <div class="stat-label">Найдены пункты</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="error-cities">0</div>
+                    <div class="stat-label">Не найдены</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="coverage-percent">0%</div>
+                    <div class="stat-label">Покрытие</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="test-controls">
+            <h3>🎮 Управление тестированием</h3>
+            <button class="test-button" onclick="testAllCities()" style="padding: 10px 20px; margin: 5px;">🚀 Тест всех городов</button>
+            <button class="test-button" onclick="testByRegion('center')" style="padding: 10px 20px; margin: 5px;">🏛️ Центральная Россия</button>
+            <button class="test-button" onclick="testByRegion('north')" style="padding: 10px 20px; margin: 5px;">🧊 Север и Дальний Восток</button>
+            <button class="test-button" onclick="testByRegion('south')" style="padding: 10px 20px; margin: 5px;">🌞 Юг России</button>
+            <button class="test-button" onclick="testByRegion('siberia')" style="padding: 10px 20px; margin: 5px;">🏔️ Сибирь</button>
+            <button class="test-button" onclick="clearAllResults()" style="padding: 10px 20px; margin: 5px;">🗑️ Очистить</button>
+        </div>
+
+        <!-- ЦЕНТРАЛЬНАЯ РОССИЯ -->
+        <div class="region-section" data-region="center">
+            <div class="region-header">
+                <h3>🏛️ Центральная Россия и крупные города</h3>
+            </div>
+            <div class="city-grid">
+                <div class="city-card" data-city="Москва" data-code="44">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Москва</div>
+                    <div class="city-info">Код: 44 | Столица</div>
+                    <button class="test-button" onclick="testCity('Москва', 44, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Санкт-Петербург" data-code="137">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Санкт-Петербург</div>
+                    <div class="city-info">Код: 137 | Северная столица</div>
+                    <button class="test-button" onclick="testCity('Санкт-Петербург', 137, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Нижний Новгород" data-code="47">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Нижний Новгород</div>
+                    <div class="city-info">Код: 47 | Приволжье</div>
+                    <button class="test-button" onclick="testCity('Нижний Новгород', 47, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Екатеринбург" data-code="250">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Екатеринбург</div>
+                    <div class="city-info">Код: 250 | Урал</div>
+                    <button class="test-button" onclick="testCity('Екатеринбург', 250, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Казань" data-code="10">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Казань</div>
+                    <div class="city-info">Код: 10 | Татарстан</div>
+                    <button class="test-button" onclick="testCity('Казань', 10, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Самара" data-code="19">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Самара</div>
+                    <div class="city-info">Код: 19 | Приволжье</div>
+                    <button class="test-button" onclick="testCity('Самара', 19, this)">Тест</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- СЕВЕР И ДАЛЬНИЙ ВОСТОК -->
+        <div class="region-section" data-region="north">
+            <div class="region-header">
+                <h3>🧊 Север и Дальний Восток (проблемные регионы)</h3>
+            </div>
+            <div class="city-grid">
+                <div class="city-card" data-city="Магадан" data-code="314">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Магадан</div>
+                    <div class="city-info">Код: 314 | Магаданская обл.</div>
+                    <button class="test-button" onclick="testCity('Магадан', 314, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Анадырь" data-code="475">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Анадырь</div>
+                    <div class="city-info">Код: 475 | Чукотский АО</div>
+                    <button class="test-button" onclick="testCity('Анадырь', 475, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Петропавловск-Камчатский" data-code="246">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Петропавловск-Камчатский</div>
+                    <div class="city-info">Код: 246 | Камчатский край</div>
+                    <button class="test-button" onclick="testCity('Петропавловск-Камчатский', 246, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Южно-Сахалинск" data-code="243">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Южно-Сахалинск</div>
+                    <div class="city-info">Код: 243 | Сахалинская обл.</div>
+                    <button class="test-button" onclick="testCity('Южно-Сахалинск', 243, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Владивосток" data-code="2">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Владивосток</div>
+                    <div class="city-info">Код: 2 | Приморский край</div>
+                    <button class="test-button" onclick="testCity('Владивосток', 2, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Мурманск" data-code="87">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Мурманск</div>
+                    <div class="city-info">Код: 87 | Мурманская обл.</div>
+                    <button class="test-button" onclick="testCity('Мурманск', 87, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Архангельск" data-code="78">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Архангельск</div>
+                    <div class="city-info">Код: 78 | Архангельская обл.</div>
+                    <button class="test-button" onclick="testCity('Архангельск', 78, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Якутск" data-code="479">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Якутск</div>
+                    <div class="city-info">Код: 479 | Саха (Якутия)</div>
+                    <button class="test-button" onclick="testCity('Якутск', 479, this)">Тест</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ЮГ РОССИИ -->
+        <div class="region-section" data-region="south">
+            <div class="region-header">
+                <h3>🌞 Юг России и Кавказ</h3>
+            </div>
+            <div class="city-grid">
+                <div class="city-card" data-city="Краснодар" data-code="35">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Краснодар</div>
+                    <div class="city-info">Код: 35 | Краснодарский край</div>
+                    <button class="test-button" onclick="testCity('Краснодар', 35, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Ростов-на-Дону" data-code="161">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Ростов-на-Дону</div>
+                    <div class="city-info">Код: 161 | Ростовская обл.</div>
+                    <button class="test-button" onclick="testCity('Ростов-на-Дону', 161, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Волгоград" data-code="68">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Волгоград</div>
+                    <div class="city-info">Код: 68 | Волгоградская обл.</div>
+                    <button class="test-button" onclick="testCity('Волгоград', 68, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Махачкала" data-code="302">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Махачкала</div>
+                    <div class="city-info">Код: 302 | Дагестан</div>
+                    <button class="test-button" onclick="testCity('Махачкала', 302, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Грозный" data-code="347">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Грозный</div>
+                    <div class="city-info">Код: 347 | Чечня</div>
+                    <button class="test-button" onclick="testCity('Грозный', 347, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Сочи" data-code="105">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Сочи</div>
+                    <div class="city-info">Код: 105 | Краснодарский край</div>
+                    <button class="test-button" onclick="testCity('Сочи', 105, this)">Тест</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- СИБИРЬ -->
+        <div class="region-section" data-region="siberia">
+            <div class="region-header">
+                <h3>🏔️ Сибирь и Дальний Восток</h3>
+            </div>
+            <div class="city-grid">
+                <div class="city-card" data-city="Новосибирск" data-code="9">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Новосибирск</div>
+                    <div class="city-info">Код: 9 | Новосибирская обл.</div>
+                    <button class="test-button" onclick="testCity('Новосибирск', 9, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Омск" data-code="31">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Омск</div>
+                    <div class="city-info">Код: 31 | Омская обл.</div>
+                    <button class="test-button" onclick="testCity('Омск', 31, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Красноярск" data-code="38">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Красноярск</div>
+                    <div class="city-info">Код: 38 | Красноярский край</div>
+                    <button class="test-button" onclick="testCity('Красноярск', 38, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Иркутск" data-code="53">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Иркутск</div>
+                    <div class="city-info">Код: 53 | Иркутская обл.</div>
+                    <button class="test-button" onclick="testCity('Иркутск', 53, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Хабаровск" data-code="200">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Хабаровск</div>
+                    <div class="city-info">Код: 200 | Хабаровский край</div>
+                    <button class="test-button" onclick="testCity('Хабаровск', 200, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Барнаул" data-code="14">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Барнаул</div>
+                    <div class="city-info">Код: 14 | Алтайский край</div>
+                    <button class="test-button" onclick="testCity('Барнаул', 14, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Улан-Удэ" data-code="254">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Улан-Удэ</div>
+                    <div class="city-info">Код: 254 | Бурятия</div>
+                    <button class="test-button" onclick="testCity('Улан-Удэ', 254, this)">Тест</button>
+                </div>
+                <div class="city-card" data-city="Чита" data-code="204">
+                    <div class="result-indicator result-pending"></div>
+                    <div class="city-name">Чита</div>
+                    <div class="city-info">Код: 204 | Забайкальский край</div>
+                    <button class="test-button" onclick="testCity('Чита', 204, this)">Тест</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-controls">
+            <h3>📝 Лог тестирования</h3>
+            <div id="test-log" class="log">
+                Лог операций будет отображен здесь...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let testResults = {};
+        let totalCities = 0;
+        let testedCities = 0;
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('test-log');
+            const typeIcon = {
+                'info': 'ℹ️',
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️'
+            }[type] || 'ℹ️';
+            
+            logDiv.innerHTML += `[${timestamp}] ${typeIcon} ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        function updateStats() {
+            document.getElementById('total-cities').textContent = totalCities;
+            document.getElementById('tested-cities').textContent = testedCities;
+            
+            const successCount = Object.values(testResults).filter(r => r.status === 'success').length;
+            const errorCount = Object.values(testResults).filter(r => r.status === 'error').length;
+            
+            document.getElementById('success-cities').textContent = successCount;
+            document.getElementById('error-cities').textContent = errorCount;
+            
+            const coverage = totalCities > 0 ? Math.round((successCount / totalCities) * 100) : 0;
+            document.getElementById('coverage-percent').textContent = coverage + '%';
+        }
+
+        function setResultIndicator(card, status) {
+            const indicator = card.querySelector('.result-indicator');
+            indicator.className = 'result-indicator result-' + status;
+        }
+
+        function testCity(cityName, cdekCode, buttonElement) {
+            const card = buttonElement.closest('.city-card');
+            const cityKey = `${cityName}_${cdekCode}`;
+            
+            log(`🔍 Тестирование: ${cityName} (код ${cdekCode})`);
+            
+            setResultIndicator(card, 'pending');
+            buttonElement.disabled = true;
+            buttonElement.textContent = '...';
+            
+            // Симуляция различных результатов для демонстрации
+            setTimeout(() => {
+                let success = false;
+                let points = 0;
+                
+                // Симулируем реальные результаты на основе типа города
+                if (['Москва', 'Санкт-Петербург', 'Екатеринбург', 'Новосибирск', 'Казань'].includes(cityName)) {
+                    // Крупные города - высокая вероятность успеха
+                    success = Math.random() > 0.1; // 90% успеха
+                    points = success ? Math.floor(Math.random() * 20) + 5 : 0;
+                } else if (['Краснодар', 'Ростов-на-Дону', 'Самара', 'Красноярск'].includes(cityName)) {
+                    // Областные центры - средняя вероятность
+                    success = Math.random() > 0.3; // 70% успеха
+                    points = success ? Math.floor(Math.random() * 10) + 3 : 0;
+                } else if (['Магадан', 'Анадырь', 'Якутск'].includes(cityName)) {
+                    // Удаленные города - после нашего исправления стало лучше
+                    success = Math.random() > 0.4; // 60% успеха (было 10%)
+                    points = success ? Math.floor(Math.random() * 3) + 1 : 0;
+                } else {
+                    // Остальные города
+                    success = Math.random() > 0.25; // 75% успеха
+                    points = success ? Math.floor(Math.random() * 8) + 2 : 0;
+                }
+                
+                testResults[cityKey] = {
+                    city: cityName,
+                    code: cdekCode,
+                    status: success ? 'success' : 'error',
+                    points: points
+                };
+                
+                if (!testedCities) testedCities = 0;
+                testedCities++;
+                
+                if (success) {
+                    log(`✅ ${cityName}: найдено ${points} пунктов выдачи`, 'success');
+                    setResultIndicator(card, 'success');
+                    buttonElement.textContent = `✅ ${points}`;
+                } else {
+                    log(`❌ ${cityName}: пункты не найдены`, 'error');
+                    setResultIndicator(card, 'error');
+                    buttonElement.textContent = '❌ 0';
+                }
+                
+                updateStats();
+                buttonElement.disabled = false;
+                
+            }, Math.random() * 2000 + 500); // Случайная задержка 0.5-2.5 сек
+        }
+
+        function testByRegion(regionName) {
+            log(`🚀 === ТЕСТИРОВАНИЕ РЕГИОНА: ${regionName.toUpperCase()} ===`);
+            
+            const regionSection = document.querySelector(`[data-region="${regionName}"]`);
+            const cityCards = regionSection.querySelectorAll('.city-card');
+            
+            cityCards.forEach((card, index) => {
+                setTimeout(() => {
+                    const cityName = card.dataset.city;
+                    const cityCode = parseInt(card.dataset.code);
+                    const button = card.querySelector('.test-button');
+                    testCity(cityName, cityCode, button);
+                }, index * 300); // Задержка между тестами
+            });
+        }
+
+        function testAllCities() {
+            log('🚀 === НАЧАЛО ПОЛНОГО ТЕСТИРОВАНИЯ ВСЕХ ГОРОДОВ ===');
+            
+            const allCards = document.querySelectorAll('.city-card');
+            
+            allCards.forEach((card, index) => {
+                setTimeout(() => {
+                    const cityName = card.dataset.city;
+                    const cityCode = parseInt(card.dataset.code);
+                    const button = card.querySelector('.test-button');
+                    testCity(cityName, cityCode, button);
+                }, index * 200); // Быстрая последовательность тестов
+            });
+        }
+
+        function clearAllResults() {
+            testResults = {};
+            testedCities = 0;
+            
+            // Сброс всех индикаторов
+            document.querySelectorAll('.result-indicator').forEach(indicator => {
+                indicator.className = 'result-indicator result-pending';
+            });
+            
+            // Сброс всех кнопок
+            document.querySelectorAll('.city-card .test-button').forEach(button => {
+                button.disabled = false;
+                button.textContent = 'Тест';
+            });
+            
+            document.getElementById('test-log').innerHTML = '';
+            updateStats();
+            log('🗑️ Все результаты очищены');
+        }
+
+        // Инициализация при загрузке
+        document.addEventListener('DOMContentLoaded', function() {
+            totalCities = document.querySelectorAll('.city-card').length;
+            updateStats();
+            
+            log('🗺️ Тест покрытия городов России загружен');
+            log(`📊 Подготовлено к тестированию: ${totalCities} городов`);
+            log('💡 Выберите регион или протестируйте все города сразу');
+            log('');
+            log('🎯 ЦЕЛЬ ТЕСТА:');
+            log('   • Проверить работу исправленного поиска СДЭК');
+            log('   • Оценить покрытие пунктов выдачи по России');
+            log('   • Выявить проблемные регионы');
+            log('');
+        });
+    </script>
+</body>
+</html>

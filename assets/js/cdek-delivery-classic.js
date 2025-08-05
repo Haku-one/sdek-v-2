@@ -1798,6 +1798,24 @@ jQuery(document).ready(function($) {
         $('#cdek-selected-point-code').val(point.code);
         $('#cdek-selected-point-data').val(JSON.stringify(point));
         
+        // Сохраняем hash корзины для отслеживания изменений
+        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
+            $.ajax({
+                url: cdek_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'save_cart_hash_for_cdek',
+                    nonce: cdek_ajax.nonce
+                },
+                success: function(response) {
+                    console.log('✅ Hash корзины сохранен для СДЭК');
+                },
+                error: function() {
+                    console.log('❌ Ошибка сохранения hash корзины');
+                }
+            });
+        }
+        
         updateOrderSummary(point);
     }
     
@@ -1808,9 +1826,32 @@ jQuery(document).ready(function($) {
         $('#cdek-selected-point').hide();
         $('#cdek-point-info').html('');
         
+        // Очищаем ВСЕ скрытые поля
         $('#cdek-selected-point-code').val('');
         $('#cdek-selected-point-data').val('');
-        $('#cdek-delivery-cost').val('');
+        $('#cdek-delivery-cost').val('0');
+        
+        // ПОЛНОСТЬЮ очищаем данные СДЭК в сессии через AJAX
+        if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
+            $.ajax({
+                url: cdek_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'update_cdek_shipping_cost',
+                    cdek_delivery_cost: 0,
+                    cdek_delivery_type: 'cdek', // Оставляем тип СДЭК, но очищаем стоимость
+                    cdek_selected_point_code: '', // Очищаем код пункта
+                    cdek_selected_point_data: '', // Очищаем данные пункта
+                    nonce: cdek_ajax.nonce
+                },
+                success: function(response) {
+                    console.log('✅ Данные пункта выдачи очищены из сессии');
+                },
+                error: function() {
+                    console.log('❌ Ошибка при очистке данных пункта из сессии');
+                }
+            });
+        }
         
         // Очищаем отображение стоимости доставки в HTML
         clearShippingCostDisplay();
@@ -2366,19 +2407,17 @@ jQuery(document).ready(function($) {
             $('#cdek-delivery-content').hide();
             hideCdekHint();
             clearSelectedPoint();
-            updateShippingTextForPickup();
             showPickupInfo();
             $('#cdek-delivery-cost').val(0);
-            $('body').trigger('update_checkout');
+            updateShippingTextForPickup(); // Вызываем после очистки
         } else if (option === 'manager') {
             // Обсудить с менеджером
             $('#cdek-delivery-content').hide();
             hideCdekHint();
             clearSelectedPoint();
-            updateShippingTextForManager();
             showManagerInfo();
             $('#cdek-delivery-cost').val(0);
-            $('body').trigger('update_checkout');
+            updateShippingTextForManager(); // Вызываем после очистки
         } else if (option === 'cdek') {
             // Доставка СДЭК
             $('#cdek-delivery-content').show();
@@ -2400,8 +2439,6 @@ jQuery(document).ready(function($) {
         console.log('🏪 Выбран самовывоз - очищаем ВСЕ данные СДЭК');
         // Скрываем подсказку о выборе города
         hideCdekHint();
-        // Обновляем отображение в чекауте
-        updateClassicShippingCost({name: 'Самовывоз (г.Саратов, ул. Осипова, д. 18а)'}, 0);
         
         // Добавляем скрытое поле с типом доставки
         $('#cdek-delivery-type').remove(); // Удаляем предыдущее поле
@@ -2412,6 +2449,11 @@ jQuery(document).ready(function($) {
         window.lastSelectedCityData = null;
         window.currentCityData = null;
         
+        // ПОЛНОСТЬЮ очищаем все данные СДЭК
+        $('#cdek-selected-point-code').val('');
+        $('#cdek-selected-point-data').val('');
+        $('#cdek-delivery-cost').val('0');
+        
         // Принудительно очищаем стоимость доставки СДЭК в сессии
         if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
             $.ajax({
@@ -2421,15 +2463,28 @@ jQuery(document).ready(function($) {
                     action: 'update_cdek_shipping_cost',
                     cdek_delivery_cost: 0,
                     cdek_delivery_type: 'pickup',
+                    cdek_selected_point_code: '', // Очищаем код пункта
+                    cdek_selected_point_data: '', // Очищаем данные пункта
                     nonce: cdek_ajax.nonce
                 },
                 success: function(response) {
                     console.log('✅ ВСЕ данные СДЭК очищены для самовывоза');
+                    // Принудительно обновляем чекаут после очистки
+                    $('body').trigger('update_checkout');
+                    // Обновляем отображение в чекауте ПОСЛЕ очистки сессии
+                    setTimeout(function() {
+                        updateClassicShippingCost({name: 'Самовывоз (г.Саратов, ул. Осипова, д. 18а)'}, 0);
+                    }, 100);
                 },
                 error: function() {
                     console.log('❌ Ошибка при очистке данных СДЭК');
+                    // Даже при ошибке обновляем отображение
+                    updateClassicShippingCost({name: 'Самовывоз (г.Саратов, ул. Осипова, д. 18а)'}, 0);
                 }
             });
+        } else {
+            // Если AJAX недоступен, просто обновляем отображение
+            updateClassicShippingCost({name: 'Самовывоз (г.Саратов, ул. Осипова, д. 18а)'}, 0);
         }
     };
     
@@ -2437,8 +2492,6 @@ jQuery(document).ready(function($) {
         console.log('📞 Выбрано обсуждение с менеджером - очищаем ВСЕ данные СДЭК');
         // Скрываем подсказку о выборе города
         hideCdekHint();
-        // Обновляем отображение в чекауте
-        updateClassicShippingCost({name: 'Обсудить доставку с менеджером'}, 0);
         
         // Добавляем скрытое поле с типом доставки
         $('#cdek-delivery-type').remove(); // Удаляем предыдущее поле
@@ -2449,6 +2502,11 @@ jQuery(document).ready(function($) {
         window.lastSelectedCityData = null;
         window.currentCityData = null;
         
+        // ПОЛНОСТЬЮ очищаем все данные СДЭК
+        $('#cdek-selected-point-code').val('');
+        $('#cdek-selected-point-data').val('');
+        $('#cdek-delivery-cost').val('0');
+        
         // Принудительно очищаем стоимость доставки СДЭК в сессии
         if (typeof cdek_ajax !== 'undefined' && cdek_ajax.ajax_url) {
             $.ajax({
@@ -2458,15 +2516,28 @@ jQuery(document).ready(function($) {
                     action: 'update_cdek_shipping_cost',
                     cdek_delivery_cost: 0,
                     cdek_delivery_type: 'manager',
+                    cdek_selected_point_code: '', // Очищаем код пункта
+                    cdek_selected_point_data: '', // Очищаем данные пункта
                     nonce: cdek_ajax.nonce
                 },
                 success: function(response) {
                     console.log('✅ ВСЕ данные СДЭК очищены для менеджера');
+                    // Принудительно обновляем чекаут после очистки
+                    $('body').trigger('update_checkout');
+                    // Обновляем отображение в чекауте ПОСЛЕ очистки сессии
+                    setTimeout(function() {
+                        updateClassicShippingCost({name: 'Обсудить доставку с менеджером'}, 0);
+                    }, 100);
                 },
                 error: function() {
                     console.log('❌ Ошибка при очистке данных СДЭК');
+                    // Даже при ошибке обновляем отображение
+                    updateClassicShippingCost({name: 'Обсудить доставку с менеджером'}, 0);
                 }
             });
+        } else {
+            // Если AJAX недоступен, просто обновляем отображение
+            updateClassicShippingCost({name: 'Обсудить доставку с менеджером'}, 0);
         }
     };
     

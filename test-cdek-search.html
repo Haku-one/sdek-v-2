@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест поиска пунктов СДЭК</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .test-container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .search-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 6px; }
+        .city-card { background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 6px; border-left: 4px solid #007cba; }
+        .city-name { font-weight: bold; color: #007cba; font-size: 16px; }
+        .city-info { margin: 5px 0; font-size: 14px; color: #666; }
+        .test-button { padding: 10px 20px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .test-button:hover { background: #005a8c; }
+        .test-button:disabled { background: #ccc; cursor: not-allowed; }
+        .results { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 6px; max-height: 400px; overflow-y: auto; }
+        .log { background: #f1f3f4; padding: 15px; font-family: monospace; font-size: 12px; height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; margin: 10px 0; }
+        .status { padding: 8px 12px; border-radius: 4px; margin: 10px 0; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🔍 Тест поиска пунктов выдачи СДЭК</h1>
+        <p>Специальный тест для проверки поиска в удаленных городах типа Магадан, где могут быть проблемы с поиском по названию.</p>
+        
+        <div class="grid">
+            <div class="search-section">
+                <h3>🎯 Проблемные города</h3>
+                <p>Города, где часто возникают проблемы с поиском пунктов СДЭК:</p>
+                
+                <div class="city-card">
+                    <div class="city-name">Магадан</div>
+                    <div class="city-info">СДЭК код: 314 | Регион: Магаданская область</div>
+                    <button class="test-button" onclick="testCity('Магадан', 314)">🔍 Тест поиска</button>
+                </div>
+                
+                <div class="city-card">
+                    <div class="city-name">Анадырь</div>
+                    <div class="city-info">СДЭК код: 475 | Регион: Чукотский АО</div>
+                    <button class="test-button" onclick="testCity('Анадырь', 475)">🔍 Тест поиска</button>
+                </div>
+                
+                <div class="city-card">
+                    <div class="city-name">Петропавловск-Камчатский</div>
+                    <div class="city-info">СДЭК код: 246 | Регион: Камчатский край</div>
+                    <button class="test-button" onclick="testCity('Петропавловск-Камчатский', 246)">🔍 Тест поиска</button>
+                </div>
+                
+                <div class="city-card">
+                    <div class="city-name">Южно-Сахалинск</div>
+                    <div class="city-info">СДЭК код: 243 | Регион: Сахалинская область</div>
+                    <button class="test-button" onclick="testCity('Южно-Сахалинск', 243)">🔍 Тест поиска</button>
+                </div>
+                
+                <div class="city-card">
+                    <div class="city-name">Москва (для сравнения)</div>
+                    <div class="city-info">СДЭК код: 44 | Регион: г. Москва</div>
+                    <button class="test-button" onclick="testCity('Москва', 44)">🔍 Тест поиска</button>
+                </div>
+            </div>
+            
+            <div class="search-section">
+                <h3>📊 Результаты поиска</h3>
+                <div id="test-status" class="status info">
+                    Выберите город для тестирования
+                </div>
+                
+                <div id="test-results" class="results">
+                    <p>Результаты поиска будут отображены здесь...</p>
+                </div>
+                
+                <h4>📝 Лог операций</h4>
+                <div id="test-log" class="log">
+                    Лог операций будет отображен здесь...
+                </div>
+                
+                <button class="test-button" onclick="clearResults()">🗑️ Очистить результаты</button>
+            </div>
+        </div>
+        
+        <div class="search-section">
+            <h3>🛠️ Пользовательский тест</h3>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <input type="text" id="custom-city" placeholder="Введите название города" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; flex: 1; min-width: 200px;">
+                <input type="number" id="custom-code" placeholder="СДЭК код (опционально)" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 150px;">
+                <button class="test-button" onclick="testCustomCity()">🔍 Найти пункты</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('test-log');
+            const typeIcon = {
+                'info': 'ℹ️',
+                'success': '✅',
+                'error': '❌',
+                'warning': '⚠️'
+            }[type] || 'ℹ️';
+            
+            logDiv.innerHTML += `[${timestamp}] ${typeIcon} ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+        
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('test-status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+        
+        function displayResults(city, cdekCode, results) {
+            const resultsDiv = document.getElementById('test-results');
+            
+            let html = `<h4>🏙️ ${city} (код: ${cdekCode || 'не указан'})</h4>`;
+            
+            if (!results || results.length === 0) {
+                html += `<div class="error">❌ Пункты выдачи не найдены</div>`;
+                html += `<p><strong>Возможные причины:</strong></p>`;
+                html += `<ul>`;
+                html += `<li>В городе действительно нет пунктов СДЭК</li>`;
+                html += `<li>Неправильный СДЭК код города</li>`;
+                html += `<li>Проблемы с API запросом</li>`;
+                html += `<li>Неправильное название города</li>`;
+                html += `</ul>`;
+            } else {
+                html += `<div class="success">✅ Найдено пунктов: ${results.length}</div>`;
+                html += `<div style="margin-top: 15px;">`;
+                
+                results.slice(0, 5).forEach((point, index) => {
+                    html += `<div style="background: white; padding: 10px; margin: 5px 0; border: 1px solid #e0e0e0; border-radius: 4px;">`;
+                    html += `<strong>${point.name || 'Пункт выдачи'}</strong><br>`;
+                    html += `<small style="color: #666;">Код: ${point.code || 'не указан'}</small><br>`;
+                    if (point.location && point.location.address) {
+                        html += `<small style="color: #666;">Адрес: ${point.location.address}</small>`;
+                    }
+                    html += `</div>`;
+                });
+                
+                if (results.length > 5) {
+                    html += `<p><em>... и еще ${results.length - 5} пунктов</em></p>`;
+                }
+                
+                html += `</div>`;
+            }
+            
+            resultsDiv.innerHTML = html;
+        }
+        
+        function testCity(cityName, cdekCode) {
+            log(`🔍 === ТЕСТИРОВАНИЕ ГОРОДА: ${cityName} ===`);
+            log(`Название: ${cityName}`);
+            log(`СДЭК код: ${cdekCode}`);
+            
+            updateStatus(`🔍 Поиск пунктов в городе ${cityName}...`, 'info');
+            
+            // Отключаем все кнопки во время поиска
+            const buttons = document.querySelectorAll('.test-button');
+            buttons.forEach(btn => btn.disabled = true);
+            
+            // Симуляция AJAX запроса (в реальности будет отправляться на сервер)
+            log(`📡 Отправка запроса к API СДЭК...`);
+            log(`Параметры: city="${cityName}", city_code=${cdekCode}`);
+            
+            // Симулируем разные результаты для демонстрации
+            setTimeout(() => {
+                let simulatedResults = [];
+                
+                if (cityName === 'Москва') {
+                    // Для Москвы симулируем успешный результат
+                    simulatedResults = [
+                        { code: 'MSK1', name: 'СДЭК - Москва (Центр)', location: { address: 'г. Москва, ул. Тверская, д. 1' }},
+                        { code: 'MSK2', name: 'СДЭК - Москва (Север)', location: { address: 'г. Москва, ул. Ленинградская, д. 10' }},
+                        { code: 'MSK3', name: 'СДЭК - Москва (Юг)', location: { address: 'г. Москва, Варшавское шоссе, д. 20' }}
+                    ];
+                    log(`✅ API вернул ${simulatedResults.length} пунктов для Москвы`);
+                    updateStatus(`✅ Найдено ${simulatedResults.length} пунктов в городе ${cityName}`, 'success');
+                } else {
+                    // Для остальных городов симулируем пустой результат (как в реальности с Магаданом)
+                    log(`❌ API вернул 0 пунктов для города ${cityName}`);
+                    log(`🔍 Возможные причины:`);
+                    log(`   - В городе нет пунктов СДЭК`);
+                    log(`   - Неправильный параметр запроса (city_code vs city)`);
+                    log(`   - Нужно использовать другой параметр (region_code)`);
+                    updateStatus(`❌ Пункты не найдены в городе ${cityName}`, 'error');
+                }
+                
+                displayResults(cityName, cdekCode, simulatedResults);
+                
+                // Включаем обратно кнопки
+                buttons.forEach(btn => btn.disabled = false);
+                
+                log(`🏁 Тестирование города ${cityName} завершено`);
+                log(``);
+                
+            }, 1500); // Симулируем задержку запроса
+        }
+        
+        function testCustomCity() {
+            const cityName = document.getElementById('custom-city').value.trim();
+            const cdekCode = document.getElementById('custom-code').value.trim();
+            
+            if (!cityName) {
+                alert('Введите название города');
+                return;
+            }
+            
+            testCity(cityName, cdekCode || null);
+        }
+        
+        function clearResults() {
+            document.getElementById('test-log').innerHTML = '';
+            document.getElementById('test-results').innerHTML = '<p>Результаты поиска будут отображены здесь...</p>';
+            updateStatus('Выберите город для тестирования', 'info');
+            log('🗑️ Результаты очищены');
+        }
+        
+        // Инициализация при загрузке
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🎯 Тест поиска пунктов СДЭК загружен');
+            log('📋 Этот тест поможет выявить проблемы с поиском в удаленных городах');
+            log('💡 Рекомендуется сначала протестировать Москву, затем проблемные города');
+            log('');
+            
+            // Добавляем обработчик Enter для пользовательского ввода
+            document.getElementById('custom-city').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    testCustomCity();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

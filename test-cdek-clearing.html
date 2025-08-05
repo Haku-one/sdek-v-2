@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест очистки СДЭК</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .test-button { padding: 10px 20px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .test-button:hover { background: #005a8c; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 3px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .hidden-fields { background: #f8f9fa; padding: 10px; margin: 10px 0; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Тест очистки данных СДЭК</h1>
+    
+    <div class="test-section">
+        <h3>Симуляция состояния заказа</h3>
+        
+        <div class="hidden-fields">
+            <h4>Скрытые поля (как в реальном чекауте):</h4>
+            <input type="hidden" id="cdek-selected-point-code" value="MSK123">
+            <input type="hidden" id="cdek-selected-point-data" value='{"code":"MSK123","name":"ПВЗ Тест"}'>
+            <input type="hidden" id="cdek-delivery-cost" value="366">
+            <input type="hidden" id="cdek-delivery-type" value="cdek">
+            
+            <div>
+                <strong>Код пункта:</strong> <span id="show-point-code">MSK123</span><br>
+                <strong>Стоимость доставки:</strong> <span id="show-cost">366</span> руб.<br>
+                <strong>Тип доставки:</strong> <span id="show-type">cdek</span>
+            </div>
+        </div>
+        
+        <div class="status info" id="current-status">
+            📦 Текущее состояние: СДЭК доставка активна (366 руб.)
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h3>Тестирование переключения типов доставки</h3>
+        
+        <button class="test-button" onclick="testPickupSwitch()">
+            📍 Переключиться на самовывоз
+        </button>
+        
+        <button class="test-button" onclick="testManagerSwitch()">
+            📞 Переключиться на менеджера
+        </button>
+        
+        <button class="test-button" onclick="testCdekSwitch()">
+            🚚 Переключиться на СДЭК
+        </button>
+        
+        <button class="test-button" onclick="resetToInitial()">
+            🔄 Сбросить к начальному состоянию
+        </button>
+    </div>
+    
+    <div class="test-section">
+        <h3>📊 Лог операций</h3>
+        <div id="test-log" style="background: #f8f9fa; padding: 10px; height: 300px; overflow-y: scroll; font-family: monospace; font-size: 12px;"></div>
+    </div>
+
+    <script>
+        // Симуляция объекта cdek_ajax для тестирования
+        window.cdek_ajax = {
+            ajax_url: '/wp-admin/admin-ajax.php',
+            nonce: 'test_nonce_123'
+        };
+        
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('test-log');
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+        
+        function updateDisplay() {
+            document.getElementById('show-point-code').textContent = 
+                document.getElementById('cdek-selected-point-code').value || '(пусто)';
+            document.getElementById('show-cost').textContent = 
+                document.getElementById('cdek-delivery-cost').value || '0';
+            document.getElementById('show-type').textContent = 
+                document.getElementById('cdek-delivery-type').value || '(не указан)';
+            
+            const cost = document.getElementById('cdek-delivery-cost').value;
+            const type = document.getElementById('cdek-delivery-type').value;
+            
+            let statusText = '';
+            let statusClass = '';
+            
+            if (type === 'pickup') {
+                statusText = '📍 Самовывоз активен (Бесплатно)';
+                statusClass = 'success';
+            } else if (type === 'manager') {
+                statusText = '📞 Обсуждение с менеджером активно (Бесплатно)';
+                statusClass = 'success';
+            } else if (type === 'cdek' && cost > 0) {
+                statusText = `🚚 СДЭК доставка активна (${cost} руб.)`;
+                statusClass = 'info';
+            } else {
+                statusText = '❓ Неопределенное состояние';
+                statusClass = 'error';
+            }
+            
+            const statusDiv = document.getElementById('current-status');
+            statusDiv.textContent = statusText;
+            statusDiv.className = `status ${statusClass}`;
+        }
+        
+        function clearAllCdekData() {
+            log('🧹 Очищаем ВСЕ данные СДЭК...');
+            
+            document.getElementById('cdek-selected-point-code').value = '';
+            document.getElementById('cdek-selected-point-data').value = '';
+            document.getElementById('cdek-delivery-cost').value = '0';
+            
+            log('✅ Локальные поля очищены');
+            
+            // Симуляция AJAX запроса (в реальности отправляется на сервер)
+            log('📡 Отправка AJAX запроса для очистки сессии...');
+            setTimeout(() => {
+                log('✅ Сессия на сервере очищена (симуляция)');
+                updateDisplay();
+            }, 100);
+        }
+        
+        function testPickupSwitch() {
+            log('🏪 === ТЕСТ: Переключение на самовывоз ===');
+            
+            // Шаг 1: Очищаем данные СДЭК
+            clearAllCdekData();
+            
+            // Шаг 2: Устанавливаем тип самовывоз
+            setTimeout(() => {
+                document.getElementById('cdek-delivery-type').value = 'pickup';
+                log('📍 Тип доставки установлен: самовывоз');
+                
+                // Шаг 3: Обновляем отображение
+                updateDisplay();
+                
+                // Проверяем результат
+                const pointCode = document.getElementById('cdek-selected-point-code').value;
+                const cost = document.getElementById('cdek-delivery-cost').value;
+                
+                if (pointCode === '' && cost === '0') {
+                    log('✅ ТЕСТ ПРОЙДЕН: Данные СДЭК полностью очищены');
+                } else {
+                    log('❌ ТЕСТ НЕ ПРОЙДЕН: Остались данные СДЭК');
+                    log(`   - Код пункта: "${pointCode}" (должно быть пусто)`);
+                    log(`   - Стоимость: "${cost}" (должно быть 0)`);
+                }
+            }, 200);
+        }
+        
+        function testManagerSwitch() {
+            log('📞 === ТЕСТ: Переключение на менеджера ===');
+            
+            // Шаг 1: Очищаем данные СДЭК
+            clearAllCdekData();
+            
+            // Шаг 2: Устанавливаем тип менеджер
+            setTimeout(() => {
+                document.getElementById('cdek-delivery-type').value = 'manager';
+                log('📞 Тип доставки установлен: обсуждение с менеджером');
+                
+                // Шаг 3: Обновляем отображение
+                updateDisplay();
+                
+                // Проверяем результат
+                const pointCode = document.getElementById('cdek-selected-point-code').value;
+                const cost = document.getElementById('cdek-delivery-cost').value;
+                
+                if (pointCode === '' && cost === '0') {
+                    log('✅ ТЕСТ ПРОЙДЕН: Данные СДЭК полностью очищены');
+                } else {
+                    log('❌ ТЕСТ НЕ ПРОЙДЕН: Остались данные СДЭК');
+                    log(`   - Код пункта: "${pointCode}" (должно быть пусто)`);
+                    log(`   - Стоимость: "${cost}" (должно быть 0)`);
+                }
+            }, 200);
+        }
+        
+        function testCdekSwitch() {
+            log('🚚 === ТЕСТ: Переключение на СДЭК ===');
+            
+            document.getElementById('cdek-delivery-type').value = 'cdek';
+            document.getElementById('cdek-selected-point-code').value = 'MSK456';
+            document.getElementById('cdek-selected-point-data').value = '{"code":"MSK456","name":"Новый ПВЗ"}';
+            document.getElementById('cdek-delivery-cost').value = '450';
+            
+            log('🚚 Установлены данные СДЭК доставки');
+            log('   - Код пункта: MSK456');
+            log('   - Стоимость: 450 руб.');
+            
+            updateDisplay();
+            log('✅ ТЕСТ ПРОЙДЕН: СДЭК доставка активирована');
+        }
+        
+        function resetToInitial() {
+            log('🔄 === СБРОС К НАЧАЛЬНОМУ СОСТОЯНИЮ ===');
+            
+            document.getElementById('cdek-selected-point-code').value = 'MSK123';
+            document.getElementById('cdek-selected-point-data').value = '{"code":"MSK123","name":"ПВЗ Тест"}';
+            document.getElementById('cdek-delivery-cost').value = '366';
+            document.getElementById('cdek-delivery-type').value = 'cdek';
+            
+            updateDisplay();
+            log('✅ Состояние сброшено к начальному');
+        }
+        
+        // Инициализация при загрузке
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🎯 Тестовая страница загружена');
+            log('📋 Инструкция:');
+            log('   1. Сначала активируйте СДЭК доставку (366 руб.)');
+            log('   2. Переключитесь на самовывоз или менеджера');
+            log('   3. Проверьте, что данные СДЭК полностью очищены');
+            log('   4. Стоимость должна стать 0, код пункта - пустым');
+            log('');
+            updateDisplay();
+        });
+    </script>
+</body>
+</html>

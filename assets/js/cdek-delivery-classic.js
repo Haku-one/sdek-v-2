@@ -502,6 +502,7 @@ jQuery(document).ready(function($) {
     window.citySelectedFromDropdown = false;
     window.lastDropdownSelectedCity = null;
     var cdekDataWasCleared = false; // Флаг для отслеживания очистки данных СДЭК
+    var isRestoringShippingText = false; // Флаг для предотвращения циклических обновлений
     
     // Инициализируем утилиты оптимизации
     const debouncer = new SmartDebouncer();
@@ -2009,10 +2010,10 @@ jQuery(document).ready(function($) {
             setTimeout(() => {
                 updateTotalCost(deliveryCost);
                 
-                // Повторно устанавливаем правильный текст доставки после обновления чекаута
+                // Повторно устанавливаем правильный текст доставки после обновления чекаута (БЕЗ запуска новых обновлений)
                 setTimeout(() => {
                     console.log('🔄 Повторно устанавливаем текст доставки после обновления чекаута');
-                    updateClassicShippingCost(point, deliveryCost);
+                    updateShippingTextOnly(point, deliveryCost);
                 }, 100);
                 
                 // Мягкий перезапуск Т-Банка
@@ -2042,6 +2043,62 @@ jQuery(document).ready(function($) {
         });
     }
     
+    // Функция для обновления ТОЛЬКО текста доставки без запуска обновлений
+    function updateShippingTextOnly(point, deliveryCost) {
+        console.log('🔄 Обновляем ТОЛЬКО текст доставки:', deliveryCost, 'руб.');
+        
+        // Обновляем текст в методе доставки СДЭК
+        var cdekShippingLabels = $('label[for*="shipping_method"][for*="cdek"], label[for*="cdek_delivery"]');
+        
+        if (cdekShippingLabels.length === 0) {
+            // Расширенный поиск если основной не нашел
+            cdekShippingLabels = $('label').filter(function() {
+                var forAttr = $(this).attr('for');
+                var text = $(this).text().toLowerCase();
+                return (forAttr && (forAttr.includes('shipping_method') || forAttr.includes('cdek'))) ||
+                       text.includes('сдэк') || text.includes('cdek') || 
+                       (text.includes('доставка') && !text.includes('самовывоз') && !text.includes('менеджер'));
+            });
+        }
+        
+        cdekShippingLabels.each(function() {
+            var $label = $(this);
+            
+            var newText;
+            if (!point) {
+                // Если точка не передана - показываем базовый текст
+                newText = '🚚 СДЭК доставка - выберите пункт выдачи';
+            } else if (deliveryCost === 0) {
+                // Для самовывоза и менеджера
+                if (point.name && point.name.includes('Самовывоз')) {
+                    newText = '📍 ' + point.name + ' — Бесплатно';
+                } else if (point.name && (point.name.includes('менеджером') || point.name.includes('менеджер'))) {
+                    newText = '📞 ' + point.name + ' — Бесплатно';
+                } else {
+                    newText = (point.name || 'Доставка') + ' — Бесплатно';
+                }
+            } else {
+                // Для доставки СДЭК
+                var pointName = point.name || 'Пункт выдачи';
+                if (pointName.includes(',')) {
+                    pointName = pointName.split(',').slice(1).join(',').trim();
+                }
+                
+                var displayName = pointName;
+                if (point.location && point.location.city) {
+                    displayName = point.location.city + ', ' + pointName.replace(point.location.city, '').replace(/^[,\s]+/, '');
+                }
+                
+                newText = '🚚 СДЭК: ' + displayName + ' — ' + deliveryCost + ' руб.';
+            }
+            
+            console.log('🔄 Обновляем label текст на:', newText);
+            $label.html(newText);
+        });
+        
+        console.log('✅ Текст доставки обновлен БЕЗ запуска цепочки обновлений');
+    }
+
     function updateClassicShippingCost(point, deliveryCost) {
         console.log('💰 Обновляем стоимость доставки:', deliveryCost, 'руб.');
         
@@ -3204,6 +3261,14 @@ jQuery(document).ready(function($) {
             } else if (deliveryType === 'cdek' && (hasSelectedPoint || hasGlobalSelectedPoint)) {
                 console.log('✅ СДЭК выбран и пункт есть - восстанавливаем текст доставки');
                 
+                // Предотвращаем циклические вызовы
+                if (isRestoringShippingText) {
+                    console.log('⏭️ Пропускаем восстановление - уже в процессе');
+                    return;
+                }
+                
+                isRestoringShippingText = true;
+                
                 // Получаем данные выбранного пункта
                 var pointData = null;
                 var deliveryCost = 0;
@@ -3220,11 +3285,16 @@ jQuery(document).ready(function($) {
                     }
                 }
                 
-                // Восстанавливаем правильный текст доставки
+                // Восстанавливаем правильный текст доставки БЕЗ вызова updateTotalCost
                 if (pointData) {
                     console.log('🔄 Восстанавливаем текст доставки для пункта:', pointData.name, 'стоимость:', deliveryCost);
-                    updateClassicShippingCost(pointData, deliveryCost);
+                    updateShippingTextOnly(pointData, deliveryCost);
                 }
+                
+                // Сбрасываем флаг через небольшую задержку
+                setTimeout(() => {
+                    isRestoringShippingText = false;
+                }, 100);
             }
             
             // Снимаем флаг через небольшую задержку

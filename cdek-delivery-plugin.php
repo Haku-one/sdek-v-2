@@ -2385,19 +2385,65 @@ class CdekAPI {
         
         error_log('СДЭК API: Поиск пунктов для города: ' . $city);
         
-        // Параметры запроса с фильтрацией по городу - БЕЗ ОГРАНИЧЕНИЙ
+        // Параметры запроса с фильтрацией по городу
         $params = array(
             'country_code' => 'RU'
         );
         
-        // Добавляем город для фильтрации
-        if (!empty($city)) {
-            $params['city'] = $city;
+        // ПРИОРИТЕТ: Сначала пытаемся использовать СДЭК код из DaData
+        $dadata_cdek_code = WC()->session ? WC()->session->get('dadata_cdek_code') : null;
+        $points = array();
+        
+        if ($dadata_cdek_code && is_numeric($dadata_cdek_code)) {
+            error_log('СДЭК API: Пытаемся найти пункты по СДЭК коду города: ' . $dadata_cdek_code);
+            
+            // Попытка 1: Ищем по коду города (параметр city_code)
+            $params_with_code = array(
+                'country_code' => 'RU',
+                'city_code' => intval($dadata_cdek_code)
+            );
+            
+            $points = $this->make_delivery_points_request($token, $params_with_code, 'по коду города');
+            
+            // Попытка 2: Если не нашли по city_code, пробуем code
+            if (empty($points)) {
+                $params_with_code2 = array(
+                    'country_code' => 'RU',
+                    'code' => intval($dadata_cdek_code)
+                );
+                $points = $this->make_delivery_points_request($token, $params_with_code2, 'по коду (параметр code)');
+            }
+            
+            // Попытка 3: Если не нашли по кодам, пробуем фильтр по области через регион
+            if (empty($points)) {
+                $params_region = array(
+                    'country_code' => 'RU',
+                    'region_code' => intval($dadata_cdek_code)
+                );
+                $points = $this->make_delivery_points_request($token, $params_region, 'по коду региона');
+            }
         }
         
-        // Строим URL для GET запроса
-        $url = add_query_arg($params, $this->base_url . '/deliverypoints');
+        // Если все еще не нашли пункты, пробуем поиск по названию города
+        if (empty($points) && !empty($city)) {
+            error_log('СДЭК API: Не найдено по коду, пробуем поиск по названию города: ' . $city);
+            $params_by_name = array(
+                'country_code' => 'RU',
+                'city' => $city
+            );
+            $points = $this->make_delivery_points_request($token, $params_by_name, 'по названию города');
+        }
         
+        return $points;
+    }
+    
+    /**
+     * Выполняет запрос к API СДЭК для получения пунктов выдачи
+     */
+    private function make_delivery_points_request($token, $params, $search_type) {
+        error_log('СДЭК API: Запрос ' . $search_type . ': ' . print_r($params, true));
+        
+        $url = add_query_arg($params, $this->base_url . '/deliverypoints');
         error_log('СДЭК API: URL запроса: ' . $url);
         
         $response = wp_remote_get($url, array(
@@ -2410,9 +2456,10 @@ class CdekAPI {
         
         if (!is_wp_error($response)) {
             $response_code = wp_remote_retrieve_response_code($response);
-            $body = json_decode(wp_remote_retrieve_body($response), true);
+            $raw_body = wp_remote_retrieve_body($response);
+            $body = json_decode($raw_body, true);
             
-            error_log('СДЭК API: Код ответа: ' . $response_code);
+            error_log('СДЭК API: ' . $search_type . ' - Код ответа: ' . $response_code);
             
             if ($response_code === 200 && $body) {
                 $points = array();
@@ -2424,21 +2471,24 @@ class CdekAPI {
                     $points = $body;
                 }
                 
-                // Дополнительная фильтрация по городу на стороне PHP
-                if (!empty($city) && !empty($points)) {
-                    $points = $this->filter_points_by_city($points, $city);
-                }
+                error_log('СДЭК API: ' . $search_type . ' - Получено пунктов: ' . count($points));
                 
-                error_log('СДЭК API: Получено пунктов после фильтрации: ' . count($points));
-                return $points;
+                if (!empty($points)) {
+                    error_log('СДЭК API: ✅ Успешно найдены пункты ' . $search_type);
+                    return $points;
+                } else {
+                    error_log('СДЭК API: ❌ Пункты не найдены ' . $search_type);
+                }
             } else {
                 if (isset($body['errors'])) {
-                    error_log('СДЭК API: Ошибки в ответе: ' . print_r($body['errors'], true));
+                    error_log('СДЭК API: Ошибки в ответе ' . $search_type . ': ' . print_r($body['errors'], true));
+                } else {
+                    error_log('СДЭК API: Пустой или некорректный ответ ' . $search_type . ' (код: ' . $response_code . ')');
+                    error_log('СДЭК API: Ответ (первые 300 символов): ' . substr($raw_body, 0, 300));
                 }
-                return array();
             }
         } else {
-            error_log('СДЭК API: Ошибка HTTP: ' . $response->get_error_message());
+            error_log('СДЭК API: Ошибка HTTP ' . $search_type . ': ' . $response->get_error_message());
         }
         
         return array();

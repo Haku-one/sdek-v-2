@@ -2269,6 +2269,8 @@ class CdekDeliveryPlugin {
         
         // Проверяем, что это заказ с доставкой СДЭК
         $is_cdek_order = false;
+        $delivery_type = get_post_meta($post->ID, '_cdek_delivery_type', true);
+        
         if ($order) {
             foreach ($order->get_shipping_methods() as $method) {
                 if (strpos($method->get_method_id(), 'cdek') !== false) {
@@ -2278,11 +2280,14 @@ class CdekDeliveryPlugin {
             }
         }
         
+        // Показываем мета-бокс только для СДЭК доставки (не для самовывоза и менеджера)
+        $show_tracking = $is_cdek_order && $delivery_type === 'cdek';
+        
         wp_nonce_field('save_cdek_tracking', 'cdek_tracking_nonce');
         
         echo '<div style="margin: 10px 0;">';
         
-        if ($is_cdek_order) {
+        if ($show_tracking) {
             echo '<p><strong>Трек-номер СДЭК:</strong></p>';
             echo '<input type="text" name="cdek_tracking_number" value="' . esc_attr($tracking_number) . '" 
                          style="width: 100%; padding: 5px;" placeholder="Введите трек-номер СДЭК" />';
@@ -2302,6 +2307,25 @@ class CdekDeliveryPlugin {
                         Клиент увидит "Скоро появится трек-номер" пока поле не заполнено
                       </p>';
             }
+        } else if ($is_cdek_order) {
+            // Показываем информацию о типе доставки
+            $delivery_type_text = '';
+            switch ($delivery_type) {
+                case 'pickup':
+                    $delivery_type_text = 'Самовывоз';
+                    break;
+                case 'manager':
+                    $delivery_type_text = 'Обсуждение с менеджером';
+                    break;
+                default:
+                    $delivery_type_text = 'Неизвестный тип доставки';
+            }
+            
+            echo '<p style="color: #666;">
+                    <span class="dashicons dashicons-info"></span> 
+                    Тип доставки: <strong>' . esc_html($delivery_type_text) . '</strong><br>
+                    Трек-номер СДЭК не требуется для этого типа доставки
+                  </p>';
         } else {
             echo '<p style="color: #666;">
                     <span class="dashicons dashicons-info"></span> 
@@ -2364,7 +2388,10 @@ class CdekDeliveryPlugin {
     public function add_track_order_action($actions, $order) {
         $tracking_number = get_post_meta($order->get_id(), '_cdek_tracking_number', true);
         
-        if ($tracking_number && $this->is_cdek_order($order)) {
+        // Проверяем тип доставки - кнопка только для СДЭК доставки
+        $delivery_type = get_post_meta($order->get_id(), '_cdek_delivery_type', true);
+        
+        if ($tracking_number && $this->is_cdek_order($order) && $delivery_type === 'cdek') {
             $actions['track'] = array(
                 'url'  => 'https://cdek.ru/ru/tracking?order_id=' . $tracking_number,
                 'name' => 'Отследить СДЭК'
@@ -2381,6 +2408,12 @@ class CdekDeliveryPlugin {
         $order = wc_get_order($order_id);
         if (!$order || !$this->is_cdek_order($order)) {
             return;
+        }
+        
+        // Проверяем тип доставки - показываем блок только для СДЭК доставки
+        $delivery_type = get_post_meta($order_id, '_cdek_delivery_type', true);
+        if ($delivery_type !== 'cdek') {
+            return; // Не показываем блок для самовывоза и менеджера
         }
         
         $tracking_number = get_post_meta($order_id, '_cdek_tracking_number', true);

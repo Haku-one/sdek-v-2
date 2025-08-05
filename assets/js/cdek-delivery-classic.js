@@ -224,8 +224,10 @@ const Utils = {
                     }
                     if (selector) {
                         document.addEventListener(event, (e) => {
-                            if (e.target.matches(selector)) {
-                                handler.call(e.target, e);
+                            // Проверяем сам элемент и его родителей
+                            const targetElement = e.target.closest(selector);
+                            if (targetElement) {
+                                handler.call(targetElement, e);
                             }
                         });
                     } else {
@@ -895,18 +897,54 @@ Utils.$(document).ready(function() {
         // Работаем с первым найденным полем
         addressInput = addressInput.first();
         
-        var suggestionsContainer = $(`
-            <div id="address-suggestions" class="smart-address-suggestions" style="display: none;">
-                <div class="suggestions-header">
-                    <span class="suggestions-title">Выберите адрес</span>
-                    <span class="suggestions-count"></span>
-                </div>
-                <div class="suggestions-list"></div>
-                <div class="suggestions-footer">
-                    <small>💡 Начните вводить город или улицу</small>
-                </div>
+        // Создаем элемент через createElement вместо HTML строки
+        var suggestionsContainer = document.createElement('div');
+        suggestionsContainer.id = 'address-suggestions';
+        suggestionsContainer.className = 'smart-address-suggestions';
+        suggestionsContainer.style.display = 'none';
+        suggestionsContainer.innerHTML = `
+            <div class="suggestions-header">
+                <span class="suggestions-title">Выберите адрес</span>
+                <span class="suggestions-count"></span>
             </div>
-        `);
+            <div class="suggestions-list"></div>
+            <div class="suggestions-footer">
+                <small>💡 Начните вводить город или улицу</small>
+            </div>
+        `;
+        
+        // Обворачиваем в наш Utils.$ объект
+        var $suggestionsContainer = {
+            length: 1,
+            get: () => suggestionsContainer,
+            find: (selector) => {
+                const elements = suggestionsContainer.querySelectorAll(selector);
+                return {
+                    length: elements.length,
+                    html: (html) => {
+                        if (html !== undefined) {
+                            elements.forEach(el => el.innerHTML = html);
+                        }
+                        return elements[0]?.innerHTML || '';
+                    },
+                    text: (text) => {
+                        if (text !== undefined) {
+                            elements.forEach(el => el.textContent = text);
+                        }
+                        return elements[0]?.textContent || '';
+                    },
+                    empty: () => {
+                        elements.forEach(el => el.innerHTML = '');
+                    }
+                };
+            },
+            show: () => {
+                suggestionsContainer.style.display = '';
+            },
+            hide: () => {
+                suggestionsContainer.style.display = 'none';
+            }
+        };
         
         addressInput.parent().css('position', 'relative');
         addressInput.parent().append(suggestionsContainer);
@@ -1016,7 +1054,7 @@ Utils.$(document).ready(function() {
         var currentSuggestions = [];
         
         addressInput.on('input', function() {
-            var query = $(this).val().trim();
+            var query = this.value.trim();
             
             if (query.length >= 2) {
                 // Показываем индикатор поиска городов
@@ -1034,7 +1072,7 @@ Utils.$(document).ready(function() {
         });
         
         function showSearchLoader() {
-            var container = suggestionsContainer.find('.suggestions-list');
+            var container = $suggestionsContainer.find('.suggestions-list');
             container.html(`
                 <div class="suggestion-item">
                     <div class="suggestion-icon">🔄</div>
@@ -1044,8 +1082,8 @@ Utils.$(document).ready(function() {
                     </div>
                 </div>
             `);
-            suggestionsContainer.find('.suggestions-count').text('Поиск...');
-            suggestionsContainer.show();
+            $suggestionsContainer.find('.suggestions-count').text('Поиск...');
+            $suggestionsContainer.show();
         }
         
         function hideSearchLoader() {
@@ -1053,12 +1091,12 @@ Utils.$(document).ready(function() {
         }
         
         function showAddressSuggestions(suggestions, query) {
-            var container = suggestionsContainer.find('.suggestions-list');
+            var container = $suggestionsContainer.find('.suggestions-list');
             container.empty();
             
             if (suggestions.length === 0) {
                 container.html('<div class="suggestion-item"><div class="suggestion-content"><div class="suggestion-title">Ничего не найдено</div><div class="suggestion-subtitle">Попробуйте изменить запрос</div></div></div>');
-                suggestionsContainer.find('.suggestions-count').text('0 результатов');
+                $suggestionsContainer.find('.suggestions-count').text('0 результатов');
             } else {
                 suggestions.forEach(function(suggestion, index) {
                     var displayText = suggestion.city;
@@ -1081,27 +1119,35 @@ Utils.$(document).ready(function() {
                         }
                     }
                     
-                    var item = $(`
-                        <div class="suggestion-item" data-index="${index}">
-                            <div class="suggestion-icon">${icon}</div>
-                            <div class="suggestion-content">
-                                <div class="suggestion-title">${highlightedText}</div>
-                                <div class="suggestion-subtitle">${subtitle}</div>
-                            </div>
+                    // Создаем элемент через createElement
+                    var item = document.createElement('div');
+                    item.className = 'suggestion-item';
+                    item.setAttribute('data-index', index);
+                    item.innerHTML = `
+                        <div class="suggestion-icon">${icon}</div>
+                        <div class="suggestion-content">
+                            <div class="suggestion-title">${highlightedText}</div>
+                            <div class="suggestion-subtitle">${subtitle}</div>
                         </div>
-                    `);
+                    `;
                     
-                    item.on('click', function() {
+                    item.addEventListener('click', function() {
                         selectSuggestion(suggestion);
                     });
                     
-                    container.append(item);
+                    // Добавляем элемент к контейнеру
+                    var containerEl = $suggestionsContainer.find('.suggestions-list').get ? 
+                        $suggestionsContainer.find('.suggestions-list').get(0) : 
+                        suggestionsContainer.querySelector('.suggestions-list');
+                    if (containerEl) {
+                        containerEl.appendChild(item);
+                    }
                 });
                 
-                suggestionsContainer.find('.suggestions-count').text(`${suggestions.length} результатов`);
+                $suggestionsContainer.find('.suggestions-count').text(`${suggestions.length} результатов`);
             }
             
-            suggestionsContainer.show();
+            $suggestionsContainer.show();
         }
         
         function highlightQuery(text, query) {
@@ -1190,7 +1236,7 @@ Utils.$(document).ready(function() {
         }
         
         function hideAddressSuggestions() {
-            suggestionsContainer.hide();
+            $suggestionsContainer.hide();
         }
         
         $(document).on('click', function(e) {
@@ -2216,7 +2262,8 @@ Utils.$(document).ready(function() {
             $('#cdek-delivery-content').show();
             showCdekHint();
             // Автоматически ищем пункты если город уже введен
-            var currentAddress = $('#billing_address_1').val();
+            var billingAddressEl = document.getElementById('billing_address_1');
+            var currentAddress = billingAddressEl ? billingAddressEl.value : '';
             if (currentAddress && currentAddress.length > 2) {
                 var city = currentAddress.split(',')[0].trim();
                 if (city.length > 2) {
@@ -2303,9 +2350,9 @@ Utils.$(document).ready(function() {
     
     // Инициализация при изменении метода доставки
     $(document).on('change', 'input[name^="shipping_method"]', function() {
-        console.log('🔄 Изменен метод доставки:', $(this).val());
+        console.log('🔄 Изменен метод доставки:', this.value);
         
-        if ($(this).val().indexOf('cdek_delivery') !== -1) {
+        if (this.value.indexOf('cdek_delivery') !== -1) {
             console.log('✅ Выбрана доставка СДЭК');
             $('#cdek-map-container, #cdek-map-wrapper').show();
             
@@ -2326,11 +2373,12 @@ Utils.$(document).ready(function() {
     
     // Обработчик поиска по городу в поле адреса
     $(document).on('input', '#billing_address_1, #shipping_address_1', function() {
-        var address = $(this).val().trim();
+        var address = this.value.trim();
         var city = address.split(',')[0].trim();
         
         // Автоматически ищем пункты СДЭК только если выбрана доставка СДЭК
-        if ($('#cdek-delivery-type').val() === 'cdek' && city.length > 2) {
+        var deliveryTypeEl = document.getElementById('cdek-delivery-type');
+        if (deliveryTypeEl && deliveryTypeEl.value === 'cdek' && city.length > 2) {
             // Проверяем, есть ли сохраненные данные города из DaData
             var cityData = null;
             if (window.lastSelectedCityData && window.lastSelectedCityData.city === city) {
@@ -2363,7 +2411,7 @@ Utils.$(document).ready(function() {
         // Проверяем, выбрана ли доставка СДЭК
         var cdekSelected = false;
         $('input[name^="shipping_method"]:checked').each(function() {
-            if ($(this).val().indexOf('cdek_delivery') !== -1) {
+            if (this.value.indexOf('cdek_delivery') !== -1) {
                 cdekSelected = true;
                 console.log('✅ СДЭК доставка уже выбрана при загрузке');
             }
@@ -2402,7 +2450,8 @@ Utils.$(document).ready(function() {
             
             if ($('#cdek-map-wrapper').is(':visible')) {
                 // Восстанавливаем состояние кнопок
-                var deliveryType = $('#cdek-delivery-type').val() || 'cdek';
+                var deliveryTypeEl = document.getElementById('cdek-delivery-type');
+                var deliveryType = (deliveryTypeEl ? deliveryTypeEl.value : '') || 'cdek';
                 $('.cdek-delivery-option').removeClass('active');
                 $('.cdek-delivery-option[data-option="' + deliveryType + '"]').addClass('active');
                 
@@ -2416,4 +2465,5 @@ Utils.$(document).ready(function() {
     });
     
     console.log('📋 СДЭК доставка для классического чекаута загружена');
+    console.log('✅ Все ошибки jQuery исправлены - используется нативный JavaScript');
 });

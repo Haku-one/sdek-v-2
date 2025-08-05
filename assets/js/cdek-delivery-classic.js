@@ -2357,32 +2357,204 @@ jQuery(document).ready(function($) {
         // Обновляем счетчик пунктов с уведомлением
         $('#cdek-points-count').html('⚠️ Пожалуйста, введите город заново для поиска пунктов выдачи');
         
+        // Добавляем большое уведомление в область карты
+        showMapAreaWarning();
+        
         // Показываем уведомление в поле адреса
         var addressInput = $('#billing_address_1, #shipping_address_1').first();
         if (addressInput.length > 0) {
-            addressInput.attr('placeholder', 'Введите город заново для поиска СДЭК');
+            addressInput.attr('placeholder', '⚠️ Введите город заново для поиска СДЭК');
             
             // Добавляем временный стиль для привлечения внимания
             addressInput.css({
                 'border-color': '#ff9800',
-                'background-color': '#fff3e0'
+                'background-color': '#fff3e0',
+                'border-width': '2px',
+                'box-shadow': '0 0 5px rgba(255, 152, 0, 0.5)'
             });
             
-            // Убираем стиль через 3 секунды
+            // Убираем стиль через 5 секунд (увеличиваем время)
             setTimeout(function() {
                 addressInput.css({
                     'border-color': '',
-                    'background-color': ''
+                    'background-color': '',
+                    'border-width': '',
+                    'box-shadow': ''
                 });
                 addressInput.attr('placeholder', 'Например: Москва');
-            }, 3000);
+            }, 5000);
         }
+        
+        // Показываем БОЛЬШОЕ заметное уведомление
+        showBigWarningNotification();
         
         // Показываем общее уведомление
         showTemporaryNotification('После переключения вкладок необходимо заново выбрать город для поиска пунктов СДЭК', 'warning');
+        
+        // Автоматически фокусируемся на поле адреса через небольшую задержку
+        setTimeout(function() {
+            var addressInput = $('#billing_address_1, #shipping_address_1').first();
+            if (addressInput.length > 0) {
+                addressInput.focus();
+                console.log('🎯 Автоматическая фокусировка на поле адреса');
+            }
+        }, 1000);
     }
     
-    function resetCdekSearchState() {
+    function showBigWarningNotification() {
+        // Удаляем предыдущие большие уведомления
+        $('.cdek-big-warning').remove();
+        
+        var bigWarningHtml = `
+            <div class="cdek-big-warning" style="
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+                background: linear-gradient(135deg, #ff9800, #f57c00);
+                color: white;
+                padding: 20px 25px;
+                border-radius: 10px;
+                box-shadow: 0 8px 32px rgba(255, 152, 0, 0.4);
+                font-size: 16px;
+                font-weight: bold;
+                max-width: 400px;
+                animation: slideInBounce 0.6s ease-out;
+                border: 2px solid #e65100;
+            ">
+                <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                    <span style="font-size: 24px; margin-right: 10px;">⚠️</span>
+                    <span style="font-size: 18px;">Внимание!</span>
+                </div>
+                <div style="margin-bottom: 15px; line-height: 1.4;">
+                    Для поиска пунктов выдачи СДЭК необходимо <strong>заново ввести город</strong> в поле "Город доставки"
+                </div>
+                <div style="text-align: center;">
+                    <button onclick="$(this).closest('.cdek-big-warning').remove()" style="
+                        background: rgba(255,255,255,0.2);
+                        border: 1px solid rgba(255,255,255,0.3);
+                        color: white;
+                        padding: 8px 16px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        font-weight: bold;
+                    ">Понятно</button>
+                </div>
+            </div>
+        `;
+        
+        $('body').append(bigWarningHtml);
+        
+        // Добавляем CSS анимацию если её нет
+        if (!$('#big-warning-styles').length) {
+            $('head').append(`
+                <style id="big-warning-styles">
+                @keyframes slideInBounce {
+                    0% { 
+                        transform: translateX(100%) scale(0.8);
+                        opacity: 0;
+                    }
+                    60% { 
+                        transform: translateX(-10%) scale(1.05);
+                        opacity: 0.9;
+                    }
+                    100% { 
+                        transform: translateX(0) scale(1);
+                        opacity: 1;
+                    }
+                }
+                
+                .cdek-big-warning:hover {
+                    transform: scale(1.02);
+                    transition: transform 0.2s ease;
+                }
+                
+                .cdek-big-warning button:hover {
+                    background: rgba(255,255,255,0.3) !important;
+                    transform: scale(1.05);
+                    transition: all 0.2s ease;
+                }
+                </style>
+            `);
+        }
+        
+        // Автоматически удаляем уведомление через 8 секунд
+        setTimeout(function() {
+            $('.cdek-big-warning').fadeOut(300, function() {
+                $(this).remove();
+            });
+                 }, 8000);
+     }
+     
+     function showMapAreaWarning() {
+         // Удаляем предыдущие уведомления в области карты
+         $('.cdek-map-warning').remove();
+         
+         var mapWarningHtml = `
+             <div class="cdek-map-warning" style="
+                 position: absolute;
+                 top: 50%;
+                 left: 50%;
+                 transform: translate(-50%, -50%);
+                 z-index: 1000;
+                 background: rgba(255, 152, 0, 0.95);
+                 color: white;
+                 padding: 30px;
+                 border-radius: 15px;
+                 text-align: center;
+                 box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                 max-width: 350px;
+                 animation: pulseWarning 2s infinite;
+                 border: 3px solid #e65100;
+             ">
+                 <div style="font-size: 48px; margin-bottom: 15px;">⚠️</div>
+                 <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">
+                     Необходимо ввести город!
+                 </div>
+                 <div style="font-size: 14px; line-height: 1.4; margin-bottom: 20px;">
+                     Введите название города в поле <strong>"Город доставки"</strong> выше для поиска пунктов выдачи СДЭК
+                 </div>
+                 <div style="font-size: 24px;">👆</div>
+             </div>
+         `;
+         
+         // Добавляем уведомление в контейнер карты
+         var mapContainer = $('#cdek-map');
+         if (mapContainer.length > 0) {
+             mapContainer.css('position', 'relative');
+             mapContainer.append(mapWarningHtml);
+         }
+         
+         // Добавляем CSS анимацию если её нет
+         if (!$('#map-warning-styles').length) {
+             $('head').append(`
+                 <style id="map-warning-styles">
+                 @keyframes pulseWarning {
+                     0% { transform: translate(-50%, -50%) scale(1); }
+                     50% { transform: translate(-50%, -50%) scale(1.05); }
+                     100% { transform: translate(-50%, -50%) scale(1); }
+                 }
+                 </style>
+             `);
+         }
+         
+         // Удаляем уведомление при клике на поле адреса
+         $('#billing_address_1, #shipping_address_1').on('focus.mapWarning', function() {
+             $('.cdek-map-warning').fadeOut(300, function() {
+                 $(this).remove();
+             });
+             $(this).off('focus.mapWarning');
+         });
+         
+         // Автоматически удаляем через 10 секунд
+         setTimeout(function() {
+             $('.cdek-map-warning').fadeOut(500, function() {
+                 $(this).remove();
+             });
+         }, 10000);
+     }
+     
+     function resetCdekSearchState() {
         console.log('🔄 Сбрасываем состояние поиска СДЭК');
         
         // Очищаем данные о пунктах
@@ -2413,6 +2585,9 @@ jQuery(document).ready(function($) {
         if (!isUpdatingCheckout) {
             resetShippingMethodTextToCdek();
         }
+        
+        // Очищаем все уведомления
+        $('.cdek-temp-notification, .cdek-big-warning, .cdek-map-warning').remove();
     }
     
     function showTemporaryNotification(message, type = 'info') {
